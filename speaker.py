@@ -120,6 +120,9 @@ class Speaker:
         if self.age: m += f' {self.age}'
         return m
 
+    def __eq__(self, other):
+        return self.speaker_id == other.speaker_id
+
     def _load_info(self):
         self.info = file_handler.load_speaker_info(self.speaker_id, 
             self.speaker_file)
@@ -131,12 +134,74 @@ class Speaker:
         if self.info['sex'] == 'sex1': self.sex = 'male'
         elif self.info['sex'] == 'sex2': self.sex = 'female'
         else: self.sex = None
-        self.tiers= {'ort':[], 'awd_word':[], 'awd_phon': [], 'fon':[]}
+        self.tiers= {'ort':[], 'awd_word':[], 'awd_word_fon': [], 
+            'awd_seg_fon':[],'fon':[]}
 
-    def add_tiers(self):
-        pass
+    @property
+    def has_tiers(self):
+        for tierlist in self.tiers.values():
+            if tierlist: return True
+        return False
 
+    @property
+    def available_tiers(self):
+         for tier_type, tierlist in self.tiers.items():
+             if tierlist:
+                 yield tier_type       
+        
+    @property
+    def ort_tiers(self):
+        return self.tiers['ort']
 
+    @property
+    def awd_word_tiers(self):
+        return self.tiers['awd_word']
+
+    @property
+    def awd_word_fon_tiers(self):
+        return self.tiers['awd_word_fon']
+
+    @property
+    def awd_seg_fon_tiers(self):
+        return self.tiers['awd_seg_fon']
+
+    @property
+    def fon_tiers(self):
+        return self.tiers['fon']
+
+    @property
+    def ort_segments(self):
+        segments = []
+        for tier in self.ort_tiers:
+            segments.extend(tier.segments)
+        return segments
+
+    @property
+    def awd_word_segments(self):
+        segments = []
+        for tier in self.awd_word_tiers:
+            segments.extend(tier.segments)
+        return segments
+
+    @property
+    def awd_word_fon_segments(self):
+        segments = []
+        for tier in self.awd_word_fon_tiers:
+            segments.extend(tier.segments)
+        return segments
+
+    def awd_seg_fon_segments(self):
+        segments = []
+        for tier in self.awd_seg_fon_tiers:
+            segments.extend(tier.segments)
+        return segments
+
+    @property
+    def fon_segments(self):
+        segments = []
+        for tier in self.fon_tiers:
+            segments.extend(tier.segments)
+        return segments
 
         
 def speaker_number_to_id(number, language):
