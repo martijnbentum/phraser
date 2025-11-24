@@ -28,3 +28,5 @@ fon_filemap = data / 'fon_filemap.json'
 ort_annotation_pickle = data / 'ort_annotations.pickle'
 awd_annotation_pickle = data / 'awd_annotations.pickle'
 fon_annotation_pickle = data / 'fon_annotations.pickle'
+
+cgn_lmdb = data / 'cgn_lmdb'
