@@ -131,6 +131,7 @@ def lmdb_all_keys(env = None, path = locations.cgn_lmdb):
 def lmdb_delete(key, env=None, path=locations.cgn_lmdb):
     env = open_lmdb(env, path)
     k= _key_bytes(key)
+    if not key_exists(k, env=env): return
 
     with env.begin(write=True) as txn:
         txn.delete(k)
