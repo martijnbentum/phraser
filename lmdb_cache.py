@@ -68,7 +68,7 @@ class Cache:
         if key in self._cache:
             del self._cache[key]
 
-    def update(old_key, obj):
+    def update(self, old_key, obj):
         self.delete(old_key)
         self.save(obj, overwrite=True)
 
