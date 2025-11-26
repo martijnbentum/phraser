@@ -59,7 +59,8 @@ def item_to_key(item):
 
     # Zero-pad to 8 digits for lexicographic ordering
     start_str = f"{start_ms:08d}"
-    audio_id = item.audio_id
+    audio_key = item.audio_key
+    audio_id = key_to_identifier(audio_key)
 
     return f"{audio_id}:{rank}:{start_str}:{item.identifier}"
 
