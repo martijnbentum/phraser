@@ -2,6 +2,7 @@ import uuid
 import lmdb_helper 
 import lmdb_cache 
 import lmdb_key
+import model_helper
 
 
 class Segment:
@@ -9,10 +10,10 @@ class Segment:
     Base time-aligned segment with a unique ID and parent/child links.
     '''
 
-    allowed_child_type = None    # subclasses override
+    allowed_child_types = []# subclasses override
 
     def __init__(self, label = None, start = None, end = None, 
-        key = None,parent_id=None, child_ids=None, save = False, 
+        key = None,parent_key=None, child_keys=None, save = False, 
         overwrite = False,**kwargs):
         
         if label is None and key is None:
@@ -26,10 +27,10 @@ class Segment:
         self.end = float(end)
         self.identifier = lmdb_key.make_item_identifier(self)
 
-        self.parent_id = parent_id
-        self.child_ids = child_ids or []
-        self.audio_id = 'EMPTY'
-        self.speaker_id = 'EMPTY'
+        self.parent_key = parent_key
+        self.child_keys = child_keys or []
+        self.audio_key = 'EMPTY'
+        self.speaker_key = 'EMPTY'
         self.overwrite = overwrite
 
         # Extra metadata
@@ -48,8 +49,8 @@ class Segment:
     def __eq__(self, other):
         if not isinstance(other, Segment):
             return False
-        return self.identifier == other.identifier and \
-            self.audio_id == other.audio_id and \
+        return self.key == other.key and \
+            self.audio_key == other.audio_key and \
             self.object_type == other.object_type
 
     @property
@@ -61,19 +62,19 @@ class Segment:
     def parent(self):
         """Return the parent segment."""
         if hasattr(self, '_parent'): return self._parent
-        if self.parent_id is None:return None
-        self._parent = cache.load(self.parent_id, with_links=False)
+        if self.parent_key is None:return None
+        self._parent = cache.load(self.parent_key, with_links=False)
         return self._parent
 
     @property
     def children(self):
         """Return the list of child segments."""
-        if hasattr(self, '_children'): return self._children
-        self._children = []
-        for cid in self.child_ids:
-            child = cache.load(cid, with_links=False)
+        if not hasattr(self, '_children'): self._children = []
+        for key in self.child_keys:
+            child = cache.load(key, with_links=False)
             if child is None: 
-                raise ValueError(f"Child with ID {cid} not found in LMDB.")
+                raise ValueError(f"Child with key {key} not found in LMDB.")
+            if child in self._children: continue
             self._children.append(child)
         return self._children
 
@@ -81,18 +82,26 @@ class Segment:
     def audio(self):
         """Return the associated Audio object."""
         if hasattr(self, '_audio'): return self._audio
-        if self.audio_id is None:
-            return None
-        self._audio = cache.load(self.audio_id, with_links=False)
+        if self.audio_key is None or self.audio_key == 'EMPTY': return None
+        self._audio = cache.load(self.audio_key, with_links=False)
         return self._audio
         
     @property
     def speaker(self):
         """Return the associated Speaker object."""
         if hasattr(self, '_speaker'): return self._speaker
-        if self.speaker_id is None: return None
-        self._speaker = cache.load(self.speaker_id, with_links=False)
+        if self.speaker_key is None or self.speaker_key == 'EMPTY': return None
+        self._speaker = cache.load(self.speaker_key, with_links=False)
         return self._speaker
+
+    @property
+    def phrase(self):
+        if self.object_type == "Phrase": return self
+        if hasattr(self, '_phrase'): return self._phrase
+        for segment in self.iter_ancestors():
+            if segment.object_type == "Phrase":
+                self._phrase = segment
+                return self._phrase
 
     @property
     def duration(self):
@@ -105,76 +114,111 @@ class Segment:
         instance = self.from_dict(lmdb_helper.lmdb_load(key))
         self.__dict__.update(instance.__dict__)
 
-    def add_audio(self, audio = None, audio_id = None, reverse_link = True,
-        update_database = True):
-        if audio is None and audio_id is None:
-            raise ValueError("Either audio or audio_id must be provided.")
+    def add_audio(self, audio = None, audio_key = None, reverse_link = True,
+        update_database = True, propagate = True):
+        ''' Link this segment (and by default its family) to an Audio object.
+        '''
+        if audio is None and audio_key is None:
+            raise ValueError("Provide audio or audio_key.")
+
+        if audio_key is None:
+            audio_key = audio.key
+
+        self._audio = audio
+        all_segments = [self]
+
+        # family starts with self
+        if propagate: all_segments += list(self.iter_family())[1:]
+
+        for segment in all_segments:
+            segment._apply_audio_key(audio_key, update_database)
+
+        if reverse_link and audio is not None:
+            if self.object_type == 'Phrase':
+                audio.add_phrase(phrase, reverse_link=False)
+
+    def _apply_audio_key(self, audio_key, update_database):
         old_key = self.key
-        if audio_id is None:
-            audio_id = audio.identifier
-        self.audio_id = audio_id
+        self.audio_key = audio_key
         new_key = self.key
         if update_database and old_key != new_key:
-            cache.update(old_key, self) 
-        self._audio = audio
-        if reverse_link and self.object_type == 'Phrase':
-            audio.add_phrase(self, reverse_link=False)
+            cache.update(old_key, self)
 
-    def add_speaker(self, speaker = None, speaker_id = None, 
-        update_database = True):
-        if speaker is None and speaker_id is None:
-            raise ValueError("Either speaker or speaker_id must be provided.")
-        if speaker_id is None:
-            speaker_id = speaker.identifier
-        self.speaker_id = speaker_id
+    def add_speaker(self, speaker = None, speaker_key = None, 
+        update_database = True, propagate = True):
+        if speaker is None and speaker_key is None:
+            raise ValueError("Either speaker or speaker_key must be provided.")
+        if speaker_key is None:
+            speaker_key = speaker.key
+        self.speaker_key = speaker_key
         self._speaker = speaker
+        all_segments = [self]
+        if propagate:
+            all_segments += list(self.iter_family())[1:]
+        for segment in all_segments:
+            segment._apply_speaker_key(speaker_key, update_database)
+        if reverse_link and speaker is not None:
+            if self.object_type == 'Phrase':
+                speaker.add_phrase(phrase, reverse_link=False)
+
+    def _apply_speaker_key(self, speaker_key, update_database):
+        if self.speaker_key == speaker_key: return
+        self.speaker_key = speaker_key
         if update_database: self.save(overwrite = True)
+            
 
     # ------------------ hierarchy helpers ------------------
 
-    def add_child(self, child= None, child_id = None, reverse_link = True,
+    def add_child(self, child= None, child_key = None, reverse_link = True,
         update_database = True):
         """    Add a child segment, enforcing the declared hierarchy.
         """
-        if self.allowed_child_type is None:
+        if self.allowed_child_types is []:
             raise TypeError(f"{self.object_type} cannot have children.")
-        if child is None and child_id is None:
-            raise ValueError("Either child or child_id must be provided.")
-        if child_id is None:
-            child_id = child.identifier
-        if child_id in self.child_ids: return
+        if child is None and child_key is None:
+            raise ValueError("Either child or child_key must be provided.")
+        if child_key is None:
+            child_key = child.key
+        if child_key in self.child_keys: return
         if child is None:
-            child = cache.load(child_id, with_links=True)
-        if not isinstance(child, self.allowed_child_type):
-            m = f'{self.object_type} can only contain '
-            m += f'{self.allowed_child_type.__name__}, '
-            m += f'not {child.__class__.__name__}'
+            child = cache.load(child_key, with_links=True)
+        if not child.__class__ in self.allowed_child_types:
+            m = f'{self.object_type} can only contain {self.allowed_child_types},'
+            m += f'not {child.__class__}'
             raise TypeError(m)
-        self.child_ids.append(child.identifier)
+        self.child_keys.append(child.key)
         if not hasattr(self, '_children'):
             self._children = []
         self._children.append(child)
+        model_helper.ensure_consistent_link(self, child, 'audio_key',
+            'add_audio', update_database=update_database)
+        model_helper.ensure_consistent_link(self, child, 'speaker_key',
+            'add_speaker', update_database=update_database)
         if reverse_link:
             child.add_parent(self, reverse_link=False, 
                 update_database=update_database)
         if update_database: self.save(overwrite = True)
 
-    def add_parent(self, parent = None, parent_id = None, reverse_link = True,
+    def add_parent(self, parent = None, parent_key = None, reverse_link = True,
         update_database = True):
         if self.object_type == 'Phrase':
             raise TypeError("Phrase cannot have a parent segment.")
-        if parent is None and parent_id is None:
-            raise ValueError("Either parent or parent_id must be provided.")
-        if parent_id is None:
-            parent_id = parent.identifier
+        if parent is None and parent_key is None:
+            raise ValueError("Either parent or parent_key must be provided.")
+        if parent_key is None:
+            parent_key = parent.key
         if parent is None:
-            parent = cache.load(parent_id, with_links=True)
-        if parent.allowed_child_type != self.object_type:
+            parent = cache.load(parent_key, with_links=True)
+        if self.__class__ not in parent.allowed_child_types:
             m = f'{parent.object_type} cannot contain '
             m += f'{self.object_type} as child.'
             raise TypeError(m)
-        self.parent_id = parent_id
+        self.parent_key = parent_key
         self._parent = parent
+        model_helper.ensure_consistent_link(self, parent, 'audio_key',
+            'add_audio', update_database=update_database)
+        model_helper.ensure_consistent_link(self, parent, 'speaker_key',
+            'add_speaker', update_database=update_database)
         if reverse_link:
             parent.add_child(self, reverse_link=False, 
                 update_database=update_database)
@@ -192,8 +236,8 @@ class Segment:
             "label": self.label,
             "start": self.start,
             "end": self.end,
-            "parent_id": self.parent_id,
-            "child_ids": list(self.child_ids),
+            "parent_key": self.parent_key,
+            "child_keys": list(self.child_keys),
         }
 
         # Extra metadata
@@ -217,8 +261,8 @@ class Segment:
             start=data["start"],
             end=data["end"],
             identifier=data["identifier"],
-            parent_id=data.get("parent_id"),
-            child_ids=data.get("child_ids", []),
+            parent_key=data.get("parent_key"),
+            child_keys=data.get("child_keys", []),
             **extra,
         )
         return obj
@@ -266,6 +310,34 @@ class Segment:
             # recurse
             yield from child.iter_descendants_of_type(cls)
 
+    def iter_ancestors_of_type(self, cls):
+        """
+        Yield all ancestor segments of the given class type.
+        Walks upward (child → parent → parent → ...).
+        """
+        parent = self.parent
+        while parent is not None:
+            if isinstance(parent, cls):
+                yield parent
+            parent = parent.parent
+
+    def iter_descendants(self):
+        for child in self.children:
+            yield child
+            yield from child.iter_descendants()
+
+    def iter_ancestors(self):
+        parent = self.parent
+        while parent is not None:
+            yield parent
+            parent = parent.parent
+
+    def iter_family(self):
+        yield self
+        yield from self.iter_ancestors()
+        yield from self.iter_descendants()
+
+
 
 class Phrase(Segment):
     @property
@@ -295,11 +367,6 @@ class Word(Segment):
         """Return all phones in this word."""
         return list(self.iter_descendants_of_type(Phone))
 
-    @property
-    def phrase(self):
-        """Return the parent phrase of this word."""
-        return self.parent
-
 class Syllable(Segment):
 
     @property
@@ -312,12 +379,6 @@ class Syllable(Segment):
         """Return the parent word of this syllable."""
         return self.parent
 
-    @property
-    def phrase(self):
-        """Return the parent phrase of this syllable."""
-        if self.parent is None:
-            return None
-        return self.parent.parent
 
 class Phone(Segment):
 
@@ -333,28 +394,20 @@ class Phone(Segment):
             return None
         return self.parent.parent
 
-    @property
-    def phrase(self):
-        """Return the parent phrase of this phone."""
-        if self.parent is None or self.parent.parent is None:
-            return None
-        return self.parent.parent.parent
-
-
 
 class Audio:
-    def __init__(self, filename = None, identifier = None, save=False, 
+    def __init__(self, filename = None, key = None, save=False, 
         overwrite=False, **kwargs):
         self.object_type = self.__class__.__name__
-        if filename is None and identifier:
-            self._create_from_lmdb(identifier)
+        if filename is None and key:
+            self._create_from_lmdb(key)
             return
         self.filename = filename
         self.identifier = lmdb_key.make_item_identifier(self)
         self.overwrite = overwrite
 
-        self.speaker_ids = []
-        self.phrase_ids = []
+        self.speaker_keys = []
+        self.phrase_keys = []
         self._set_kwargs(**kwargs)
 
         if save:
@@ -375,19 +428,19 @@ class Audio:
         for k, v in kwargs.items():
             setattr(self, k, v)
             if k in self._metadata_attr_names: continue 
-            if k in ["speaker_ids", "phrase_ids"]: continue
+            if k in ["speaker_keys", "phrase_keys"]: continue
             self._metadata_attr_names.append(k)
 
-    def add_phrase(self, phrase=None, phrase_id=None, reverse_link=True,
+    def add_phrase(self, phrase=None, phrase_key=None, reverse_link=True,
         update_database=True):
-        if phrase is None and phrase_id is None:
-            raise ValueError("Either phrase or phrase_id must be provided.")
-        if phrase_id is None:
-            phrase_id = phrase.identifier
-        if phrase_id in self.phrase_ids: return
-        self.phrase_ids.append(phrase_id)
+        if phrase is None and phrase_key is None:
+            raise ValueError("Either phrase or phrase_key must be provided.")
+        if phrase_key is None:
+            phrase_key = phrase.key
+        if phrase_key in self.phrase_keys: return
+        self.phrase_keys.append(phrase_key)
         if phrase is None: 
-            phrase = cache.load(phrase_id, with_links=True)
+            phrase = cache.load(phrase_key, with_links=True)
             if not hasattr(self, '_phrases'):self._phrases = []
             self._phrases.append(phrase)
         if reverse_link:
@@ -396,16 +449,16 @@ class Audio:
         if update_database:
             self.save(overwrite=True)
 
-    def add_speaker(self, speaker=None, speaker_id=None, reverse_link=True,
+    def add_speaker(self, speaker=None, speaker_key=None, reverse_link=True,
         update_database=True):
-        if speaker is None and speaker_id is None:
-            raise ValueError("Either speaker or speaker_id must be provided.")
-        if speaker_id is None:
-            speaker_id = speaker.identifier
-        if speaker_id in self.speaker_ids: return
-        self.speaker_ids.append(speaker_id)
+        if speaker is None and speaker_key is None:
+            raise ValueError("Either speaker or speaker_key must be provided.")
+        if speaker_key is None:
+            speaker_key = speaker.key
+        if speaker_key in self.speaker_keys: return
+        self.speaker_keys.append(speaker_key)
         if speaker is None: 
-            speaker = cache.load(speaker_id, with_links=True)
+            speaker = cache.load(speaker_key, with_links=True)
             if not hasattr(self, '_speakers'):self._speakers = []
             self._speakers.append(speaker)
         if reverse_link:
@@ -418,8 +471,8 @@ class Audio:
     def speakers(self):
         if hasattr(self, '_speakers'): return self._speakers
         self._speakers = []
-        for sid in self.speaker_ids:
-            speaker = cache.load(sid, with_links=False)
+        for key in self.speaker_keys:
+            speaker = cache.load(key, with_links=False)
             self._speakers.append(speaker)
         return self._speakers
 
@@ -440,8 +493,8 @@ class Audio:
         base = {
             "identifier": self.identifier,
             "filename": str(self.filename),
-            "speaker_ids": list(self.speaker_ids),
-            "phrase_ids": list(self.phrase_ids),
+            "speaker_keys": list(self.speaker_keys),
+            "phrase_keys": list(self.phrase_keys),
         }
 
         # Extra metadata
@@ -463,28 +516,29 @@ class Audio:
         obj = cls(
             filename=data["filename"],
             identifier=data["identifier"],
-            speaker_ids=data.get(speaker_ids, []),
-            phrase_ids=data.get(phrase_ids, []),
+            speaker_keys=data.get(speaker_keys, []),
+            phrase_keys=data.get(phrase_keys, []),
             **extra,
         )
         return obj
 
-    def _create_from_lmdb(self, identifier):
-        instance = self.from_dict(lmdb_helper.lmdb_load(identifier))
+    def _create_from_lmdb(self, key):
+        instance = self.from_dict(lmdb_helper.lmdb_load(key))
         self.__dict__.update(instance.__dict__)
 
 
 class Speaker:
-    def __init__(self, name =None, identifier = None, save=False, 
+    def __init__(self, name =None, key = None, save=False, 
         overwrite=False, **kwargs):
-        if name is None and identifier:
-            self._create_from_lmdb(identifier)
+        if name is None and key:
+            self._create_from_lmdb(key)
             return
         self.object_type = self.__class__.__name__
         self.name = name
         self.identifier = lmdb_key.make_item_identifier(self)
         self.overwrite = overwrite
-        self.audio_ids = []
+        self.audio_keys = []
+        self.phrase_keys = []
 
         # Extra metadata
         for k, v in kwargs.items():
@@ -501,36 +555,56 @@ class Speaker:
     def __eq__(self, other):
         if not isinstance(other, Speaker):
             return False
-        return self.identifier == other.identifier 
+        return self.key == other.key
 
-    def add_audio(self, audio=None, audio_id=None, reverse_link=True):
-        if audio is None and audio_id is None:
-            raise ValueError("Either audio or audio_id must be provided.")
-        if audio_id is None:
-            audio_id = audio.identifier
-        if audio_id in self.audio_ids: return
+    def add_audio(self, audio=None, audio_key=None, reverse_link=True):
+        if audio is None and audio_key is None:
+            raise ValueError("Either audio or audio_key must be provided.")
+        if audio_key is None:
+            audio_key = audio.key
+        if audio_key in self.audio_keys: return
         if audio is None:
-            audio = cache.load(audio_id, with_links=True)
+            audio = cache.load(audio_key, with_links=False)
         self.audios.append(audio)
-        self.audio_ids.append(audio.identifier)
+        self.audio_keys.append(audio.key)
         if reverse_link:
             audio.add_speaker(self, reverse_link=False)
-        
 
+    def add_phrase(self, phrase=None, phrase_key=None, reverse_link=True,
+        propagate=True):
+        if phrase is None and phrase_key is None:
+            raise ValueError("Either phrase or phrase_key must be provided.")
+        if phrase_key is None:
+            phrase_key = phrase.key
+        if phrase_key in self.phrase_keys: return
+        self.phrase_keys.append(phrase_key)
+        if phrase is None:
+            phrase = cache.load(phrase_key, with_links=True)
+            if not hasattr(self, '_phrases'):self._phrases = []
+            self._phrases.append(phrase)
+        model_helper.ensure_consistent_link(self, phrase, 'audio_key',
+            'add_audio', propagate=propagate)
+        if reverse_link:
+            phrase.add_speaker(self, reverse_link=False)
+        self.save(overwrite=True)
+        
     @property
     def audios(self):
-        if hasattr(self, '_audios'): return self._audios
-        self._audios = []
-        for aid in self.audio_ids:
-            audio = cache.load(aid, with_links=False)
+        if not hasattr(self, '_audios'): self._audios = []
+        for audio_key in self.audio_keys:
+            audio = cache.load(audio_key, with_links=False)
+            if audio in self._audios: continue
             self._audios.append(audio)
 
     @property
     def phrases(self):
         """Return all phrases across all audios for this speaker."""
-        for audio in self.audios:
-            for phrase in audio.phrases:
-                yield phrase
+        if not hasattr(self, '_phrases'):self._phrases = []
+        for phrase_key in self.phrase_keys:
+            phrase = cache.load(phrase_key, with_links=False)
+            if phrase in self._phrases: continue
+            self._phrases.append(phrase)
+        return self._phrases
 
     @property
     def words(self):
@@ -570,11 +644,10 @@ class Speaker:
         base = {
             "identifier": self.identifier,
             "name": self.name,
-            "audio_ids": list(self.speaker_ids),
         }
 
         # Extra metadata
-        reserved = set(base.keys()) | {}
+        reserved = set(base.keys()) | {'overwrite'}
         extras = {}
         for k, v in self.__dict__.items():
             if k.startswith('_'): continue
@@ -592,20 +665,19 @@ class Speaker:
         obj = cls(
             name=data["name"],
             identifier=data["identifier"],
-            audio_ids=data.get("audio_ids", []),
             **extra,
         )
         return obj
 
-    def _create_from_lmdb(self, identifier):
-        instance = self.from_dict(lmdb_helper.lmdb_load(identifier))
+    def _create_from_lmdb(self, key):
+        instance = self.from_dict(lmdb_helper.lmdb_load(key))
         self.__dict__.update(instance.__dict__)
 
 
-Phrase.allowed_child_type = Word
-Word.allowed_child_type = Syllable
-Syllable.allowed_child_type = Phone
-Phone.allowed_child_type = None
+Phrase.allowed_child_types = [Word]
+Word.allowed_child_types = [Syllable, Phone]
+Syllable.allowed_child_types = [Phone]
+Phone.allowed_child_types = []
 
 cache = lmdb_cache.Cache()
 
