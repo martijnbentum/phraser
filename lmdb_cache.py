@@ -1,4 +1,5 @@
 import lmdb_helper
+import lmdb_key
 import locations
 import pickle
 
@@ -14,82 +15,62 @@ class Cache:
     def __init__(self, env = None, path = locations.cgn_lmdb ):
         self.env = lmdb_helper.open_lmdb(env, path)
         self._cache = {}      # id:str → object
-        self.CLASS_MAP = {}   # filled externally (AudioFile, etc.)
+        self.CLASS_MAP = {}   # filled externally (Audio, etc.)
 
     # ---------------------------------------------------------------
     # Register classes that can be deserialized
     # ---------------------------------------------------------------
     def register(self, cls):
-        self.CLASS_MAP[cls.object_type] = cls
+        self.CLASS_MAP[cls.__name__] = cls
 
     # ---------------------------------------------------------------
     # Save object (no nested pickles)
     # ---------------------------------------------------------------
-    def save(self, obj):
-        raw = pickle.dumps(obj.to_dict())
-        key = obj.identifier.encode("utf-8")
-
-        with self.env.begin(write=True) as txn:
-            txn.put(key, raw)
-
+    def save(self, obj, overwrite = False, fail_gracefully = False):
+        key = lmdb_key.item_to_key(obj)
+        d = obj.to_dict()
+        try: 
+            lmdb_helper.lmdb_write(
+                key = key,
+                value = pickle.dumps(d, protocol=pickle.HIGHEST_PROTOCOL),
+                env = self.env,
+                overwrite = overwrite,
+            )
+        except KeyError as e:
+            if fail_gracefully:
+                m = f"Object with key {key} already exists. "
+                m += "Skipping save."
+                print(m)
+            else:
+                raise e
         # Cache the actual Python object
-        self._cache[obj.id] = obj
+        self._cache[key] = obj
 
-    def load(self, identifier, with_links = False):
-        if with_links: return self.load_with_links(identifier)
-        if isinstance(identifier, bytes):
-            identifier = identifier.decode()
+
+    def load(self, key, with_links = False):
+        if isinstance(key, bytes):
+            key = key.decode()
 
         # Cached?
-        if identifier in self._cache:
-            return self._cache[identifier]
-        object_type = identifier.split(":")[0]
+        if key in self._cache:
+            return self._cache[key]
+        object_type = lmdb_key.key_to_object_type(key)
         cls = self.CLASS_MAP[object_type]
-        obj = cls(identifier = identifier)
-        self._cache[identifier] = obj
+        obj = cls(key = key)
+        self._cache[key] = obj
         return obj
 
-    def load_with_links(self, identifier):
-        obj = self.load(identifier)
-        if obj is None:
-            return None
+    def delete(self, key):
+        lmdb_helper.lmdb_delete(
+            key = key,
+            env = self.env,
+        )
+        if key in self._cache:
+            del self._cache[key]
 
-        visited = set()
-        self._resolve_links(obj, visited)
-        return obj
+    def update(old_key, obj):
+        self.delete(old_key)
+        self.save(obj, overwrite=True)
 
-    def _resolve_links(self, obj, visited):
-        if obj.identifier in visited:
-            return
-        visited.add(obj.identifier)
-        if getattr(obj, "parent_id", None):
-            parent = self.load(obj.parent_id)
-            if parent is not None:
-                obj.parent = parent
-                self._resolve_links(parent, visited)
-
-        if getattr(obj, "child_ids", None):
-            for cid in obj.child_ids:
-                print(cid)
-                child = self.load(cid)
-                if child is not None:
-                    if child not in obj.children:
-                        obj.children.append(child)
-                    child.parent = obj
-                    self._resolve_links(child, visited)
-
-        if getattr(obj, "speaker_id", None):
-            sp = self.load(obj.speaker_id)
-            if sp is not None:
-                obj.speaker = sp
-                if obj.id not in sp.phrase_ids:
-                    pass  # speaker-to-segment linkage optional
-                self._resolve_links(sp, visited)
-
-        if getattr(obj, "audio_id", None):
-            au = self.load(obj.audio_id)
-            if au is not None:
-                obj.audio = au
-                self._resolve_links(au, visited)
 
 
