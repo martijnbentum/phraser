@@ -65,7 +65,7 @@ def lmdb_load(key, env=None, path=locations.cgn_lmdb):
         raw = txn.get(k)
         if raw is None:
             return None
-        return pickle.loads(raw)
+        return pickle.loads(raw) 
 
 def lmdb_load_many(keys, env=None, path=locations.cgn_lmdb):
     """
