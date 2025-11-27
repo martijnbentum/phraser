@@ -52,8 +52,11 @@ class Cache:
             key = key.decode()
 
         # Cached?
+        print(f"Loading key: {key}")
         if key in self._cache:
+            print(' Found in cache.')
             return self._cache[key]
+        print(' Not in cache. Loading from LMDB...')
         object_type = lmdb_key.key_to_object_type(key)
         cls = self.CLASS_MAP[object_type]
         obj = cls(key = key)
