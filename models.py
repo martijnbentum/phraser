@@ -13,7 +13,7 @@ class Segment:
     allowed_child_types = []# subclasses override
 
     def __init__(self, label = None, start = None, end = None, 
-        key = None,parent_key=None, child_keys=None, save = False, 
+        key = None,parent_key=None, child_keys=None, save = True, 
         overwrite = False,**kwargs):
         
         if label is None and key is None:
@@ -392,11 +392,13 @@ class Phone(Segment):
         """Return the parent word of this phone."""
         if self.parent is None:
             return None
+        if self.parent.object_type == "Word":
+            return self.parent
         return self.parent.parent
 
 
 class Audio:
-    def __init__(self, filename = None, key = None, save=False, 
+    def __init__(self, filename = None, key = None, save=True, 
         overwrite=False, **kwargs):
         self.object_type = self.__class__.__name__
         if filename is None and key:
@@ -528,7 +530,7 @@ class Audio:
 
 
 class Speaker:
-    def __init__(self, name =None, key = None, save=False, 
+    def __init__(self, name =None, key = None, save=True, 
         overwrite=False, **kwargs):
         if name is None and key:
             self._create_from_lmdb(key)
