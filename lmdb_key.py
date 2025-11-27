@@ -112,6 +112,7 @@ def key_to_object_type(key):
     return rank_to_object_type(rank)
 
 def key_to_identifier(key):
+    if key == 'EMPTY': return key
     if ':' not in key:
         raise ValueError(f'Invalid key format: {key}')
     parts = key.split(":")
