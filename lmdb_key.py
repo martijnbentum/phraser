@@ -106,12 +106,14 @@ def object_to_scan_prefix(item, all_in_same_audio=False):
 def key_to_object_type(key):
     '''Get object type string from LMDB key.
     '''
+    if isinstance(key, bytes): key = key.decode()
     if ':' not in key:
         raise ValueError(f'Invalid key format: {key}')
     rank = int(key.split(":")[1]) 
     return rank_to_object_type(rank)
 
 def key_to_identifier(key):
+    if isinstance(key, bytes): key = key.decode()
     if key == 'EMPTY': return key
     if ':' not in key:
         raise ValueError(f'Invalid key format: {key}')
