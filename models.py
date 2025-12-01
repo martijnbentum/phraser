@@ -14,11 +14,13 @@ class Segment:
 
     def __init__(self, label = None, start = None, end = None, 
         key = None,parent_key=None, child_keys=None, save = True, 
-        overwrite = False,**kwargs):
+        overwrite = False,always_from_cache = False, object_data = None, 
+        **kwargs):
         
-        if label is None and key is None:
-            raise ValueError("Either label or key must be provided.")
+        if label is None and key is None and object_data is None:
+            raise ValueError("Either label, key or data must be provided.")
         if label is None and key:
+            if object_data: self._create_from_data(object_data)
             self._create_from_lmdb(key)
             return
         self.object_type = self.__class__.__name__
@@ -32,12 +34,14 @@ class Segment:
         self.audio_key = 'EMPTY'
         self.speaker_key = 'EMPTY'
         self.overwrite = overwrite
+        self.always_from_cache = always_from_cache
 
         # Extra metadata
         for k, v in kwargs.items():
             setattr(self, k, v)
 
         if save: self.save(overwrite=overwrite)
+        self._save_status = None
 
     def __repr__(self):
         m = f'{self.object_type}( '
@@ -61,6 +65,8 @@ class Segment:
     @property
     def parent(self):
         """Return the parent segment."""
+        if self.parent_key and self.always_from_cache:
+            self._parent = cache.load(self.parent_key, with_links=False)
         if hasattr(self, '_parent'): return self._parent
         if self.parent_key is None:return None
         self._parent = cache.load(self.parent_key, with_links=False)
@@ -70,27 +76,30 @@ class Segment:
     def children(self):
         """Return the list of child segments."""
         if not hasattr(self, '_children'): self._children = []
-        for key in self.child_keys:
-            child = cache.load(key, with_links=False)
-            if child is None: 
-                raise ValueError(f"Child with key {key} not found in LMDB.")
-            if child in self._children: continue
-            self._children.append(child)
+        elif self.always_from_cache:
+            for key in self.child_keys:
+                child = cache.load(key, with_links=False)
+                if child is None: 
+                    raise ValueError(f"Child with key {key} not found in LMDB.")
+                if child in self._children: continue
+                self._children.append(child)
         return self._children
 
     @property
     def audio(self):
         """Return the associated Audio object."""
-        if hasattr(self, '_audio'): return self._audio
         if self.audio_key is None or self.audio_key == 'EMPTY': return None
+        if hasattr(self, '_audio') and not self.always_from_cache: 
+            if self._audio: return self._audio
         self._audio = cache.load(self.audio_key, with_links=False)
         return self._audio
         
     @property
     def speaker(self):
         """Return the associated Speaker object."""
-        if hasattr(self, '_speaker'): return self._speaker
         if self.speaker_key is None or self.speaker_key == 'EMPTY': return None
+        if hasattr(self, '_speaker') and not self.always_from_cache: 
+            if self._speaker: return self._speaker
         self._speaker = cache.load(self.speaker_key, with_links=False)
         return self._speaker
 
@@ -111,7 +120,11 @@ class Segment:
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
 
     def _create_from_lmdb(self, key):
-        instance = self.from_dict(lmdb_helper.lmdb_load(key))
+        instance = self.from_dict(lmdb_helper.load(key))
+        self.__dict__.update(instance.__dict__)
+
+    def _create_from_data(self, data):
+        instance = self.from_dict(data)
         self.__dict__.update(instance.__dict__)
 
     def add_audio(self, audio = None, audio_key = None, reverse_link = True,
@@ -131,21 +144,31 @@ class Segment:
         if propagate: all_segments += list(self.iter_family())[1:]
 
         for segment in all_segments:
-            segment._apply_audio_key(audio_key, update_database)
+            segment._apply_audio_key(audio_key)
+        for segment in all_segments:
+            model_helper.fix_references(segment, segment._old_key, segment.key)
+
+        model_helper.write_changes_to_db(all_segments, cache)
 
         if reverse_link and audio is not None:
             if self.object_type == 'Phrase':
-                audio.add_phrase(phrase, reverse_link=False)
+                audio.add_phrase(self, reverse_link=False)
 
-    def _apply_audio_key(self, audio_key, update_database):
+        '''
+        if update_database and old_key != new_key:
+            cache.update(old_key, self)
+        '''
+
+    def _apply_audio_key(self, audio_key):
         old_key = self.key
         self.audio_key = audio_key
         new_key = self.key
-        if update_database and old_key != new_key:
-            cache.update(old_key, self)
+        if old_key != new_key: 
+            self._save_status = 'update'
+        self._old_key = old_key
 
     def add_speaker(self, speaker = None, speaker_key = None, 
-        update_database = True, propagate = True):
+        reverse_link = True, update_database = True, propagate = True):
         if speaker is None and speaker_key is None:
             raise ValueError("Either speaker or speaker_key must be provided.")
         if speaker_key is None:
@@ -159,7 +182,7 @@ class Segment:
             segment._apply_speaker_key(speaker_key, update_database)
         if reverse_link and speaker is not None:
             if self.object_type == 'Phrase':
-                speaker.add_phrase(phrase, reverse_link=False)
+                speaker.add_phrase(self, reverse_link=False)
 
     def _apply_speaker_key(self, speaker_key, update_database):
         if self.speaker_key == speaker_key: return
@@ -186,14 +209,14 @@ class Segment:
             m = f'{self.object_type} can only contain {self.allowed_child_types},'
             m += f'not {child.__class__}'
             raise TypeError(m)
-        self.child_keys.append(child.key)
-        if not hasattr(self, '_children'):
-            self._children = []
-        self._children.append(child)
         model_helper.ensure_consistent_link(self, child, 'audio_key',
             'add_audio', update_database=update_database)
         model_helper.ensure_consistent_link(self, child, 'speaker_key',
             'add_speaker', update_database=update_database)
+        self.child_keys.append(child.key)
+        if not hasattr(self, '_children'):
+            self._children = []
+        self._children.append(child)
         if reverse_link:
             child.add_parent(self, reverse_link=False, 
                 update_database=update_database)
@@ -241,7 +264,8 @@ class Segment:
         }
 
         # Extra metadata
-        reserved = set(base.keys()) | {'children', 'parent','audio', 'speaker'}
+        reserved = set(base.keys()) | {'children', 'parent','audio', 'speaker',
+            'always_from_cache','object_type','overwrite'}
         extras = {}
         for k, v in self.__dict__.items():
             if k.startswith('_'): continue
@@ -263,6 +287,7 @@ class Segment:
             identifier=data["identifier"],
             parent_key=data.get("parent_key"),
             child_keys=data.get("child_keys", []),
+            save = False,
             **extra,
         )
         return obj
@@ -520,12 +545,13 @@ class Audio:
             identifier=data["identifier"],
             speaker_keys=data.get(speaker_keys, []),
             phrase_keys=data.get(phrase_keys, []),
+            save = False,
             **extra,
         )
         return obj
 
     def _create_from_lmdb(self, key):
-        instance = self.from_dict(lmdb_helper.lmdb_load(key))
+        instance = self.from_dict(lmdb_helper.load(key))
         self.__dict__.update(instance.__dict__)
 
 
@@ -559,7 +585,8 @@ class Speaker:
             return False
         return self.key == other.key
 
-    def add_audio(self, audio=None, audio_key=None, reverse_link=True):
+    def add_audio(self, audio=None, audio_key=None, reverse_link=True,
+        update_database = True, propagate = None):
         if audio is None and audio_key is None:
             raise ValueError("Either audio or audio_key must be provided.")
         if audio_key is None:
@@ -567,13 +594,17 @@ class Speaker:
         if audio_key in self.audio_keys: return
         if audio is None:
             audio = cache.load(audio_key, with_links=False)
-        self.audios.append(audio)
+        if not hasattr(self, '_audios'): self._audios = []
+        if audio not in self._audios:
+            self._audios.append(audio)
         self.audio_keys.append(audio.key)
         if reverse_link:
             audio.add_speaker(self, reverse_link=False)
+        if update_database:
+            self.save(overwrite=True)
 
     def add_phrase(self, phrase=None, phrase_key=None, reverse_link=True,
-        propagate=True):
+        update_database=True):
         if phrase is None and phrase_key is None:
             raise ValueError("Either phrase or phrase_key must be provided.")
         if phrase_key is None:
@@ -585,10 +616,11 @@ class Speaker:
             if not hasattr(self, '_phrases'):self._phrases = []
             self._phrases.append(phrase)
         model_helper.ensure_consistent_link(self, phrase, 'audio_key',
-            'add_audio', propagate=propagate)
+            'add_audio', update_database=update_database)
         if reverse_link:
             phrase.add_speaker(self, reverse_link=False)
-        self.save(overwrite=True)
+        if update_database:
+            self.save(overwrite=True)
         
     @property
     def audios(self):
@@ -597,6 +629,7 @@ class Speaker:
             audio = cache.load(audio_key, with_links=False)
             if audio in self._audios: continue
             self._audios.append(audio)
+        return self._audios
 
     @property
     def phrases(self):
@@ -667,12 +700,13 @@ class Speaker:
         obj = cls(
             name=data["name"],
             identifier=data["identifier"],
+            save = False,
             **extra,
         )
         return obj
 
     def _create_from_lmdb(self, key):
-        instance = self.from_dict(lmdb_helper.lmdb_load(key))
+        instance = self.from_dict(lmdb_helper.load(key))
         self.__dict__.update(instance.__dict__)
 
 
