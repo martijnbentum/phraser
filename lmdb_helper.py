@@ -25,7 +25,7 @@ def _key_bytes(key):
     return str(key).encode("utf-8")
 
 
-def lmdb_write(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
+def write(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
     '''Write value as a pickled object to LMDB under key.
     key : Any
         Key under which the object is stored. Converted to bytes if needed.
@@ -38,7 +38,7 @@ def lmdb_write(key, value, env=None, path=locations.cgn_lmdb, overwrite = False)
     '''
     env = open_lmdb(env, path)
     k = _key_bytes(key)
-    v = pickle.dumps(value)
+    v = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)  
     if not overwrite:
         exists= key_exists(k, env=env)
         if exists:
@@ -49,7 +49,7 @@ def lmdb_write(key, value, env=None, path=locations.cgn_lmdb, overwrite = False)
         txn.put(k, v)  # overwrite=True by default
 
 
-def lmdb_load(key, env=None, path=locations.cgn_lmdb):
+def load(key, env=None, path=locations.cgn_lmdb):
     '''load and unpickle object from LMDB under key.
     key : Any
         Key to retrieve. Converted to bytes automatically.
@@ -67,7 +67,7 @@ def lmdb_load(key, env=None, path=locations.cgn_lmdb):
             return None
         return pickle.loads(raw) 
 
-def lmdb_load_many(keys, env=None, path=locations.cgn_lmdb):
+def load_many(keys, env=None, path=locations.cgn_lmdb):
     """
     Load multiple LMDB values in a single read transaction.
     keys : list
@@ -104,7 +104,7 @@ def key_exists(key, env=None, path=locations.cgn_lmdb):
     with env.begin() as txn:
         return txn.get(k) is not None
 
-def lmdb_keys_with_prefix( prefix, env = None, path = locations.cgn_lmdb):
+def get_keys_with_prefix( prefix, env = None, path = locations.cgn_lmdb):
     """Return all keys (as bytes) starting with prefix (string or bytes)."""
     env = open_lmdb(env, path)
     prefix = _key_bytes(prefix)
@@ -119,7 +119,7 @@ def lmdb_keys_with_prefix( prefix, env = None, path = locations.cgn_lmdb):
                 result.append(k)
     return result
 
-def lmdb_all_keys(env = None, path = locations.cgn_lmdb):
+def all_keys(env = None, path = locations.cgn_lmdb):
     env = open_lmdb(env, path)
     keys = []
     with env.begin() as txn:
@@ -128,7 +128,46 @@ def lmdb_all_keys(env = None, path = locations.cgn_lmdb):
             keys.append(k)
     return keys
 
-def lmdb_delete(key, env=None, path=locations.cgn_lmdb):
+def object_type_to_keys_dict(env = None, path = locations.cgn_lmdb):
+    import lmdb_key
+    all_keys_list = all_keys(env, path)
+    d = {}
+    for key in all_keys_list:
+        object_type = lmdb_key.key_to_object_type(key)
+        d.setdefault(object_type, []).append(key)
+    return d
+
+def all_object_type_keys(object_type, d = None, env = None, 
+    path = locations.cgn_lmdb):
+    if d is None: d = object_type_to_keys_dict(env, path)
+    if object_type not in d:
+        raise ValueError(f'No keys found for object type: {object_type}')
+    selected_keys = d[object_type]
+    return selected_keys
+
+def all_audio_keys(env = None, path = locations.cgn_lmdb):
+    return all_object_type_keys('Audio', env, path)
+
+def all_phrase_keys(env = None, path = locations.cgn_lmdb):
+    return all_object_type_keys('Phrase', env, path)
+
+def all_word_keys(env = None, path = locations.cgn_lmdb):
+    return all_object_type_keys('Word', env, path)
+
+def all_syllable_keys(env = None, path = locations.cgn_lmdb):
+    return all_object_type_keys('Syllable', env, path)
+
+def all_phone_keys(env = None, path = locations.cgn_lmdb):
+    return all_object_type_keys('Phone', env, path)
+
+def all_speaker_keys(env = None, path = locations.cgn_lmdb):
+    return all_object_type_keys('Speaker', env, path)
+
+
+        
+    
+
+def delete(key, env=None, path=locations.cgn_lmdb):
     env = open_lmdb(env, path)
     k= _key_bytes(key)
     if not key_exists(k, env=env): return
@@ -136,7 +175,7 @@ def lmdb_delete(key, env=None, path=locations.cgn_lmdb):
     with env.begin(write=True) as txn:
         txn.delete(k)
 
-def lmdb_delete_many(keys, env=None, path=locations.cgn_lmdb):
+def delete_many(keys, env=None, path=locations.cgn_lmdb):
     env = open_lmdb(env, path)
     keys_b = [_key_bytes(k) for k in keys]
 
@@ -144,7 +183,7 @@ def lmdb_delete_many(keys, env=None, path=locations.cgn_lmdb):
         for k in keys_b:
             txn.delete(k)
 
-def lmdb_delete_with_prefix( prefix, env = None, path = locations.cgn_lmdb):
+def delete_with_prefix( prefix, env = None, path = locations.cgn_lmdb):
     """Delete all keys starting with prefix (string or bytes)."""
     env = open_lmdb(env, path)
 
@@ -155,11 +194,11 @@ def lmdb_delete_with_prefix( prefix, env = None, path = locations.cgn_lmdb):
         for k in keys_to_delete:
             txn.delete(k)
 
-def lmdb_delete_all(env=None, path=locations.cgn_lmdb):
+def delete_all(env=None, path=locations.cgn_lmdb):
     """Delete all keys in the LMDB store."""
     env = open_lmdb(env, path)
 
-    keys_to_delete = lmdb_all_keys(env)
+    keys_to_delete = all_keys(env)
     print(f"Deleting all {len(keys_to_delete)} keys.")
 
     with env.begin(write=True) as txn:
