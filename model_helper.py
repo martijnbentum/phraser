@@ -39,3 +39,37 @@ def ensure_consistent_link(a, b, attr, add_method_name, update_database=True):
             propagate=True,
         )
 
+
+def fix_references(segment, old_key, new_key):
+    refs_changed = False
+
+    # parent
+    parent = getattr(segment, "parent", None)
+        
+    if parent is not None and hasattr(parent, "child_keys"):
+        new_list = [
+            new_key if ck == old_key else ck
+            for ck in parent.child_keys
+        ]
+        if new_list != parent.child_keys:
+            parent.child_keys = new_list
+            refs_changed = True
+            if parent._save_status is None:
+                parent._save_status = "save"
+
+    # children
+    for child in getattr(segment, "children", []):
+        if getattr(child, "parent_key", None) == old_key:
+            child.parent_key = new_key
+            refs_changed = True
+            if child._save_status is None:
+                child._save_status = "save"
+
+
+def write_changes_to_db(segments, cache):
+    for segment in segments:
+        if segment._save_status == 'save':
+            segment.save(overwrite=True)
+        elif segment._save_status == 'update':
+            cache.update(segment._old_key, segment)
+        segment._save_status = None
