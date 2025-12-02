@@ -80,15 +80,15 @@ def load_many(keys, env=None, path=locations.cgn_lmdb):
     env = open_lmdb(env, path)
     keys_b = [_key_bytes(k) for k in keys]
 
-    results = {}
+    objs = [[] for _ in range(len(keys))]
     with env.begin() as txn:
-        for k, k_raw in zip(keys, keys_b):
+        for index, k_raw in enumerate(keys_b):
             raw = txn.get(k_raw)
             if raw is not None:
-                results[k] = pickle.loads(raw)
+                objs[index] = pickle.loads(raw)
             else:
-                results[k] = None
-    return results
+                objs[index] = None
+    return objs
 
 def key_exists(key, env=None, path=locations.cgn_lmdb):
     '''Check whether a key exists in the LMDB store.
@@ -137,8 +137,8 @@ def object_type_to_keys_dict(env = None, path = locations.cgn_lmdb):
         d.setdefault(object_type, []).append(key)
     return d
 
-def all_object_type_keys(object_type, d = None, env = None, 
-    path = locations.cgn_lmdb):
+def all_object_type_keys(object_type, env = None, 
+    path = locations.cgn_lmdb, d = None):
     if d is None: d = object_type_to_keys_dict(env, path)
     if object_type not in d:
         raise ValueError(f'No keys found for object type: {object_type}')
