@@ -14,7 +14,7 @@ class Segment:
 
     def __init__(self, label = None, start = None, end = None, 
         key = None,parent_key=None, child_keys=None, save = True, 
-        overwrite = False,always_from_cache = False, object_data = None, 
+        overwrite = False, object_data = None, 
         **kwargs):
         
         if label is None and key is None and object_data is None:
@@ -34,7 +34,6 @@ class Segment:
         self.audio_key = 'EMPTY'
         self.speaker_key = 'EMPTY'
         self.overwrite = overwrite
-        self.always_from_cache = always_from_cache
 
         # Extra metadata
         for k, v in kwargs.items():
@@ -65,8 +64,6 @@ class Segment:
     @property
     def parent(self):
         """Return the parent segment."""
-        if self.parent_key and self.always_from_cache:
-            self._parent = cache.load(self.parent_key, with_links=False)
         if hasattr(self, '_parent'): return self._parent
         if self.parent_key is None:return None
         self._parent = cache.load(self.parent_key, with_links=False)
@@ -76,21 +73,14 @@ class Segment:
     def children(self):
         """Return the list of child segments."""
         if not hasattr(self, '_children'): self._children = []
-        elif self.always_from_cache:
-            for key in self.child_keys:
-                child = cache.load(key, with_links=False)
-                if child is None: 
-                    raise ValueError(f"Child with key {key} not found in LMDB.")
-                if child in self._children: continue
-                self._children.append(child)
+        self._children = cache.load_many(self.child_keys, with_links=False)
         return self._children
 
     @property
     def audio(self):
         """Return the associated Audio object."""
         if self.audio_key is None or self.audio_key == 'EMPTY': return None
-        if hasattr(self, '_audio') and not self.always_from_cache: 
-            if self._audio: return self._audio
+        if hasattr(self, '_audio'): return self._audio
         self._audio = cache.load(self.audio_key, with_links=False)
         return self._audio
         
@@ -98,8 +88,7 @@ class Segment:
     def speaker(self):
         """Return the associated Speaker object."""
         if self.speaker_key is None or self.speaker_key == 'EMPTY': return None
-        if hasattr(self, '_speaker') and not self.always_from_cache: 
-            if self._speaker: return self._speaker
+        if hasattr(self, '_speaker'): return self._speaker
         self._speaker = cache.load(self.speaker_key, with_links=False)
         return self._speaker
 
@@ -265,7 +254,7 @@ class Segment:
 
         # Extra metadata
         reserved = set(base.keys()) | {'children', 'parent','audio', 'speaker',
-            'always_from_cache','object_type','overwrite'}
+            'object_type','overwrite'}
         extras = {}
         for k, v in self.__dict__.items():
             if k.startswith('_'): continue
@@ -543,8 +532,8 @@ class Audio:
         obj = cls(
             filename=data["filename"],
             identifier=data["identifier"],
-            speaker_keys=data.get(speaker_keys, []),
-            phrase_keys=data.get(phrase_keys, []),
+            speaker_keys=data.get('speaker_keys', []),
+            phrase_keys=data.get('phrase_keys', []),
             save = False,
             **extra,
         )
