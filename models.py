@@ -1,6 +1,6 @@
 import uuid
 import lmdb_helper 
-import lmdb_cache 
+import cache 
 import lmdb_key
 import model_helper
 
@@ -708,7 +708,7 @@ Syllable.allowed_child_types = [Phone]
 Phone.allowed_child_types = []
 
 
-cache = lmdb_cache.Cache()
+cache = cache.Cache()
 
 cache.register(Audio)
 cache.register(Phrase)
@@ -718,12 +718,12 @@ cache.register(Phone)
 cache.register(Speaker)
 
 
-Audio.objects = lmdb_cache.Objects(Audio, cache)
-Phrase.objects = lmdb_cache.Objects(Phrase, cache)
-Word.objects = lmdb_cache.Objects(Word, cache)
-Syllable.objects = lmdb_cache.Objects(Syllable, cache)
-Phone.objects = lmdb_cache.Objects(Phone, cache)
-Speaker.objects = lmdb_cache.Objects(Speaker, cache)
+Audio.objects = cache.Objects(Audio, cache)
+Phrase.objects = cache.Objects(Phrase, cache)
+Word.objects = cache.Objects(Word, cache)
+Syllable.objects = cache.Objects(Syllable, cache)
+Phone.objects = cache.Objects(Phone, cache)
+Speaker.objects = cache.Objects(Speaker, cache)
     
 
 
