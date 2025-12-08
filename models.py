@@ -9,7 +9,6 @@ class Segment:
     '''
     Base time-aligned segment with a unique ID and parent/child links.
     '''
-
     allowed_child_types = []# subclasses override
 
     def __init__(self, label = None, start = None, end = None, 
@@ -55,6 +54,7 @@ class Segment:
         return self.key == other.key and \
             self.audio_key == other.audio_key and \
             self.object_type == other.object_type
+
 
     @property
     def key(self):
@@ -354,6 +354,7 @@ class Segment:
 
 
 class Phrase(Segment):
+
     @property
     def words(self):
         """Return all words in this phrase."""
@@ -412,6 +413,7 @@ class Phone(Segment):
 
 
 class Audio:
+
     def __init__(self, filename = None, key = None, save=True, 
         overwrite=False, **kwargs):
         self.object_type = self.__class__.__name__
@@ -483,14 +485,20 @@ class Audio:
         if update_database:
             self.save(overwrite=True)
 
+
     @property
     def speakers(self):
         if hasattr(self, '_speakers'): return self._speakers
-        self._speakers = []
-        for key in self.speaker_keys:
-            speaker = cache.load(key, with_links=False)
-            self._speakers.append(speaker)
+        self._speakers= cache.load_many(self.speaker_keys, with_links=False)
         return self._speakers
+
+    @property
+    def phrases(self):
+        if hasattr(self, '_phrases'): return self._phrases
+        self._phrases= cache.load_many(self.phrase_keys, with_links=False)
+        return self._speakers
+    
+
 
     @property
     def key(self):
@@ -545,6 +553,7 @@ class Audio:
 
 
 class Speaker:
+
     def __init__(self, name =None, key = None, save=True, 
         overwrite=False, **kwargs):
         if name is None and key:
@@ -610,24 +619,18 @@ class Speaker:
             phrase.add_speaker(self, reverse_link=False)
         if update_database:
             self.save(overwrite=True)
-        
+
     @property
     def audios(self):
-        if not hasattr(self, '_audios'): self._audios = []
-        for audio_key in self.audio_keys:
-            audio = cache.load(audio_key, with_links=False)
-            if audio in self._audios: continue
-            self._audios.append(audio)
+        if hasattr(self, '_audios'): return self._audios 
+        self._audios = cache.load_many(self.audio_keys, with_links=False)
         return self._audios
 
     @property
     def phrases(self):
         """Return all phrases across all audios for this speaker."""
-        if not hasattr(self, '_phrases'):self._phrases = []
-        for phrase_key in self.phrase_keys:
-            phrase = cache.load(phrase_key, with_links=False)
-            if phrase in self._phrases: continue
-            self._phrases.append(phrase)
+        if hasattr(self, '_phrases'): return self._phrases 
+        self._phrases = cache.load_many(self.phrase_keys, with_links=False)
         return self._phrases
 
     @property
@@ -704,6 +707,7 @@ Word.allowed_child_types = [Syllable, Phone]
 Syllable.allowed_child_types = [Phone]
 Phone.allowed_child_types = []
 
+
 cache = lmdb_cache.Cache()
 
 cache.register(Audio)
@@ -712,5 +716,16 @@ cache.register(Word)
 cache.register(Syllable)
 cache.register(Phone)
 cache.register(Speaker)
+
+
+Audio.objects = lmdb_cache.Objects(Audio, cache)
+Phrase.objects = lmdb_cache.Objects(Phrase, cache)
+Word.objects = lmdb_cache.Objects(Word, cache)
+Syllable.objects = lmdb_cache.Objects(Syllable, cache)
+Phone.objects = lmdb_cache.Objects(Phone, cache)
+Speaker.objects = lmdb_cache.Objects(Speaker, cache)
+    
+
+
 
 
