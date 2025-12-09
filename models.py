@@ -3,6 +3,7 @@ import lmdb_helper
 import cache 
 import lmdb_key
 import model_helper
+import query
 
 
 class Segment:
@@ -718,12 +719,12 @@ cache.register(Phone)
 cache.register(Speaker)
 
 
-Audio.objects = cache.Objects(Audio, cache)
-Phrase.objects = cache.Objects(Phrase, cache)
-Word.objects = cache.Objects(Word, cache)
-Syllable.objects = cache.Objects(Syllable, cache)
-Phone.objects = cache.Objects(Phone, cache)
-Speaker.objects = cache.Objects(Speaker, cache)
+Audio.objects = query.get_class_object(Audio, cache)
+Phrase.objects = query.get_class_object(Phrase, cache)
+Word.objects = query.get_class_object(Word, cache)
+Syllable.objects = query.get_class_object(Syllable, cache)
+Phone.objects = query.get_class_object(Phone, cache)
+Speaker.objects = query.get_class_object(Speaker, cache)
     
 
 
