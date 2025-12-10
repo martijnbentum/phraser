@@ -1,9 +1,18 @@
 import uuid
 import lmdb_helper 
-import cache 
+import cache as cache_module
 import lmdb_key
 import model_helper
 import query
+
+R= "\033[91m"
+G= "\033[92m"
+B= "\033[94m"
+GR= "\033[90m"
+RE= "\033[0m"
+
+object_type_to_ljust_label = {'Phrase': 40, 'Word': 15, 
+    'Syllable': 12, 'Phone': 3}
 
 
 class Segment:
@@ -43,10 +52,13 @@ class Segment:
         self._save_status = None
 
     def __repr__(self):
-        m = f'{self.object_type}( '
-        m += f'label={self.label}, '
-        m += f'start={self.start}, end={self.end} | '
-        m += f'ID={self.identifier} '
+        n = object_type_to_ljust_label.get(self.object_type, 15)
+        if len(self.label) > n: label = self.label[:n-3] + '...'
+        else: label = self.label
+        m = f'{R}{self.object_type}{RE} '
+        m += f'{B}label {RE}{label:<{n}} | '
+        m += f'{B}duration {RE}{self.duration:.3f} | '
+        m += f'{GR}ID {self.identifier}{RE} '
         return m
 
     def __eq__(self, other):
@@ -433,8 +445,14 @@ class Audio:
             self.save(overwrite=overwrite)
 
     def __repr__(self):
-        m = f'Audio( filename={self.filename} | '
-        m += f'ID={self.identifier} )'
+        if len(self.filename) > 20: 
+            filename = self.filename.split('/')[-1] 
+            if len(filename) > 20: filename = '...' + filename[-17:]
+        else: filename = self.filename
+        m = f'{R}Audio{RE} {B}filename {RE}{filename} '
+        if hasattr(self, 'duration'):
+            m += f'{B}duration {RE}{self.duration:.1f} | '
+        m += f'{GR}ID={self.identifier}{RE}'
         return m
 
     def __eq__(self, other):
@@ -575,8 +593,11 @@ class Speaker:
             self.save(overwrite=overwrite)
 
     def __repr__(self):
-        m = f'Speaker( name={self.name} | '
-        m += f'ID={self.identifier} )'
+        if len(self.name) > 12: name = self.name[:9] + '...'
+        else: name = self.name
+            
+        m = f'{R}Speaker{RE} {B}name {RE}{name:<20} | '
+        m += f'{GR}ID={self.identifier}{RE}'
         return m
 
     def __eq__(self, other):
@@ -637,23 +658,29 @@ class Speaker:
     @property
     def words(self):
         """Return all words across all phrases for this speaker."""
+        words = []
         for phrase in self.phrases:
             for word in phrase.words:
-                yield word
+                words.append(word)
+        return words
 
     @property
     def syllables(self):
         """Return all syllables across all phrases for this speaker."""
-        for word in self.words:
-            for syllable in word.syllables:
-                yield syllable
+        syllables = []
+        for phrase in self.phrases:
+            for syllable in phrase.syllables:
+                syllables.append(syllable)
+        return syllables
 
     @property
     def phones(self):
         """Return all phones across all phrases for this speaker."""
-        for word in self.word:
-            for phone in syllable.phones:
-                yield phone
+        phones = []
+        for phrase in self.phrases:
+            for phone in phrase.phones:
+                phones.append(phone)
+        return phones
 
             
     @property
@@ -709,24 +736,36 @@ Syllable.allowed_child_types = [Phone]
 Phone.allowed_child_types = []
 
 
-cache = cache.Cache()
+def load_cache(fraction = None):
+    global cache
+    cache = cache_module.Cache()
 
-cache.register(Audio)
-cache.register(Phrase)
-cache.register(Word)
-cache.register(Syllable)
-cache.register(Phone)
-cache.register(Speaker)
-
-
-Audio.objects = query.get_class_object(Audio, cache)
-Phrase.objects = query.get_class_object(Phrase, cache)
-Word.objects = query.get_class_object(Word, cache)
-Syllable.objects = query.get_class_object(Syllable, cache)
-Phone.objects = query.get_class_object(Phone, cache)
-Speaker.objects = query.get_class_object(Speaker, cache)
-    
+    cache.register(Audio)
+    cache.register(Phrase)
+    cache.register(Word)
+    cache.register(Syllable)
+    cache.register(Phone)
+    cache.register(Speaker)
 
 
+    Audio.objects = query.get_class_object(Audio, cache)
+    Phrase.objects = query.get_class_object(Phrase, cache)
+    Word.objects = query.get_class_object(Word, cache)
+    Syllable.objects = query.get_class_object(Syllable, cache)
+    Phone.objects = query.get_class_object(Phone, cache)
+    Speaker.objects = query.get_class_object(Speaker, cache)
+
+    cache.relations_to_class_map = {
+        'audios': Audio, 
+        'speakers': Speaker,
+        'phrases': Phrase,
+        'words': Word,
+        'syllables': Syllable,
+        'phones': Phone,
+    }
+    if fraction is not None:
+        cache._preload_sampled_fraction(fraction)
+            
+load_cache()
 
 
