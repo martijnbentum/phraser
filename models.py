@@ -388,7 +388,7 @@ class Word(Segment):
     @property
     def syllables(self):
         """Return all syllables in this word."""
-        return self.children
+        return list(self.iter_descendants_of_type(Syllable))
 
     @property
     def phones(self):
