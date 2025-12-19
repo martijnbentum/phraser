@@ -16,22 +16,18 @@ object_type_to_ljust_label = {'Phrase': 40, 'Word': 15,
 
 
 class Segment:
+    DB_FIELDS = {'identifier', 'label', 'start', 'end', 'parent_key',
+        'child_keys', 'audio_key', 'speaker_key'}
+    METADATA_FIELDS = {}
     '''
     Base time-aligned segment with a unique ID and parent/child links.
     '''
     allowed_child_types = []# subclasses override
 
     def __init__(self, label = None, start = None, end = None, 
-        key = None,parent_key=None, child_keys=None, save = True, 
-        overwrite = False, object_data = None, 
-        **kwargs):
+        parent_key=None, child_keys=None, save = True, 
+        overwrite = False, **kwargs):
         
-        if label is None and key is None and object_data is None:
-            raise ValueError("Either label, key or data must be provided.")
-        if label is None and key:
-            if object_data: self._create_from_data(object_data)
-            self._create_from_lmdb(key)
-            return
         self.object_type = self.__class__.__name__
         self.label = label
         self.start = float(start)
@@ -120,14 +116,6 @@ class Segment:
             
     def save(self, overwrite = None, fail_gracefully = False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
-
-    def _create_from_lmdb(self, key):
-        instance = self.from_dict(lmdb_helper.load(key))
-        self.__dict__.update(instance.__dict__)
-
-    def _create_from_data(self, data):
-        instance = self.from_dict(data)
-        self.__dict__.update(instance.__dict__)
 
     def add_audio(self, audio = None, audio_key = None, reverse_link = True,
         update_database = True, propagate = True):
@@ -252,47 +240,43 @@ class Segment:
 
     # ------------------ serialization ------------------
 
+    def delete(self):
+        cache.delete(self.key)
+
     def to_dict(self):
         """
-        make a clean dict (for LMDB storage).
+        Serialize to a clean dict (for LMDB storage).
         """
-        base = {
-            "identifier": self.identifier,
-            "label": self.label,
-            "start": self.start,
-            "end": self.end,
-            "parent_key": self.parent_key,
-            "child_keys": list(self.child_keys),
-        }
+        base = {}
+        for name in self.DB_FIELDS:
+            base[name] = getattr(self, name)
+        for name in self.METADATA_FIELDS:
+            if hasattr(self, name):
+                base[name] = getattr(self, name)
 
         # Extra metadata
-        reserved = set(base.keys()) | {'children', 'parent','audio', 'speaker',
-            'object_type','overwrite'}
-        extras = {}
+        reserved = set(base.keys()) | {'overwrite','extra', 'object_type',
+            'children', 'parent','audio', 'speaker'}
+        extra = {} 
+        if hasattr(self, 'extra'):
+            extra.update(self.extra)
         for k, v in self.__dict__.items():
             if k.startswith('_'): continue
             if k in reserved: continue
-            extras[k] = v
-        base["extra"] = extras
+            if k in extra: continue
+            extra[k] = v
+        base['extra'] = extra
         return base
 
-    @classmethod
-    def from_dict(cls, data):
-        """
-        Create an instance from a dict with unresolved links.
-        """
-        extra = data.get("extra", {})
-        obj = cls(
-            label=data["label"],
-            start=data["start"],
-            end=data["end"],
-            identifier=data["identifier"],
-            parent_key=data.get("parent_key"),
-            child_keys=data.get("child_keys", []),
-            save = False,
-            **extra,
-        )
-        return obj
+    @property
+    def metadata_present(self):
+        names = []
+        for name in self.METADATA_FIELDS:
+            if hasattr(self, name):
+                names.append(name)
+        return names
+
+
 
     @property
     def next_sibling(self):
@@ -426,13 +410,8 @@ class Phone(Segment):
 
 
 class Audio:
-
-    def __init__(self, filename = None, key = None, save=True, 
-        overwrite=False, **kwargs):
+    def __init__(self, filename = None,  save=True, overwrite=False, **kwargs):
         self.object_type = self.__class__.__name__
-        if filename is None and key:
-            self._create_from_lmdb(key)
-            return
         self.filename = filename
         self.identifier = lmdb_key.make_item_identifier(self)
         self.overwrite = overwrite
@@ -517,8 +496,6 @@ class Audio:
         self._phrases= cache.load_many(self.phrase_keys, with_links=False)
         return self._speakers
     
-
-
     @property
     def key(self):
         """Return the LMDB key for this segment."""
@@ -550,34 +527,16 @@ class Audio:
         base["extra"] = extras
         return base
 
-    @classmethod
-    def from_dict(cls, data):
-        """
-        Create an instance from a dict with unresolved links.
-        """
-        extra = data.get("extra", {})
-        obj = cls(
-            filename=data["filename"],
-            identifier=data["identifier"],
-            speaker_keys=data.get('speaker_keys', []),
-            phrase_keys=data.get('phrase_keys', []),
-            save = False,
-            **extra,
-        )
-        return obj
-
-    def _create_from_lmdb(self, key):
-        instance = self.from_dict(lmdb_helper.load(key))
-        self.__dict__.update(instance.__dict__)
 
 
 class Speaker:
-
-    def __init__(self, name =None, key = None, save=True, 
-        overwrite=False, **kwargs):
-        if name is None and key:
-            self._create_from_lmdb(key)
-            return
+    DB_FIELDS = {'name', 'identifier', 'audio_keys', 'phrase_keys'}
+    METADATA_FIELDS = {'gender', 'age', 'language', 'dialect', 'region', 
+        'channel'}
+    FIELDS = DB_FIELDS.union(METADATA_FIELDS)
+    
+        
+    def __init__(self, name =None, save=True, overwrite=False, **kwargs):
         self.object_type = self.__class__.__name__
         self.name = name
         self.identifier = lmdb_key.make_item_identifier(self)
@@ -586,8 +545,18 @@ class Speaker:
         self.phrase_keys = []
 
         # Extra metadata
+        extra = {}
+        if 'extra' in kwargs:
+            e = kwargs.pop('extra')
+            if not isinstance(v, dict):
+                raise ValueError("extra must be a dict")
+            extra.update( e )
         for k, v in kwargs.items():
-            setattr(self, k, v)
+            if k in self.FIELDS:
+                setattr(self, k, v)
+            elif not k in extra: 
+                extra[k] = v
+        self.extra = extra
 
         if save:
             self.save(overwrite=overwrite)
@@ -604,6 +573,23 @@ class Speaker:
         if not isinstance(other, Speaker):
             return False
         return self.key == other.key
+
+    def __contains__(self, key):
+        return hasattr(self, key) or key in self.extra
+
+    def get(self, key, default = None):
+        if hasattr(self, key):
+            return getattr(self, key)
+        if key in self.extra:
+            return self.extra[key]
+
+    def set(self, key, value, save = False):
+        if key in self.FIELDS:
+            setattr(self, key, value)
+        else:
+           self.extra[key] = value
+        if save:
+            self.save(overwrite=True)
 
     def add_audio(self, audio=None, audio_key=None, reverse_link=True,
         update_database = True, propagate = None):
@@ -692,42 +678,41 @@ class Speaker:
     def save(self, overwrite=None, fail_gracefully=False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
 
+    def delete(self):
+        cache.delete(self.key)
+
     def to_dict(self):
         """
         Serialize to a clean dict (for LMDB storage).
         """
-        base = {
-            "identifier": self.identifier,
-            "name": self.name,
-        }
+        base = {}
+        for name in self.DB_FIELDS:
+            base[name] = getattr(self, name)
+        for name in self.METADATA_FIELDS:
+            if hasattr(self, name):
+                base[name] = getattr(self, name)
 
         # Extra metadata
-        reserved = set(base.keys()) | {'overwrite'}
-        extras = {}
+        reserved = set(base.keys()) | {'overwrite','extra', 'object_type'}
+        extra = {} 
+        if hasattr(self, 'extra'):
+            extra.update(self.extra)
         for k, v in self.__dict__.items():
             if k.startswith('_'): continue
             if k in reserved: continue
-            extras[k] = v
-        base["extra"] = extras
+            if k in extra: continue
+            extra[k] = v
+        base['extra'] = extra
         return base
 
-    @classmethod
-    def from_dict(cls, data):
-        """
-        Create an instance from a dict with unresolved links.
-        """
-        extra = data.get("extra", {})
-        obj = cls(
-            name=data["name"],
-            identifier=data["identifier"],
-            save = False,
-            **extra,
-        )
-        return obj
+    @property
+    def metadata_present(self):
+        names = []
+        for name in self.METADATA_FIELDS:
+            if hasattr(self, name):
+                names.append(name)
+        return names
 
-    def _create_from_lmdb(self, key):
-        instance = self.from_dict(lmdb_helper.load(key))
-        self.__dict__.update(instance.__dict__)
 
 
 Phrase.allowed_child_types = [Word]
