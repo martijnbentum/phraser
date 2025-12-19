@@ -2,6 +2,7 @@ import lmdb
 import locations
 import pickle
 from pathlib import Path
+from progressbar import progressbar
 
 def open_lmdb(env=None, path=locations.cgn_lmdb, map_size=1024**4):
     '''
@@ -47,6 +48,32 @@ def write(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
             raise KeyError(m)
     with env.begin(write=True) as txn:
         txn.put(k, v)  # overwrite=True by default
+
+def write_many(keys, values, env=None, path=locations.cgn_lmdb, 
+    overwrite = False):
+
+    env = open_lmdb(env, path)
+        
+    #fail early if any key exists and overwrite is False
+    if check_any_key_exist(keys, env=env, path=path) and not overwrite:
+        m = f'At least one key already exists in LMDB store at {path}. '
+        m += f'Use overwrite=True to overwrite.'
+        m += f'written nothing.'
+        raise KeyError(m)
+
+    with env.begin(write=True) as txn:
+        for key, value in zip(keys, values):
+            k = _key_bytes(key)
+            v = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)  
+            txn.put(k, v)
+
+
+def check_any_key_exist(keys, env=None, path=locations.cgn_lmdb):
+    db_keys = all_keys(env, path)
+    for key in progressbar(keys):
+        k = _key_bytes(key)
+        if k in db_keys: return True
+    return False
 
 
 def load(key, env=None, path=locations.cgn_lmdb):
@@ -120,13 +147,13 @@ def get_keys_with_prefix( prefix, env = None, path = locations.cgn_lmdb):
     return result
 
 def all_keys(env = None, path = locations.cgn_lmdb):
-    env = open_lmdb(env, path)
+    if env is None: env = open_lmdb(env, path)
     keys = []
     with env.begin() as txn:
         cursor = txn.cursor()
         for k, _ in cursor:
             keys.append(k)
-    return keys
+    return set(keys)
 
 def object_type_to_keys_dict(env = None, path = locations.cgn_lmdb):
     import lmdb_key
