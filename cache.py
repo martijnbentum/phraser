@@ -93,6 +93,29 @@ class Cache:
             self.save_key_counter[key] = 1
         else: self.save_key_counter[key] += 1
 
+    def save_many(self, objs, overwrite = False, fail_gracefully = False):
+        start = time.time()
+        cache_update = {lmdb_key.item_to_key(obj): obj for obj in objs}
+        print('update dict done', time.time() - start)
+        try: lmdb_helper.write_many(cache_update.keys(), cache_update.values(),
+            env = self.env, overwrite = overwrite)
+
+        except KeyError as e:
+            
+            print('failed', time.time() - start)
+            if fail_gracefully: 
+                print(e)
+                return
+            else: raise e
+
+        print('succes', time.time() - start)
+
+        self._cache.update(cache_update)
+        for key in cache_update.keys():
+            if key not in self.save_key_counter:
+                self.save_key_counter[key] = 1
+            else: self.save_key_counter[key] += 1
+        print('done', time.time() - start)
 
     def load(self, key, with_links = False):
         '''load an object from LMDB by key.
@@ -235,7 +258,7 @@ def data_dict_to_instance(cls, data):
     data['object_type'] = cls.__name__
     extra = data.pop('extra')
     obj.__dict__.update(data)
-    obj.__dict__.update(extra)
+    obj.__dict__['extra'] = extra
     return obj
 
     
