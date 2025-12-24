@@ -95,7 +95,7 @@ class Cache:
 
     def save_many(self, objs, overwrite = False, fail_gracefully = False):
         start = time.time()
-        cache_update = {lmdb_key.item_to_key(obj): obj for obj in objs}
+        cache_update = {lmdb_key.item_to_key(obj): obj.to_dict() for obj in objs}
         print('update dict done', time.time() - start)
         try: lmdb_helper.write_many(cache_update.keys(), cache_update.values(),
             env = self.env, overwrite = overwrite)
