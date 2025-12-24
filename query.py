@@ -1,6 +1,12 @@
 from comparison import OPS
 import lmdb_key
 
+R= "\033[91m"
+G= "\033[92m"
+B= "\033[94m"
+GR= "\033[90m"
+RE= "\033[0m"
+
 def get_class_object(cls, cache):
     '''sets the objects attribute on each class (e.g. Audio.objects)'''
     data = Data(cls, cache)
@@ -16,10 +22,12 @@ class Data:
 
     def _get_keys(self, update = False):
         d = self.cache.object_type_to_keys_dict(update = update)
-        m = f'No keys found for object type: {self.object_type}'
+        m = f'No keys found for object type: {B}{self.object_type}{RE}'
         if self.object_type not in d:
-            raise ValueError(m)
-        self.keys = d[self.object_type]
+            print(f'{R}WARNING:{RE} {m}')
+            self.keys = []
+        else:
+            self.keys = d[self.object_type]
 
     def load(self, keys = None):
         if keys is None: keys = self.keys
