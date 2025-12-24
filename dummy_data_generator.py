@@ -20,23 +20,28 @@ def generate_objects():
     """
     phrase_objects = []
     time_cursor = 0.0
+    all_objects = []
 
     for speaker_name in progressbar(SPEAKER_NAMES):
-        speaker = models.Speaker(speaker_name)
+        speaker = models.Speaker(speaker_name, save=False)
+        all_objects.append(speaker)
     
         for i, text in enumerate(PHRASES):
             # Audio + Speaker
             filename = f"utt_{i:04d}.wav"
-            audio = models.Audio(filename, duration=8.0)
+            audio = models.Audio(filename, duration=8.0, save=False)
+            all_objects.append(audio)
+            audio.add_speaker(speaker, update_database = False)
 
             words = text.split()
             ph_start = time_cursor
             ph_end   = ph_start + len(words) * 0.6 + 1.0
 
             # ------------------- Create Phrase -------------------
-            phrase = models.Phrase(text, start=ph_start, end=ph_end)
-            phrase.add_audio(audio)
-            phrase.add_speaker(speaker)
+            phrase = models.Phrase(text, start=ph_start, end=ph_end, save=False)
+            all_objects.append(phrase)
+            audio.add_phrase(phrase, update_database = False)
+            phrase.add_speaker(speaker, update_database = False)
 
             # -------------------- Add WORDS -----------------------
             w_cursor = ph_start
@@ -49,8 +54,9 @@ def generate_objects():
                 w_end   = w_start + 0.5 + 0.04 * len(sylls)
                 w_cursor = w_end + 0.05
 
-                word_obj = models.Word(word, start=w_start, end=w_end)
-                phrase.add_child(word_obj)
+                word_obj = models.Word(word, start=w_start, end=w_end, save=False)
+                all_objects.append(word_obj)
+                phrase.add_child(word_obj, update_database = False)
 
                 # ---------------- SYLLABLES ---------------------
                 syl_dur = (w_end - w_start) / len(sylls)
@@ -61,8 +67,10 @@ def generate_objects():
                     s_end   = s_start + syl_dur
                     s_cursor += syl_dur
 
-                    syl_obj = models.Syllable(syl, start=s_start, end=s_end)
-                    word_obj.add_child(syl_obj)
+                    syl_obj = models.Syllable(syl, start=s_start, end=s_end,
+                        save=False)
+                    word_obj.add_child(syl_obj, update_database = False)
+                    all_objects.append(syl_obj)
 
                     # ---------------- PHONES --------------------
                     phones = split_phones(syl)
@@ -74,11 +82,16 @@ def generate_objects():
                         p_end   = p_start + ph_dur
                         ph_cursor += ph_dur
 
-                        phone_obj = models.Phone(ph, start=p_start, end=p_end)
-                        syl_obj.add_child(phone_obj)
+                        phone_obj = models.Phone(ph, start=p_start, end=p_end,
+                            save=False)
+                        syl_obj.add_child(phone_obj, update_database = False)
+                        all_objects.append(phone_obj)
 
             phrase_objects.append(phrase)
             time_cursor = ph_end + 1.0
+
+    
+    models.cache.save_many(all_objects)
 
     return phrase_objects
 
@@ -152,34 +165,6 @@ PHRASES = [
     "the cat jumps over complex structures",
     "many quick dogs jump over cats",
     "i like brown apples",
-    "green weather surprises the dog",
-    "the warm fox sat on the mat",
-    "many people warm apples",
-    "linguistic ideas surprise the fox",
-    "the quick cat likes warm apples",
-    "people forget their linguistic keys",
-    "the dog sat on complex apples",
-    "i forget warm words",
-    "researchers investigate warm patterns",
-    "the fox surprises the warm cat",
-    "many green cats sat on the mat",
-    "warm cats like warm apples",
-    "people like complex apples",
-    "the dog forgets linguistic ideas",
-    "i analyze complex ideas",
-    "the warm morning surprises the cat",
-    "yesterday was surprisingly warm",
-    "the green dog likes warm weather",
-    "researchers analyze warm linguistic structures",
-    "i forget complex linguistic keys",
-    "people like warm brown apples",
-    "the cat investigates apples",
-    "warm weather is often surprising",
-    "the fox analyzes complex ideas",
-    "linguistic researchers forget apples",
-    "the dog likes quick cats",
-    "i investigate warm structures",
-    "the morning weather was warm"
 ]
 
 
@@ -304,4 +289,4 @@ IPA = {
 }
 
 
-SPEAKER_NAMES = 'Alice Emma Olivia Ava Sophia Isabella Mia Charlotte Amelia Harper Evelyn Abigail Emily Ella Grace Chloe Madison Aria Scarlett Lily Hannah Zoe Nora Stella Aubrey Natalie Zoey Leah Hazel Victoria Riley Savannah Brooklyn Claire Audrey Anna Lucy Samantha Maya Caroline Sarah Kennedy Allison Skylar Gabriella Violet Eleanor Penelope Paisley  Liam Noah William James Logan Benjamin Mason Elijah Oliver Jacob Lucas Michael Alexander Ethan Daniel Matthew Aiden Henry Joseph Jackson Samuel Sebastian David Carter Wyatt Jayden John Owen Dylan Luke Gabriel Anthony Isaac Grayson Jack Julian Levi Christopher Joshua Andrew Lincoln Mateo Ryan Jaxon Nathan Eli Thomas Charles Connor'.split(' ')
+SPEAKER_NAMES = 'Alice Emma Olivia Ava Sophia Isabella Mia Charlotte Amelia Harper Evelyn Abigail Emily Ella Grace Chloe Madison Aria Scarlett Lily Hannah Zoe Nora Stella Aubrey Natalie Zoey Leah Hazel Victoria Riley Savannah Brooklyn Claire Audrey Anna Lucy Samantha Maya Caroline Sarah Kennedy Allison Skylar Gabriella Violet Eleanor Penelope Paisley  Liam Noah William'.split(' ')
