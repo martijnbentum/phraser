@@ -18,7 +18,7 @@ object_type_to_ljust_label = {'Phrase': 40, 'Word': 15,
 class Segment:
     DB_FIELDS = {'identifier', 'label', 'start', 'end', 'parent_key',
         'child_keys', 'audio_key', 'speaker_key'}
-    METADATA_FIELDS = {}
+    METADATA_FIELDS = {}# subclasses override
     '''
     Base time-aligned segment with a unique ID and parent/child links.
     '''
@@ -138,11 +138,13 @@ class Segment:
         for segment in all_segments:
             model_helper.fix_references(segment, segment._old_key, segment.key)
 
-        model_helper.write_changes_to_db(all_segments, cache)
+        if update_database:  
+            model_helper.write_changes_to_db(all_segments, cache)
 
         if reverse_link and audio is not None:
             if self.object_type == 'Phrase':
-                audio.add_phrase(self, reverse_link=False)
+                audio.add_phrase(self, reverse_link=False, 
+                    update_database=update_database)
 
         '''
         if update_database and old_key != new_key:
@@ -172,7 +174,8 @@ class Segment:
             segment._apply_speaker_key(speaker_key, update_database)
         if reverse_link and speaker is not None:
             if self.object_type == 'Phrase':
-                speaker.add_phrase(self, reverse_link=False)
+                speaker.add_phrase(self, reverse_link=False, 
+                    update_database=update_database)
 
     def _apply_speaker_key(self, speaker_key, update_database):
         if self.speaker_key == speaker_key: return
@@ -276,8 +279,6 @@ class Segment:
                 names.append(name)
         return names
 
-
-
     @property
     def next_sibling(self):
         """Return the next segment at the same level (same parent)."""
@@ -351,6 +352,8 @@ class Segment:
 
 
 class Phrase(Segment):
+    METADATA_FIELDS = {'language', 'speech_style', 'channel_index', 'overlap',
+        'version'}
 
     @property
     def words(self):
@@ -368,6 +371,8 @@ class Phrase(Segment):
         return list(self.iter_descendants_of_type(Phone))
 
 class Word(Segment):
+    METADATA_FIELDS = {'part_of_speech', 'overlap', 'start_of_utterance',
+        'end_of_utterance','frequency'}
 
     @property
     def syllables(self):
@@ -380,6 +385,7 @@ class Word(Segment):
         return list(self.iter_descendants_of_type(Phone))
 
 class Syllable(Segment):
+    METADATA_FIELDS = {'stress', 'stress_level','tone'}
 
     @property
     def phones(self):
@@ -393,6 +399,7 @@ class Syllable(Segment):
 
 
 class Phone(Segment):
+    METADATA_FIELDS = {'features'}
 
     @property
     def syllable(self):
@@ -410,6 +417,11 @@ class Phone(Segment):
 
 
 class Audio:
+    METADATA_FIELDS = {'sampling_rate', 'duration', 'num_samples',
+        'codec', 'container','bit_depth','num_channels', 'recording_date',
+        'dataset_name'}
+    DB_FIELDS = {'filename', 'identifier','speaker_keys', 'phrase_keys'}
+        
     def __init__(self, filename = None,  save=True, overwrite=False, **kwargs):
         self.object_type = self.__class__.__name__
         self.filename = filename
@@ -440,12 +452,8 @@ class Audio:
         return self.identifier == other.identifier 
 
     def _set_kwargs(self, **kwargs):
-        self._metadata_attr_names = []
         for k, v in kwargs.items():
             setattr(self, k, v)
-            if k in self._metadata_attr_names: continue 
-            if k in ["speaker_keys", "phrase_keys"]: continue
-            self._metadata_attr_names.append(k)
 
     def add_phrase(self, phrase=None, phrase_key=None, reverse_link=True,
         update_database=True):
@@ -505,28 +513,29 @@ class Audio:
     def save(self, overwrite=None, fail_gracefully=False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
 
-
     def to_dict(self):
         """
         Serialize to a clean dict (for LMDB storage).
         """
-        base = {
-            "identifier": self.identifier,
-            "filename": str(self.filename),
-            "speaker_keys": list(self.speaker_keys),
-            "phrase_keys": list(self.phrase_keys),
-        }
+        base = {}
+        for name in self.DB_FIELDS:
+            base[name] = getattr(self, name)
+        for name in self.METADATA_FIELDS:
+            if hasattr(self, name):
+                base[name] = getattr(self, name)
 
         # Extra metadata
-        reserved = set(base.keys()) | {'object_type','overwrite'}
-        extras = {}
+        reserved = set(base.keys()) | {'overwrite', 'object_type'}
+        extra = {} 
+        if hasattr(self, 'extra'):
+            extra.update(self.extra)
         for k, v in self.__dict__.items():
             if k.startswith('_'): continue
             if k in reserved: continue
-            extras[k] = v
-        base["extra"] = extras
+            if k in extra: continue
+            extra[k] = v
+        base['extra'] = extra
         return base
-
 
 
 class Speaker:
@@ -605,7 +614,8 @@ class Speaker:
             self._audios.append(audio)
         self.audio_keys.append(audio.key)
         if reverse_link:
-            audio.add_speaker(self, reverse_link=False)
+            audio.add_speaker(self, reverse_link=False, 
+                update_database=update_database)
         if update_database:
             self.save(overwrite=True)
 
@@ -624,7 +634,8 @@ class Speaker:
         model_helper.ensure_consistent_link(self, phrase, 'audio_key',
             'add_audio', update_database=update_database)
         if reverse_link:
-            phrase.add_speaker(self, reverse_link=False)
+            phrase.add_speaker(self, reverse_link=False, 
+                update_database=update_database)
         if update_database:
             self.save(overwrite=True)
 
