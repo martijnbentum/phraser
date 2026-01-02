@@ -21,27 +21,29 @@ def generate_objects():
     phrase_objects = []
     time_cursor = 0.0
     all_objects = []
+    models.cache.turn_off_db_saving()
+    print(f'cache saving is {models.cache.is_db_saving_allowed()}')
 
     for speaker_name in progressbar(SPEAKER_NAMES):
-        speaker = models.Speaker(speaker_name, save=False)
+        speaker = models.Speaker(speaker_name)
         all_objects.append(speaker)
     
         for i, text in enumerate(PHRASES):
             # Audio + Speaker
             filename = f"utt_{i:04d}.wav"
-            audio = models.Audio(filename, duration=8.0, save=False)
+            audio = models.Audio(filename, duration=8.0)
             all_objects.append(audio)
-            audio.add_speaker(speaker, update_database = False)
+            audio.add_speaker(speaker)
 
             words = text.split()
             ph_start = time_cursor
             ph_end   = ph_start + len(words) * 0.6 + 1.0
 
             # ------------------- Create Phrase -------------------
-            phrase = models.Phrase(text, start=ph_start, end=ph_end, save=False)
+            phrase = models.Phrase(text, start=ph_start, end=ph_end)
             all_objects.append(phrase)
-            audio.add_phrase(phrase, update_database = False)
-            phrase.add_speaker(speaker, update_database = False)
+            audio.add_phrase(phrase)
+            phrase.add_speaker(speaker)
 
             # -------------------- Add WORDS -----------------------
             w_cursor = ph_start
@@ -54,9 +56,9 @@ def generate_objects():
                 w_end   = w_start + 0.5 + 0.04 * len(sylls)
                 w_cursor = w_end + 0.05
 
-                word_obj = models.Word(word, start=w_start, end=w_end, save=False)
+                word_obj = models.Word(word, start=w_start, end=w_end)
                 all_objects.append(word_obj)
-                phrase.add_child(word_obj, update_database = False)
+                phrase.add_child(word_obj)
 
                 # ---------------- SYLLABLES ---------------------
                 syl_dur = (w_end - w_start) / len(sylls)
@@ -67,9 +69,8 @@ def generate_objects():
                     s_end   = s_start + syl_dur
                     s_cursor += syl_dur
 
-                    syl_obj = models.Syllable(syl, start=s_start, end=s_end,
-                        save=False)
-                    word_obj.add_child(syl_obj, update_database = False)
+                    syl_obj = models.Syllable(syl, start=s_start, end=s_end)
+                    word_obj.add_child(syl_obj)
                     all_objects.append(syl_obj)
 
                     # ---------------- PHONES --------------------
@@ -82,15 +83,17 @@ def generate_objects():
                         p_end   = p_start + ph_dur
                         ph_cursor += ph_dur
 
-                        phone_obj = models.Phone(ph, start=p_start, end=p_end,
-                            save=False)
-                        syl_obj.add_child(phone_obj, update_database = False)
+                        phone_obj = models.Phone(ph, start=p_start, end=p_end)
+                        syl_obj.add_child(phone_obj)
                         all_objects.append(phone_obj)
 
             phrase_objects.append(phrase)
             time_cursor = ph_end + 1.0
 
     
+    print(f'generated total objects:', len(all_objects))
+    models.cache.turn_on_db_saving()
+    print(f'cache saving is {models.cache.is_db_saving_allowed()}')
     models.cache.save_many(all_objects)
 
     return phrase_objects
@@ -165,6 +168,66 @@ PHRASES = [
     "the cat jumps over complex structures",
     "many quick dogs jump over cats",
     "i like brown apples",
+    "warm apples taste good",
+    "i like warm apples",
+    "warm weather surprises people",
+    "many people like warm weather",
+    "the cat sat in the morning",
+    "the dog was quick",
+    "quick dogs jump over the cat",
+    "the green cat jumps quickly",
+    "people investigate complex patterns",
+    "linguistic patterns are complex",
+    "researchers analyze linguistic patterns",
+    "i like linguistic patterns",
+    "the brown dog sat in the morning",
+    "warm morning surprises people",
+    "many people investigate weather",
+    "the fox likes warm weather",
+    "researchers forget their apples",
+    "warm apples surprise people",
+    "quick dogs like warm weather",
+    "the lazy cat sat",
+    "people analyze complex structures",
+    "linguistic structures are complex",
+    "researchers like linguistic analysis",
+    "i like quick dogs",
+    "many dogs jump over the cat",
+    "the dog sat in the morning",
+    "warm weather was good",
+    "apples taste surprisingly good",
+    "people like green weather",
+    "the cat jumps over the dog",
+    "researchers investigate linguistic structures",
+    "quick dogs were not yesterday",
+    "the brown dog was quick",
+    "i like brown apples",
+    "people forget their warm apples",
+    "the green cat sat in the morning",
+    "many people like apples",
+    "researchers analyze complex analysis",
+    "warm morning weather surprises people",
+    "the fox jumps quickly",
+    "linguistic analysis is complex",
+    "quick dogs jump over complex structures",
+    "people investigate linguistic patterns",
+    "the dog jumps quickly",
+    "researchers like quick analysis",
+    "many people analyze patterns",
+    "warm apples were surprisingly good",
+    "the lazy dog sat in the morning",
+    "green weather surprises people",
+    "i like warm weather",
+    "the cat likes warm apples",
+    "people analyze linguistic analysis",
+    "complex patterns surprise people",
+    "researchers investigate warm weather",
+    "the brown dog jumps over the cat",
+    "quick dogs like apples",
+    "warm weather surprises researchers",
+    "the fox likes apples",
+    "many researchers analyze structures",
+    "i like complex linguistic patterns"
 ]
 
 
@@ -286,7 +349,9 @@ IPA = {
     "is":          "ɪ z",
     "surprising":  "s ər . p r aɪ . z ɪ ŋ",
     "analyzes":    "æ . n ə . l aɪ . z ɪ z",
+    "were":        "w ɜː ",
+    "not":         "n ɒ t",
 }
 
 
-SPEAKER_NAMES = 'Alice Emma Olivia Ava Sophia Isabella Mia Charlotte Amelia Harper Evelyn Abigail Emily Ella Grace Chloe Madison Aria Scarlett Lily Hannah Zoe Nora Stella Aubrey Natalie Zoey Leah Hazel Victoria Riley Savannah Brooklyn Claire Audrey Anna Lucy Samantha Maya Caroline Sarah Kennedy Allison Skylar Gabriella Violet Eleanor Penelope Paisley  Liam Noah William'.split(' ')
+SPEAKER_NAMES = 'Alice Emma Olivia Ava Sophia Isabella Mia Charlotte Amelia Harper Evelyn Abigail Emily Ella Grace Chloe Madison Aria Scarlett Lily Hannah Zoe Nora Stella Aubrey Natalie Zoey Leah Hazel Victoria Riley Savannah Brooklyn Claire Audrey Anna Lucy Samantha Maya Caroline Sarah Kennedy Allison Skylar Gabriella Violet Eleanor Penelope Paisley Liam Noah William Terry Doda Neo Scarlett Tiff Duffy AMy Damm Dodo Nonu Zazu Oliver James Benjamin Lucas Henry Alexander Elijah Daniel Matthew Samuel Jack Sebastian Theodore Owen Julian Levi Isaac Caleb Ezra Nathan Aaron Joseph David Christopher Jonathan Anthony Nicholas Andrew Thomas Michael'.split(' ')
