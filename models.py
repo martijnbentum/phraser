@@ -462,14 +462,13 @@ class Audio:
         if phrase_key is None:
             phrase_key = phrase.key
         if phrase_key in self.phrase_keys: return
-        self.phrase_keys.append(phrase_key)
         if phrase is None: 
             phrase = cache.load(phrase_key, with_links=True)
             if not hasattr(self, '_phrases'):self._phrases = []
             self._phrases.append(phrase)
-        if reverse_link:
-            phrase.add_audio(self, reverse_link=False, 
-                update_database=update_database)
+        phrase.add_audio(self, reverse_link=False, 
+            update_database=update_database)
+        self.phrase_keys.append(phrase.key)
         if update_database:
             self.save(overwrite=True)
 
@@ -527,10 +526,11 @@ class Audio:
         # Extra metadata
         reserved = set(base.keys()) | {'overwrite', 'object_type'}
         extra = {} 
-        if hasattr(self, 'extra'):
+        if hasattr(self, 'extra') and self.extra is not None:
             extra.update(self.extra)
         for k, v in self.__dict__.items():
             if k.startswith('_'): continue
+            if k == 'extra': continue
             if k in reserved: continue
             if k in extra: continue
             extra[k] = v
@@ -763,5 +763,11 @@ def load_cache(fraction = None):
         cache._preload_sampled_fraction(fraction)
             
 load_cache()
+
+def touch_db():
+    load_cache()
+
+def reconnect_db():
+    load_cache()
 
 
