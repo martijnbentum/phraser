@@ -7,6 +7,40 @@ B= "\033[94m"
 GR= "\033[90m"
 RE= "\033[0m"
 
+def queryset_from_items(items, cache = None):
+    """
+    Create a QuerySet for items.
+
+    Example:
+        qs = queryset_from_items(cache, some_words)
+        qs.filter(label="t").order_by("start")
+    """
+    # Materialize once (supports generators)
+    items = list(items)
+    types = set(type(x) for x in items)
+    if len(types) == 0: 
+        raise ValueError("Cannot create QuerySet from empty items.")
+    if len(types) > 1:
+        raise TypeError(
+            f"All items must be of the same type; got: "
+            f"{', '.join(t.__name__ for t in types)}"
+        )
+    cls = types.pop()
+    if cache is None:
+        cache = cls.get_default_cache()
+
+    # Empty input -> empty queryset
+    data = Data(cls, cache)
+
+    # Convert to LMDB keys and restrict
+    keys = objects_to_keys(items)
+
+    # Optional: keep only keys that actually exist for this class in the cache
+    data.keys = keys
+
+    return QuerySet(data)
+
+
 def get_class_object(cls, cache):
     '''sets the objects attribute on each class (e.g. Audio.objects)'''
     data = Data(cls, cache)
@@ -110,6 +144,11 @@ class QuerySet:
             attr_names = key.split("__")
             for attr_name in attr_names:
                 ensure_relations_loaded(self, attr_name)
+
+    @property
+    def cache(self):
+        '''returns the cache associated with the QuerySet'''
+        return self._data.cache
 
 
 
