@@ -24,6 +24,11 @@ class Segment:
     '''
     allowed_child_types = []# subclasses override
 
+    @classmethod
+    def get_default_cache(cls):
+        if hasattr(cls, 'objects'): 
+            return cls.objects.cache
+
     def __init__(self, label = None, start = None, end = None, 
         parent_key=None, child_keys=None, save = True, 
         overwrite = False, **kwargs):
@@ -370,6 +375,20 @@ class Phrase(Segment):
         """Return all phones in this phrase."""
         return list(self.iter_descendants_of_type(Phone))
 
+    @property
+    def words_query(self):
+        """Return a query object for all words for this speaker."""
+        return query.queryset_from_items(self.words, cache)
+    @property
+    def syllables_query(self):
+        """Return a query object for all syllables for this speaker."""
+        return query.queryset_from_items(self.syllables, cache)
+    @property
+    def phones_query(self):
+        """Return a query object for all phones for this speaker."""
+        return query.queryset_from_items(self.phones, cache)
+
+
 class Word(Segment):
     METADATA_FIELDS = {'part_of_speech', 'overlap', 'start_of_utterance',
         'end_of_utterance','frequency'}
@@ -384,6 +403,15 @@ class Word(Segment):
         """Return all phones in this word."""
         return list(self.iter_descendants_of_type(Phone))
 
+    @property
+    def syllables_query(self):
+        """Return a query object for all syllables for this speaker."""
+        return query.queryset_from_items(self.syllables, cache)
+    @property
+    def phones_query(self):
+        """Return a query object for all phones for this speaker."""
+        return query.queryset_from_items(self.phones, cache)
+
 class Syllable(Segment):
     METADATA_FIELDS = {'stress', 'stress_level','tone'}
 
@@ -397,6 +425,10 @@ class Syllable(Segment):
         """Return the parent word of this syllable."""
         return self.parent
 
+    @property
+    def phones_query(self):
+        """Return a query object for all phones for this speaker."""
+        return query.queryset_from_items(self.phones, cache)
 
 class Phone(Segment):
     METADATA_FIELDS = {'features'}
@@ -421,6 +453,11 @@ class Audio:
         'codec', 'container','bit_depth','num_channels', 'recording_date',
         'dataset_name'}
     DB_FIELDS = {'filename', 'identifier','speaker_keys', 'phrase_keys'}
+
+    @classmethod
+    def get_default_cache(cls):
+        if hasattr(cls, 'objects'): 
+            return cls.objects.cache
         
     def __init__(self, filename = None,  save=True, overwrite=False, **kwargs):
         self.object_type = self.__class__.__name__
@@ -502,6 +539,52 @@ class Audio:
         if hasattr(self, '_phrases'): return self._phrases
         self._phrases= cache.load_many(self.phrase_keys, with_links=False)
         return self._speakers
+
+    @property
+    def words(self):
+        """Return all words across all phrases for this speaker."""
+        words = []
+        for phrase in self.phrases:
+            for word in phrase.words:
+                words.append(word)
+        return words
+
+    @property
+    def syllables(self):
+        """Return all syllables across all phrases for this speaker."""
+        syllables = []
+        for phrase in self.phrases:
+            for syllable in phrase.syllables:
+                syllables.append(syllable)
+        return syllables
+
+    @property
+    def phones(self):
+        """Return all phones across all phrases for this speaker."""
+        phones = []
+        for phrase in self.phrases:
+            for phone in phrase.phones:
+                phones.append(phone)
+        return phones
+    
+    @property
+    def speakers_query(self):
+        """Return a query object for all phrases for this speaker."""
+        return query.queryset_from_items(self.phrases, cache)
+    @property
+    def words_query(self):
+        """Return a query object for all words for this speaker."""
+        return query.queryset_from_items(self.words, cache)
+    @property
+    def syllables_query(self):
+        """Return a query object for all syllables for this speaker."""
+        return query.queryset_from_items(self.syllables, cache)
+    @property
+    def phones_query(self):
+        """Return a query object for all phones for this speaker."""
+        return query.queryset_from_items(self.phones, cache)
+
+
     
     @property
     def key(self):
@@ -543,7 +626,11 @@ class Speaker:
     METADATA_FIELDS = {'gender', 'age', 'language', 'dialect', 'region', 
         'channel'}
     FIELDS = DB_FIELDS.union(METADATA_FIELDS)
-    
+
+    @classmethod
+    def get_default_cache(cls):
+        if hasattr(cls, 'objects'): 
+            return cls.objects.cache
         
     def __init__(self, name =None, save=True, overwrite=False, **kwargs):
         self.object_type = self.__class__.__name__
@@ -585,20 +672,6 @@ class Speaker:
 
     def __contains__(self, key):
         return hasattr(self, key) or key in self.extra
-
-    def get(self, key, default = None):
-        if hasattr(self, key):
-            return getattr(self, key)
-        if key in self.extra:
-            return self.extra[key]
-
-    def set(self, key, value, save = False):
-        if key in self.FIELDS:
-            setattr(self, key, value)
-        else:
-           self.extra[key] = value
-        if save:
-            self.save(overwrite=True)
 
     def add_audio(self, audio=None, audio_key=None, reverse_link=True,
         update_database = True, propagate = None):
@@ -678,13 +751,28 @@ class Speaker:
             for phone in phrase.phones:
                 phones.append(phone)
         return phones
+    
+    @property
+    def phrases_query(self):
+        """Return a query object for all phrases for this speaker."""
+        return query.queryset_from_items(self.phrases, cache)
+    @property
+    def words_query(self):
+        """Return a query object for all words for this speaker."""
+        return query.queryset_from_items(self.words, cache)
+    @property
+    def syllables_query(self):
+        """Return a query object for all syllables for this speaker."""
+        return query.queryset_from_items(self.syllables, cache)
+    @property
+    def phones_query(self):
+        """Return a query object for all phones for this speaker."""
+        return query.queryset_from_items(self.phones, cache)
 
-            
     @property
     def key(self):
         """Return the LMDB key for this segment."""
         return lmdb_key.item_to_key(self)
-            
             
     def save(self, overwrite=None, fail_gracefully=False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
@@ -769,5 +857,4 @@ def touch_db():
 
 def reconnect_db():
     load_cache()
-
 
