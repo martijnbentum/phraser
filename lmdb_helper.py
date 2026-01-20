@@ -70,7 +70,7 @@ def write_many(keys, values, env=None, path=locations.cgn_lmdb,
 
 def check_any_key_exist(keys, env=None, path=locations.cgn_lmdb):
     db_keys = all_keys(env, path)
-    for key in progressbar(keys):
+    for key in keys:
         k = _key_bytes(key)
         if k in db_keys: return True
     return False
