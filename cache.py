@@ -99,7 +99,7 @@ class Cache:
         if not self.db_saving_allowed: return
         start = time.time()
         cache_update = {lmdb_key.item_to_key(obj): obj.to_dict() for obj in objs}
-        print('update dict done', time.time() - start)
+        # print('update dict done', time.time() - start)
         try: lmdb_helper.write_many(cache_update.keys(), cache_update.values(),
             env = self.env, overwrite = overwrite)
 
@@ -111,14 +111,14 @@ class Cache:
                 return
             else: raise e
 
-        print('succes', time.time() - start)
+        # print('succes', time.time() - start)
 
         self._cache.update(cache_update)
         for key in cache_update.keys():
             if key not in self.save_key_counter:
                 self.save_key_counter[key] = 1
             else: self.save_key_counter[key] += 1
-        print('done', time.time() - start)
+        # print('done', time.time() - start)
 
     def load(self, key, with_links = False):
         '''load an object from LMDB by key.
