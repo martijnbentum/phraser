@@ -30,8 +30,8 @@ class Segment:
             return cls.objects.cache
 
     def __init__(self, label = None, start = None, end = None, 
-        parent_key=None, child_keys=None, save = True, 
-        overwrite = False, **kwargs):
+        parent_key=None, child_keys=None, audio_key = 'EMPTY', 
+        speaker_key = 'EMPTY', save = True, overwrite = False, **kwargs):
         
         self.object_type = self.__class__.__name__
         self.label = label
@@ -41,8 +41,8 @@ class Segment:
 
         self.parent_key = parent_key
         self.child_keys = child_keys or []
-        self.audio_key = 'EMPTY'
-        self.speaker_key = 'EMPTY'
+        self.audio_key = audio_key
+        self.speaker_key = speaker_key
         self.overwrite = overwrite
 
         # Extra metadata
@@ -86,8 +86,12 @@ class Segment:
     @property
     def children(self):
         """Return the list of child segments."""
-        if not hasattr(self, '_children'): self._children = []
-        self._children = cache.load_many(self.child_keys, with_links=False)
+        if not hasattr(self, '_children'):
+            if self.child_keys: 
+                self._children = cache.load_many(self.child_keys, 
+                    with_links=False)
+            else:
+                self._children = []
         return self._children
 
     @property
@@ -390,8 +394,8 @@ class Phrase(Segment):
 
 
 class Word(Segment):
-    METADATA_FIELDS = {'part_of_speech', 'overlap', 'start_of_utterance',
-        'end_of_utterance','frequency'}
+    METADATA_FIELDS = {'pos', 'overlap', 'sos',
+        'eos','freq', 'ipa'}
 
     @property
     def syllables(self):
@@ -857,4 +861,10 @@ def touch_db():
 
 def reconnect_db():
     load_cache()
+
+def turn_off_db_saving():
+    cache.turn_off_db_saving()
+
+def turn_on_db_saving():
+    cache.turn_on_db_saving()
 
