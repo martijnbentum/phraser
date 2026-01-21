@@ -453,9 +453,7 @@ class Phone(Segment):
 
 
 class Audio:
-    METADATA_FIELDS = {'sampling_rate', 'duration', 'num_samples',
-        'codec', 'container','bit_depth','num_channels', 'recording_date',
-        'dataset_name'}
+    METADATA_FIELDS = {'sampling_rate', 'duration', 'n_channels', 'dataset_name'}
     DB_FIELDS = {'filename', 'identifier','speaker_keys', 'phrase_keys'}
 
     @classmethod
