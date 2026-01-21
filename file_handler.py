@@ -1,7 +1,13 @@
+from . import force_align
 from textgrid import TextGrid
 import models
 
 db_save_state = models.cache.is_db_saving_allowed
+
+def load_audio_and_transcription_to_db(audio_filename, text, speaker = None):
+    pass
+    
+    
 
 def load_textgrid(filename):
     """Load a TextGrid file and return the TextGrid object."""
