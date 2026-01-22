@@ -69,7 +69,6 @@ def make_files(texts, audiofilenames, start_times= None, end_times = None):
     for i in range(len(texts)):
         files = make_file(texts[i], audiofilenames[i], start_times[i], 
             end_times[i], files)
-
     return files
         
     
