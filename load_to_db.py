@@ -8,12 +8,18 @@ def load_textgrid(filename):
     tg = TextGrid.fromFile(filename)
     return tg
 
+def save_items_to_db(items):
+    update_db_save_state()
+    handle_db_save_option(save_to_db=save_to_db)
+    models.cache.save_many(items)
+    handle_db_save_option(revert=True)
+
 def textgrid_to_database_objects(tg, audio = None, speaker = None,
     save_to_db=False):
     words = list(textgrid_to_words(tg))
     syllables = list(textgrid_to_syllables(tg))
     phones = list(textgrid_to_phones(tg))
-    phrase = words_to_phrase(words, False)
+    phrase = words_to_phrase(words, save_to_db = False)
     if audio is not None: 
         phrase.add_audio(audio, update_database=False)
     if speaker is not None: 
@@ -26,14 +32,9 @@ def textgrid_to_database_objects(tg, audio = None, speaker = None,
     if audio is not None:items.append(audio)
     if speaker is not None:items.append(speaker)
     if save_to_db:
-        update_db_save_state()
-        handle_db_save_option(save_to_db=save_to_db)
-        models.cache.save_many(items)
-        handle_db_save_option(revert=True)
+        save_items_to_db(items)
     return {'phrase': phrase, 'items': items} 
          
-         
-
 def words_to_phrase(words, save_to_db = False):
     words = list(words)
     if not words:
