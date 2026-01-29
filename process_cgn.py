@@ -4,6 +4,7 @@ import locations
 from pathlib import Path
 from progressbar import progressbar
 from textgrid import TextGrid
+from dutch_text_clean import clean
 
 def ort_textgrid_filenames(cgn_ort_directory = None):
     if cgn_ort_directory is None:
@@ -42,6 +43,9 @@ def load_cgn_audio_filenames():
 def audio_filename_to_component(audio_filename):
     return audio_filename.parent.parent.name
 
+def audio_filename_to_language(audio_filename):
+    return audio_filename.parent.name
+
 def cgn_id_to_audio(cgn_id, cgn_audio_filenames = None):
     if cgn_audio_filenames is None:
         cgn_audio_filenames = load_cgn_audio_filenames()
@@ -60,7 +64,7 @@ def textgrid_to_speaker_tiers(tg, exclude = ['BACKGROUND', 'COMMENT']):
     names = [name for name in tg.getNames() if name not in exclude]
     return names
 
-def handle_tier(tg, tier_name, audio_filename, component):
+def handle_tier(tg, tier_name, audio_filename, component, language):
     tier_index = tg.getNames().index(tier_name)
     tier = tg.tiers[tier_index]
     # speaker_info = load_speaker_info(tier_name, speakers_file)
@@ -69,13 +73,19 @@ def handle_tier(tg, tier_name, audio_filename, component):
     for interval in tier.intervals:
         start_time = interval.minTime
         end_time = interval.maxTime
-        text = interval.mark
+        raw_text = interval.mark
+        text = clean.clean_dutch_cgn(raw_text)
         output_dir = locations.textgrids / tier_name
+        output_filname = make_output_filename(
+            audio_filename, start_time, end_time, output_dir)
         if not text: continue
         d = {'start_time': start_time, 'end_time': end_time, 'text': text, 
+            'raw_text': raw_text,
             'tier_name': tier_name, 'component': component, 
+            'language': language,
             'audio_filename': str(audio_filename), 
-            'output_dir': str(output_dir)}
+            'output_directory': str(output_dir),
+            'output_filename': str(output_filname)}
         output.append(d)
     return output
 
@@ -88,10 +98,11 @@ def handle_cgn_id(cgn_id, cgn_audio_filenames = None, cgn_ort_directory = None):
     ort_path = cgn_id_to_ort(cgn_id, cgn_ort_directory)
     tg = load_textgrid(ort_path)
     comp = audio_filename_to_component(audio_path)
+    language = audio_filename_to_language(audio_path)
     output = []
     tier_names = textgrid_to_speaker_tiers(tg)
     for tier_name in tier_names:
-        tier_data = handle_tier(tg, tier_name, audio_path, comp)
+        tier_data = handle_tier(tg, tier_name, audio_path, comp, language)
         output.extend(tier_data)
     return output
 
@@ -112,4 +123,13 @@ def make_or_load_ort_info_dict(cgn_ort_directory = None, overwrite=False):
     with open(p, 'w', encoding='utf-8') as f:
         json.dump(d, f)
     return d
+
+def make_output_filename(audio_filename, start_time, end_time, output_directory):
+    audio_filename = Path(audio_filename)
+    output_directory = Path(output_directory)
+    name = audio_filename.stem
+    start = f'_s-{int(start_time*1000)}' 
+    end = f'_e-{int(end_time*1000)}' 
+    output_filname = output_directory / f'{name}{start}{end}.TextGrid'
+    return output_filname
     
