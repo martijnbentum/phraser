@@ -1,5 +1,4 @@
 import audio
-import file_handler
 import force_align
 import locations
 import models
@@ -15,7 +14,7 @@ def load_textgrid(filename):
 
 def save_items_to_db(items):
     update_db_save_state()
-    handle_db_save_option(save_to_db=save_to_db)
+    handle_db_save_option(save_to_db=True)
     models.cache.save_many(items)
     handle_db_save_option(revert=True)
 
@@ -156,10 +155,6 @@ def find_and_add_phones_to_syllable(syllable, phones, save_to_db=False):
     handle_db_save_option(revert=True)
 
 
-
-
-
-
 def load_single_audio_and_transcription_to_db(audio_filename, text = None, 
     speaker = None,textgrid_filename = None, do_force_align = False, 
     save_to_db = True, textgrid_output_dir = None):
@@ -179,12 +174,20 @@ def load_single_audio_and_transcription_to_db(audio_filename, text = None,
 
 def load_single_audio_textgrid_to_db(audio_filename, textgrid_filename,
     speaker = None, save_to_db = True):
-    audio_info = audio.audio_info(audio_filename)
-    audio_object = models.Audio(**audio_info, save = False)
-    tg = file_handler.load_textgrid(textgrid_filename)
-    db_objects = file_handler.textgrid_to_database_objects(
+    tg = load_textgrid(textgrid_filename)
+    db_objects = textgrid_to_database_objects(
         tg, audio = audio_object, speaker = speaker, save_to_db=save_to_db)
     return db_objects
+
+def audio_filename_to_db_object(audio_filename, save_to_db = False, kwargs={}):
+    audio_info = audio.audio_info(audio_filename)
+    if audio_info.keys() & kwargs.keys():
+        m = 'WARNING: Conflicting keys in audio info and kwargs: '
+        m += f'{audio_info.keys() & kwargs.keys()}'
+        print(m)
+    audio_info.update(kwargs)
+    audio_object = models.Audio(**audio_info, save = save_to_db)
+    return audio_object
 
 def load_audios_textgrids_to_db(audio_filenames, textgrid_filenames, speakers, 
     save_to_db = True):
