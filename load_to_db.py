@@ -33,10 +33,8 @@ def textgrid_to_database_objects(tg, audio = None, speaker = None,
     for syllable in syllables:
         find_and_add_phones_to_syllable(syllable, phones, save_to_db=False)
     items = words + syllables + phones + [phrase]
-    if audio is not None:items.append(audio)
-    if speaker is not None:items.append(speaker)
     if save_to_db: save_items_to_db(items)
-    return {'phrase': phrase, 'items': items} 
+    return items
          
 def words_to_phrase(words, save_to_db = False):
     words = list(words)
@@ -60,6 +58,7 @@ def textgrid_to_words(tg, save_to_db=False):
     kan_mau = tg.tiers[names.index('KAN-MAU')]
     
     for index, (ort, ipa) in enumerate(zip(ort_mau, kan_mau)):
+        if ort.mark == '': continue
         assert ort.minTime == ipa.minTime and ort.maxTime == ipa.maxTime, \
             "ORT-MAU and KAN-MAU tiers must have matching intervals."
         yield interval_to_word(ort, ipa)
@@ -73,6 +72,7 @@ def textgrid_to_syllables(tg, save_to_db=False):
     syllables = tg.tiers[names.index('MAS')]
     
     for syl in syllables:
+        if syl.mark == '<p:>': continue
         yield interval_to_syllable(syl)
     handle_db_save_option(revert=True)
 
@@ -84,6 +84,7 @@ def textgrid_to_phones(tg, save_to_db=False):
     phones= tg.tiers[names.index('MAU')]
     
     for phone in phones:
+        if phone.mark == '(...)': continue
         yield interval_to_phone(phone)
     handle_db_save_option(revert=True)
 
