@@ -139,7 +139,6 @@ class QuerySet:
         otherwhise you will load syllables and phones on a per word
         and syllable basis which is very slow
         '''
-        print('params:', params)
         for key in params.keys():
             attr_names = key.split("__")
             for attr_name in attr_names:
