@@ -16,6 +16,7 @@ object_type_to_ljust_label = {'Phrase': 40, 'Word': 15,
 
 
 class Segment:
+    IDENTITY_FIELDS= {'label', 'start', 'end', 'audio_key'}
     DB_FIELDS = {'identifier', 'label', 'start', 'end', 'parent_key',
         'child_keys', 'audio_key', 'speaker_key'}
     METADATA_FIELDS = {}# subclasses override
@@ -28,6 +29,20 @@ class Segment:
     def get_default_cache(cls):
         if hasattr(cls, 'objects'): 
             return cls.objects.cache
+
+    @classmethod
+    def get_or_create(cls, **kwargs):
+        lookup = {k: kwargs[k] for k in cls.IDENTITY_FIELDS if k in kwargs}
+        if not lookup:
+            raise ValueError('No identity fields provided')
+        missing = [k for k in cls.IDENTITY_FIELDS if k not in kwargs]
+        if missing:
+            raise ValueError(f'Missing identity fields: {missing}')
+        instance = cls.objects.get_or_none(**lookup)
+        if instance is None:
+            instance = cls(**kwargs)
+            return instance, True
+        return instance, False
 
     def __init__(self, label = None, start = None, end = None, 
         parent_key=None, child_keys=None, audio_key = 'EMPTY', 
