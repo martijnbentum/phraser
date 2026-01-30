@@ -194,7 +194,7 @@ def make_output_filename(audio_filename, start_time, end_time, output_directory)
     output_directory = Path(output_directory)
     name = audio_filename.stem
     start = f'_s-{int(start_time*1000)}' 
-    end = f'_e-{int(end_time*1000)}' 
-    output_filname = output_directory / f'{name}{start}{end}.TextGrid'
+    end = f'-e-{int(end_time*1000)}' 
+    output_filname = output_directory / f'{name}{start}{end}-ms.TextGrid'
     return output_filname
     
