@@ -1,6 +1,11 @@
 from comparison import OPS
 import lmdb_key
 
+class DoesNotExist(Exception):
+    pass
+class MultipleObjectsReturned(Exception):
+    pass
+
 R= "\033[91m"
 G= "\033[92m"
 B= "\033[94m"
@@ -95,6 +100,24 @@ class QuerySet:
         keys = self._data.keys[:n]
         return self._data.load(keys)
 
+    def get(self, **kwargs):
+        '''return exactly one object matching kwargs.
+        '''
+        results = list(self.filter(**kwargs))
+        if not results:
+            raise DoesNotExist(f'no element exists in database:{kwargs}')
+        if len(results) > 1:
+            m =f'multiple elements ({len(results)}) exist in database:{kwargs}'
+            m += f'\nResults: {results}'
+            raise MultipleObjectsReturned(m)
+        return results[0]
+
+    def get_or_none(self, **kwargs):
+        try:
+            return self.get(**kwargs)
+        except DoesNotExist:
+            return None
+
     def filter(self, **kwargs):
         '''adds filter conditions to the QuerySet'''
         return QuerySet(self._data, self._filters + [("filter", kwargs)])
@@ -116,8 +139,7 @@ class QuerySet:
             if op == "filter":
                 objs = filter_objects(objs, **params)
             elif op == "exclude":
-                excluded = set(filter_objects(objs, **params))
-                objs = [x for x in objs if x not in excluded]
+                objs = [x for x in objs if not object_matches(x, **params)]
         if self._ordering:
             objs = sorted(objs, key=lambda obj: sort_key(obj, self._ordering))
         self._objs = objs
@@ -213,16 +235,21 @@ def matches(obj, key, value):
     return matches(attr_val, rest, value)
 
 
+def object_matches(obj, **params):
+    for key, value in params.items():
+        try:
+            ok = matches(obj, key, value)
+        except Exception as e:
+            raise type(e)(f'{e} (lookup={key}, value={value}, obj={obj})')
+        if not ok:return False
+    return True
+
+
 def filter_objects(objs, **filters):
     '''filters a list of objects based on key-value pairs'''
     result = []
     for obj in objs:
-        ok = True
-        for key, value in filters.items():
-            if not matches(obj, key, value):
-                ok = False
-                break
-        if ok:
+        if object_matches(obj, **filters):
             result.append(obj)
     return result
 
@@ -326,7 +353,5 @@ def queryset_summary(qs):
 
     joined = ", ".join(parts)
     return f"<{R}QuerySet:{RE} {joined}>"
-
-
 
 
