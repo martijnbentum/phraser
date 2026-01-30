@@ -1,3 +1,4 @@
+import audio
 import glob
 import json
 import locations
@@ -17,7 +18,6 @@ def load_textgrid(filename):
     tg = TextGrid.fromFile(filename)
     return tg
 
-    
 def load_speaker_file():
     with locations.cgn_speaker_file.open('r', encoding='utf-8') as f:
         lines = [x.split('\t') for x in f.read().split('\n') if x]
@@ -25,14 +25,47 @@ def load_speaker_file():
     data = lines[1:]
     return header, data
 
-def load_speaker_info(speaker_id, speaker_file = None):
+def load_speaker_info(speaker_id, speaker_file = None, return_db_dict = False):
     if speaker_file: header, data = speaker_file
     else: header, data = load_speaker_file()
     for row in data:
         if row[4] == speaker_id:
             info = dict(zip(header, row))
+            if return_db_dict:
+                return speaker_info_to_database_dict(info)
             return info
     return None
+
+def speaker_info_to_database_dict(speaker_info):
+    gender = {'sex1':'male', 'sex2':'female'}
+    try:age = 2000 - int(speaker_info['birthYear'])
+    except ValueError: age = None
+    identifier = speaker_info['ID']
+    if identifier.startswith('N'):dialect = 'nl-NL' 
+    elif identifier.startswith('V'): dialect = 'nl-BE'
+    else: dialect = 'unknown'
+    d = {}
+    d['name'] = identifier
+    d['gender'] = gender.get(speaker_info['sex'], 'unknown')
+    d['age'] = age
+    d['language'] = 'nld'
+    d['dialect'] = dialect
+    d['region'] = speaker_info['resRegion']
+    return d
+
+def audio_filename_to_database_dict(audio_filename):
+    component = audio_filename_to_component(audio_filename)
+    language = audio_filename_to_language(audio_filename)
+    if language == 'nl': dialect = 'nl-NL'
+    elif language == 'vl': dialect = 'nl-BE'
+    else: dialect = 'unknown'
+    info = audio.audio_info(audio_filename)
+    info['component'] = component
+    info['language'] = 'nld'
+    info['dialect'] = dialect
+    info['dataset'] = 'cgn'
+    return info
+    
 
 def load_cgn_audio_filenames():
     with open(locations.audio_filenames, 'r', encoding='utf-8') as f:
@@ -41,7 +74,7 @@ def load_cgn_audio_filenames():
     return paths
 
 def audio_filename_to_component(audio_filename):
-    return audio_filename.parent.parent.name
+    return audio_filename.parent.parent.name.split('-')[-1]
 
 def audio_filename_to_language(audio_filename):
     return audio_filename.parent.name
@@ -89,8 +122,7 @@ def handle_tier(tg, tier_name, audio_filename, component, language):
         output.append(d)
     return output
 
-
-def handle_cgn_id(cgn_id, cgn_audio_filenames = None, cgn_ort_directory = None):
+def cgn_id_to_info(cgn_id, cgn_audio_filenames = None, cgn_ort_directory = None):
     if cgn_audio_filenames is None: 
         cgn_audio_filenames = load_cgn_audio_filenames()
     speakers_info = load_speaker_file()
@@ -106,23 +138,56 @@ def handle_cgn_id(cgn_id, cgn_audio_filenames = None, cgn_ort_directory = None):
         output.extend(tier_data)
     return output
 
-
-
-
-def make_or_load_ort_info_dict(cgn_ort_directory = None, overwrite=False):
+def make_or_load_ort_info(fn = None, cgn_ort_directory = None, 
+    overwrite=False):
     p = Path('../data/cgn_ort_info_dict.json')
     if not overwrite and p.exists():
         with open(p, 'r', encoding='utf-8') as f:
-            d = json.load(f)
-        return d
-    fn = textgrid_filenames(cgn_ort_directory)
-    d = {}
+            ort_info = json.load(f)
+        return ort_info
+    if fn is None:
+        fn = ort_textgrid_filenames(cgn_ort_directory)
+    output = []
     for f in progressbar(fn):
-        tg = load_textgrid(f)
-        d[f.stem] = {'filename':str(f), 'tier_names': tg.getNames()}
+        cgn_id = f.stem
+        o = cgn_id_to_info(cgn_id)
+        output.extend(o)
     with open(p, 'w', encoding='utf-8') as f:
-        json.dump(d, f)
-    return d
+        json.dump(output, f)
+    return output
+
+def make_or_load_audio_info(fn = None, overwrite=False):
+    p = Path('../data/cgn_audio_info_dict.json')
+    if not overwrite and p.exists():
+        with open(p, 'r', encoding='utf-8') as f:
+            audio_info = json.load(f)
+        return audio_info
+    if fn is None:
+        fn = load_cgn_audio_filenames()
+    output = []
+    for f in progressbar(fn):
+        o = audio_filename_to_database_dict(f)
+        output.append(o)
+    with open(p, 'w', encoding='utf-8') as f:
+        json.dump(output, f)
+    return output
+
+def make_or_load_speaker_info(speaker_file = None, overwrite=False):
+    p = Path('../data/cgn_speaker_info_dict.json')
+    if not overwrite and p.exists():
+        with open(p, 'r', encoding='utf-8') as f:
+            speaker_info = json.load(f)
+        return speaker_info
+    header, data = load_speaker_file()
+    output = []
+    for row in data:
+        if not row: continue
+        info = dict(zip(header, row))
+        db_info = speaker_info_to_database_dict(info)
+        output.append(db_info)
+    with open(p, 'w', encoding='utf-8') as f:
+        json.dump(output, f)
+    return output
 
 def make_output_filename(audio_filename, start_time, end_time, output_directory):
     audio_filename = Path(audio_filename)
