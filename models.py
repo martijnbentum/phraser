@@ -4,6 +4,8 @@ import cache as cache_module
 import lmdb_key
 import model_helper
 import query
+import ssh_audio_play as sap
+import utils
 
 R= "\033[91m"
 G= "\033[92m"
@@ -77,6 +79,11 @@ class Segment:
         m += f'{GR}ID {self.identifier}{RE} '
         return m
 
+    def __str__(self):
+        m = self.__repr__() + '\n'
+        m += utils.pretty_print_object_dict(self.__dict__)
+        return m
+
     def __eq__(self, other):
         if not isinstance(other, Segment):
             return False
@@ -84,6 +91,19 @@ class Segment:
             self.audio_key == other.audio_key and \
             self.object_type == other.object_type
 
+    def play(self, collar = None):
+        if collar is not None:
+            if collar < 0: raise ValueError("collar must be non-negative.")
+            if collor > self.audio.duration / 2:
+                print('Warning: collar is larger than half the audio duration.')
+            start = self.start - collar
+            if start < 0: start = 0
+            end = self.end + collar
+            if end > self.audio.duration: end = self.audio.duration
+        else: start = self.start; end = self.end
+        sap.play_audio(self.audio.filename, start=start, end=end)
+        print(f'Playing {self.object_type} "{self.label}" ')
+    
 
     @property
     def key(self):
