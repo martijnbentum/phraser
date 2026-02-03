@@ -4,7 +4,8 @@ import cache as cache_module
 import lmdb_key
 import model_helper
 import query
-import ssh_audio_play as sap
+from ssh_audio_play.play import play_audio
+import time
 import utils
 
 R= "\033[91m"
@@ -91,7 +92,7 @@ class Segment:
             self.audio_key == other.audio_key and \
             self.object_type == other.object_type
 
-    def play(self, collar = None):
+    def play(self, collar = None, wait = False):
         if collar is not None:
             if collar < 0: raise ValueError("collar must be non-negative.")
             if collor > self.audio.duration / 2:
@@ -101,9 +102,13 @@ class Segment:
             end = self.end + collar
             if end > self.audio.duration: end = self.audio.duration
         else: start = self.start; end = self.end
-        sap.play_audio(self.audio.filename, start=start, end=end)
+        play.play_audio(self.audio.filename, start=start, end=end, wait = wait)
         print(f'Playing {self.object_type} "{self.label}" ')
     
+    def play_children(self, collar = None):
+        for child in self.children:
+            child.play(collar=collar, wait = True)
+            time.sleep(0.3)
 
     @property
     def key(self):
@@ -133,7 +138,8 @@ class Segment:
     def audio(self):
         """Return the associated Audio object."""
         if self.audio_key is None or self.audio_key == 'EMPTY': return None
-        if hasattr(self, '_audio'): return self._audio
+        if hasattr(self, '_audio') and self._audio is not None: 
+            return self._audio
         self._audio = cache.load(self.audio_key, with_links=False)
         return self._audio
         
