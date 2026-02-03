@@ -103,8 +103,9 @@ def handle_ort_info(ort_info, reconnect_db = True, save_to_db = True):
     speaker, audio = ort_info_to_speaker_and_audio(
         ort_info, reconnect_db = False)
     textgrid = load_to_db.load_textgrid(ort_info['output_filename'])
+    offset = ort_info['start_time']
     db_objects = load_to_db.textgrid_to_database_objects(
-        textgrid, audio = audio, speaker = speaker, 
+        textgrid, offset = offset, audio = audio, speaker = speaker, 
         save_to_db = save_to_db)
     return db_objects
 

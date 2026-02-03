@@ -18,11 +18,11 @@ def save_items_to_db(items):
     models.cache.save_many(items)
     handle_db_save_option(revert=True)
 
-def textgrid_to_database_objects(tg, audio = None, speaker = None,
+def textgrid_to_database_objects(tg, offset = 0.0, audio = None, speaker = None,
     save_to_db=False):
-    words = list(textgrid_to_words(tg))
-    syllables = list(textgrid_to_syllables(tg))
-    phones = list(textgrid_to_phones(tg))
+    words = list(textgrid_to_words(tg, offset))
+    syllables = list(textgrid_to_syllables(tg, offset))
+    phones = list(textgrid_to_phones(tg, offset))
     phrase = words_to_phrase(words, save_to_db = False)
     if audio is not None: 
         phrase.add_audio(audio, update_database=False)
@@ -48,7 +48,7 @@ def words_to_phrase(words, save_to_db = False):
         phrase.add_child(word, update_database = save_to_db)
     return phrase
 
-def textgrid_to_words(tg, save_to_db=False):
+def textgrid_to_words(tg, offset = 0.0, save_to_db=False):
     update_db_save_state()
     handle_db_save_option(save_to_db=save_to_db)
     names = tg.getNames()
@@ -61,10 +61,10 @@ def textgrid_to_words(tg, save_to_db=False):
         if ort.mark == '': continue
         assert ort.minTime == ipa.minTime and ort.maxTime == ipa.maxTime, \
             "ORT-MAU and KAN-MAU tiers must have matching intervals."
-        yield interval_to_word(ort, ipa)
+        yield interval_to_word(ort, ipa, offset=offset)
     handle_db_save_option(revert=True)
 
-def textgrid_to_syllables(tg, save_to_db=False):
+def textgrid_to_syllables(tg, offset = 0.0, save_to_db=False):
     update_db_save_state()
     handle_db_save_option(save_to_db=save_to_db)
     names = tg.getNames()
@@ -73,10 +73,10 @@ def textgrid_to_syllables(tg, save_to_db=False):
     
     for syl in syllables:
         if syl.mark == '<p:>': continue
-        yield interval_to_syllable(syl)
+        yield interval_to_syllable(syl, offset=offset)
     handle_db_save_option(revert=True)
 
-def textgrid_to_phones(tg, save_to_db=False):
+def textgrid_to_phones(tg, offset = 0.0, save_to_db=False):
     update_db_save_state()
     handle_db_save_option(save_to_db=save_to_db)
     names = tg.getNames()
@@ -85,27 +85,32 @@ def textgrid_to_phones(tg, save_to_db=False):
     
     for phone in phones:
         if phone.mark == '(...)': continue
-        yield interval_to_phone(phone)
+        yield interval_to_phone(phone, offset=offset)
     handle_db_save_option(revert=True)
 
 
-def interval_to_word(ort_interval, ipa_interval = None, kwargs = {}):
+def interval_to_word(ort_interval, ipa_interval = None, offset = 0.0, 
+    kwargs = {}):
     if ipa_interval: 
         kwargs['ipa'] = ipa_interval.mark
-    word = interval_to_database_object(ort_interval, models.Word, kwargs)
+    word = interval_to_database_object(ort_interval,  models.Word, 
+        offset, kwargs)
     return word
         
-def interval_to_syllable(syl_interval, kwargs = {}):
-    syllable = interval_to_database_object(syl_interval, models.Syllable, kwargs)
+def interval_to_syllable(syl_interval, offset = 0.0, kwargs = {}):
+    syllable = interval_to_database_object(syl_interval, models.Syllable, 
+    offset, kwargs)
     return syllable
 
-def interval_to_phone(phone_interval, kwargs = {}):
-    phone = interval_to_database_object(phone_interval, models.Phone, kwargs)
+def interval_to_phone(phone_interval, offset = 0.0, kwargs = {}):
+    phone = interval_to_database_object(phone_interval, models.Phone, 
+    offset, kwargs)
     return phone
 
-def interval_to_database_object(interval, model_class, kwargs={}):
-    o = model_class(start=interval.minTime, end=interval.maxTime,
-        label=interval.mark, **kwargs)
+def interval_to_database_object(interval, model_class, offset = 0.0, kwargs={}):
+    start = interval.minTime + offset
+    end = interval.maxTime + offset
+    o = model_class(start = start, end= end, label = interval.mark, **kwargs)
     return o
     
 def handle_db_save_option(save_to_db = None, revert = None):
