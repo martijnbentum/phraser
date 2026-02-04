@@ -4,7 +4,7 @@ import cache as cache_module
 import lmdb_key
 import model_helper
 import query
-from ssh_audio_play.play import play_audio
+from ssh_audio_play import play
 import time
 import utils
 
