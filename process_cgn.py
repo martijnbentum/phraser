@@ -184,6 +184,7 @@ def make_or_load_speaker_info(speaker_file = None, overwrite=False):
         if not row: continue
         info = dict(zip(header, row))
         db_info = speaker_info_to_database_dict(info)
+        db_info['dataset'] = 'cgn'
         output.append(db_info)
     with open(p, 'w', encoding='utf-8') as f:
         json.dump(output, f)
