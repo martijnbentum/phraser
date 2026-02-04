@@ -62,7 +62,7 @@ def write_many(keys, values, env=None, path=locations.cgn_lmdb,
         raise KeyError(m)
 
     with env.begin(write=True) as txn:
-        for key, value in zip(keys, values):
+        for key, value in progressbar(zip(keys, values), max_value=len(keys)):
             k = _key_bytes(key)
             v = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)  
             txn.put(k, v)
