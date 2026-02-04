@@ -47,6 +47,13 @@ class Segment:
             return instance, True
         return instance, False
 
+    @property
+    def exists_in_db(self):
+        cls = self.__class__
+        lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
+        existing = cls.objects.get_or_none(**lookup)
+        return existing is not None
+
     def __init__(self, label = None, start = None, end = None, 
         parent_key=None, child_keys=None, audio_key = 'EMPTY', 
         speaker_key = 'EMPTY', save = True, overwrite = False, **kwargs):
@@ -406,6 +413,27 @@ class Phrase(Segment):
         'version'}
 
     @property
+    def all_objects(self):
+        objs = [self]
+        if self.words: objs += self.words 
+        if self.syllables: objs += self.syllables
+        if self.phones: objs += self.phones 
+        return objs
+
+    @property
+    def all_keys(self):
+        keys = [x.key for x in self.all_objects]
+        return keys
+
+    def delete(self, do_reconnect_db = True):
+        """ Delete this phrase and all its descendants from the database.
+        """
+        all_keys = self.all_keys
+        cache.delete_many(all_keys)
+        if do_reconnect_db:
+            reconnect_db()
+
+    @property
     def words(self):
         """Return all words in this phrase."""
         return self.children
@@ -494,6 +522,7 @@ class Phone(Segment):
 
 
 class Audio:
+    IDENTITY_FIELDS= {'filename'}
     METADATA_FIELDS = {'sample_rate', 'duration', 'n_channels', 'dataset',
         'language', 'dialect'}
     DB_FIELDS = {'filename', 'identifier','speaker_keys', 'phrase_keys'}
@@ -502,6 +531,13 @@ class Audio:
     def get_default_cache(cls):
         if hasattr(cls, 'objects'): 
             return cls.objects.cache
+
+    @property
+    def exists_in_db(self):
+        cls = self.__class__
+        lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
+        existing = cls.objects.get_or_none(**lookup)
+        return existing is not None
         
     def __init__(self, filename = None,  save=True, overwrite=False, **kwargs):
         self.object_type = self.__class__.__name__
@@ -666,7 +702,8 @@ class Audio:
 
 
 class Speaker:
-    DB_FIELDS = {'name', 'identifier', 'audio_keys', 'phrase_keys'}
+    IDENTITY_FIELDS= {'name', 'dataset'}
+    DB_FIELDS = {'name', 'dataset','identifier', 'audio_keys', 'phrase_keys'}
     METADATA_FIELDS = {'gender', 'age', 'language', 'dialect', 'region', 
         'channel'}
     FIELDS = DB_FIELDS.union(METADATA_FIELDS)
@@ -675,10 +712,19 @@ class Speaker:
     def get_default_cache(cls):
         if hasattr(cls, 'objects'): 
             return cls.objects.cache
+
+    @property
+    def exists_in_db(self):
+        cls = self.__class__
+        lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
+        existing = cls.objects.get_or_none(**lookup)
+        return existing is not None
         
-    def __init__(self, name =None, save=True, overwrite=False, **kwargs):
+    def __init__(self, name =None, dataset = None, save=True, overwrite=False, 
+        **kwargs):
         self.object_type = self.__class__.__name__
         self.name = name
+        self.dataset = dataset
         self.identifier = lmdb_key.make_item_identifier(self)
         self.overwrite = overwrite
         self.audio_keys = []
@@ -821,8 +867,10 @@ class Speaker:
     def save(self, overwrite=None, fail_gracefully=False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
 
-    def delete(self):
+    def delete(self, do_reconnect_db = True):
         cache.delete(self.key)
+        if do_reconnect_db:
+            reconnect_db()
 
     def to_dict(self):
         """
