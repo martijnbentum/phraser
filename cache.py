@@ -205,6 +205,12 @@ class Cache:
         lmdb_helper.delete(key = key, env = self.env)
         if key in self._cache: del self._cache[key]
 
+    def delete_many(self, keys):
+        '''delete many objects from LMDB by keys'''
+        lmdb_helper.delete_many(keys = keys, env = self.env)
+        for key in keys:
+            if key in self._cache: del self._cache[key]
+
     def update(self, old_key, obj):
         '''delete old_key and save obj with new key'''
         self.delete(old_key)
