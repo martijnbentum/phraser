@@ -19,11 +19,11 @@ def save_items_to_db(items):
     handle_db_save_option(revert=True)
 
 def textgrid_to_database_objects(tg, offset = 0.0, audio = None, speaker = None,
-    save_to_db=False):
+    save_to_db=False, overwrite = False):
     words = list(textgrid_to_words(tg, offset))
     syllables = list(textgrid_to_syllables(tg, offset))
     phones = list(textgrid_to_phones(tg, offset))
-    phrase = words_to_phrase(words, save_to_db = False)
+    phrase = words_to_phrase(words) 
     if audio is not None: 
         phrase.add_audio(audio, update_database=False)
     if speaker is not None: 
@@ -36,17 +36,17 @@ def textgrid_to_database_objects(tg, offset = 0.0, audio = None, speaker = None,
     if save_to_db: save_items_to_db(items)
     return items
          
-def words_to_phrase(words, save_to_db = False):
+def words_to_phrase(words):
     words = list(words)
     if not words:
         return None
     start = words[0].start
     end = words[-1].end
     label = ' '.join([word.label for word in words])
-    phrase = models.Phrase(start=start, end=end, label=label, save = save_to_db)
+    phrase = models.Phrase(start=start, end=end, label=label, save = False)
     for word in words:
-        phrase.add_child(word, update_database = save_to_db)
-    return phrase
+        phrase.add_child(word, update_database = False)
+    return phrase 
 
 def textgrid_to_words(tg, offset = 0.0, save_to_db=False):
     update_db_save_state()
@@ -220,6 +220,19 @@ def load_speaker_audios_textgrids_to_db(speaker, audio_filenames,
         audio_filenames, textgrid_filenames, speakers,
         save_to_db = save_to_db)
     
-    
+def get_phrases_from_items(items):
+    phrases = [item for item in items if isinstance(item, models.Phrase)]
+    return phrases
+
+def check_items_excists_in_db(db_items, reconnect_db = True):
+    if reconnect_db: models.reconnect_db()
+    existing_items = []
+    new_items = []
+    for item in db_items:
+        if item.exists_in_db: 
+            existing_items.append(item)
+        else:
+            new_items.append(item)
+    return existing_items, new_items
 
         
