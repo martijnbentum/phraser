@@ -28,6 +28,29 @@ def find_hex_length_based_on_object_type(item):
     except KeyError:
         raise ValueError(f"Unsupported segment type: {cls_name}")
     
+def key_to_info(key):
+    key_parts = key.split(":")
+    rank = int(key_parts[1])
+    identifier = key_parts[0].split('-')[1]
+    if rank in [0,5]:
+        return (identifier,rank)
+    start = int(key_parts[2])
+    audio_identifier = identifier
+    identifier = key_parts[3].split('-')[1]
+    return (audio_identifier, rank, start, identifier)
+
+def info_to_key(info):
+    if len(info) == 2:
+        identifier, rank = info
+        object_type = rank_to_object_type(rank)
+        if object_type == 'Speaker': object_type = f'~{object_type}'
+        return f"{identifier}:{rank}"
+    audio_identifier, rank, start, identifier = info
+    ot= rank_to_object_type(rank)
+    key = f"Audio-{audio_identifier}:{rank}:{start:08d}:{ot}-{identifier}"
+    return key
+    
+    
 
 def make_item_identifier(item, n_items = None):
     if n_items: hex_length = find_hex_length_based_on_n_items(n_items)
