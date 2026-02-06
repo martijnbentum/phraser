@@ -4,6 +4,7 @@ import pickle
 from pathlib import Path
 from progressbar import progressbar
 
+
 def open_lmdb(env=None, path=locations.cgn_lmdb, map_size=1024**4):
     '''
     env : lmdb.Environment or None
@@ -131,7 +132,25 @@ def key_exists(key, env=None, path=locations.cgn_lmdb):
     with env.begin() as txn:
         return txn.get(k) is not None
 
-def get_keys_with_prefix( prefix, env = None, path = locations.cgn_lmdb):
+def iter_model_keys_for_audio_id(audio_id, model_type = 'Phrase', env = None,
+    path = locations.cgn_lmdb):
+    import lmdb_key
+    mapper = lmdb_key.TYPE_TO_RANK_MAP 
+    rank = mapper[model_type]
+    prefix = f"{audio_id}:{rank}:".encode()
+    with env.begin() as txn:
+        cur = txn.cursor()
+        if not cur.set_range(prefix):
+            return
+        for k in cur.iternext(keys=True, values=False):
+            if not k.startswith(prefix):
+                break
+            yield k  # or (k, v)
+
+def get_all_keys_with_audio_id(audio_id, env = None, path = locations.cgn_lmdb):
+    return get_all_keys_with_prefix(audio_id, env, path)
+
+def get_all_keys_with_prefix(prefix, env = None, path = locations.cgn_lmdb):
     """Return all keys (as bytes) starting with prefix (string or bytes)."""
     env = open_lmdb(env, path)
     prefix = _key_bytes(prefix)
@@ -140,7 +159,7 @@ def get_keys_with_prefix( prefix, env = None, path = locations.cgn_lmdb):
     with env.begin() as txn:
         cursor = txn.cursor()
         if cursor.set_range(prefix):      # jump to first >= prefix
-            for k, _ in cursor:
+            for k in cursor.iternext(keys=True, values=False):
                 if not k.startswith(prefix):
                     break
                 result.append(k)
@@ -157,11 +176,13 @@ def all_keys(env = None, path = locations.cgn_lmdb):
 
 def object_type_to_keys_dict(env = None, path = locations.cgn_lmdb):
     import lmdb_key
-    all_keys_list = all_keys(env, path)
+    if env is None: env = open_lmdb(path = path)
     d = {}
-    for key in all_keys_list:
-        object_type = lmdb_key.key_to_object_type(key)
-        d.setdefault(object_type, []).append(key)
+    with env.begin() as txn:
+        cursor = txn.cursor()
+        for key, _ in cursor:
+            object_type = lmdb_key.key_to_object_type(key)
+            d.setdefault(object_type, []).append(key)
     return d
 
 def all_object_type_keys(object_type, env = None, 
@@ -232,3 +253,42 @@ def delete_all(env=None, path=locations.cgn_lmdb):
         for k in keys_to_delete:
             txn.delete(k)
 
+
+
+
+
+
+
+'''
+other open_env with read_only mode check and reuse if possible:
+def get_lmdb_env(env = None, path = None, read_only = True, max_dbs = 0, 
+    readahead = True):
+    Return an LMDB environment matching the requested mode.
+
+    If an existing env is provided and its read_only mode matches,
+    it is reused. If the mode differs, the env is closed and a new
+    one is opened.
+
+    env:  Optional existing lmdb.Environment.
+    path: Path to the LMDB directory (required if env is None).
+    read_only: Open environment in read-only mode if True.
+    max_dbs: LMDB max_dbs parameter.
+    readahead: Enable LMDB readahead (default True). Set to False for random access patterns.
+
+    if env is not None:
+        # lmdb.Environment exposes read-only state
+        if env.readonly == read_only:
+            return env
+        env.close()
+
+    if path is None:
+        raise ValueError('path is required when env is None')
+
+    return lmdb.open(
+        path,
+        readonly=read_only,
+        lock=not read_only,
+        readahead=readahead,
+        max_dbs=max_dbs,
+    )
+'''
