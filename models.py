@@ -618,7 +618,7 @@ class Audio:
     def phrases(self):
         if hasattr(self, '_phrases'): return self._phrases
         self._phrases= cache.load_many(self.phrase_keys, with_links=False)
-        return self._speakers
+        return self._phrases
 
     @property
     def words(self):
@@ -914,22 +914,28 @@ Phone.allowed_child_types = []
 
 def load_cache(fraction = None):
     global cache
+    t = time.time()
     cache = cache_module.Cache()
+    print(f'cache created in {time.time() - t:.2f} seconds')
 
     cache.register(Audio)
+    print(f'Audio registered in {time.time() - t:.2f} seconds')
     cache.register(Phrase)
     cache.register(Word)
     cache.register(Syllable)
     cache.register(Phone)
     cache.register(Speaker)
+    print(f'Classes registered in {time.time() - t:.2f} seconds')
 
 
     Audio.objects = query.get_class_object(Audio, cache)
+    print(f'Audio.objects created in {time.time() - t:.2f} seconds')
     Phrase.objects = query.get_class_object(Phrase, cache)
     Word.objects = query.get_class_object(Word, cache)
     Syllable.objects = query.get_class_object(Syllable, cache)
     Phone.objects = query.get_class_object(Phone, cache)
     Speaker.objects = query.get_class_object(Speaker, cache)
+    print(f'Class objects created in {time.time() - t:.2f} seconds')
 
     cache.relations_to_class_map = {
         'audios': Audio, 
@@ -939,10 +945,11 @@ def load_cache(fraction = None):
         'syllables': Syllable,
         'phones': Phone,
     }
+    print(f'relations_to_class_map created in {time.time() - t:.2f} seconds')
     if fraction is not None:
         cache._preload_sampled_fraction(fraction)
+    print(f'Cache loaded in {time.time() - t:.2f} seconds')
             
-load_cache()
 
 def touch_db():
     load_cache()
