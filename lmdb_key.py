@@ -1,4 +1,5 @@
-import uuid
+import os
+import struct_key
 
 TYPE_TO_RANK_MAP = {
     "Audio":    0,
@@ -9,90 +10,44 @@ TYPE_TO_RANK_MAP = {
     "Speaker":  5,
 }
 
-def find_hex_length_based_on_n_items(n_items):
-    '''Find the appropriate hex length for a given number of items.
-    '''
-    hex_length = {2**8:4, 2**12:6, 2**16:8, 2**20:10, 2**24:12,
-        2**28:14, 2**32:16, 2**36:18, 2**40:20, 2**44:22, 2**48:24}
-    for limit, length in hex_length.items():
-        if n_items <= limit:
-            return length
-    raise ValueError(f'n_items {n_items} too large to determine hex length.')
-
-def find_hex_length_based_on_object_type(item):
-    hex_length = {'Audio':16, 'Speaker': 18, 'Phrase':12, 'Word':12,
-        'Syllable':14, 'Phone':16}
-    cls_name = item.__class__.__name__
-    try:
-        return hex_length[cls_name]
-    except KeyError:
-        raise ValueError(f"Unsupported segment type: {cls_name}")
+def instance_to_key(instance):
+    return struct_key.instance_to_key(instance)
     
+def make_identifier(item):
+    return os.urandom(8).hex()
+
 def key_to_info(key):
-    key_parts = key.split(":")
-    rank = int(key_parts[1])
-    identifier = key_parts[0].split('-')[1]
-    if rank in [0,5]:
-        return (identifier,rank)
-    start = int(key_parts[2])
-    audio_identifier = identifier
-    identifier = key_parts[3].split('-')[1]
-    return (audio_identifier, rank, start, identifier)
-
-def info_to_key(info):
-    if len(info) == 2:
-        identifier, rank = info
-        object_type = rank_to_object_type(rank)
-        if object_type == 'Speaker': object_type = f'~{object_type}'
-        return f"{identifier}:{rank}"
-    audio_identifier, rank, start, identifier = info
-    ot= rank_to_object_type(rank)
-    key = f"Audio-{audio_identifier}:{rank}:{start:08d}:{ot}-{identifier}"
-    return key
+    return struct_key.unpack_key(key)
     
-    
-
-def make_item_identifier(item, n_items = None):
-    if n_items: hex_length = find_hex_length_based_on_n_items(n_items)
-    else: hex_length = find_hex_length_based_on_object_type(item)
-    identifier = uuid.uuid4().hex[:hex_length]
-    object_type = item.__class__.__name__ 
-    if object_type== 'Speaker': object_type= f'~{object_type}'
-    identifier = f'{object_type}-{identifier}'
-    return identifier
-
-def item_to_key(item):
-    '''Build an LMDB key for any segment-like object.
-    
-    Expected fields on item:
-      - identifier      : unique ID string (for all non-audio)
-      - start           : start time in seconds or milliseconds
-      - audio_id        : ID of the audio file this belongs to
-      - class type      : one of Audio, Phrase, Word, Syllable, Phone
+def audio_id_segment_id_class_to_key(audio_id, segment_id, object_type, 
+    offset_ms):
+    '''Make LMDB key for a segment.
+    audio_id: hex string of audio UUID
+    segment_id: hex string of segment UUID
+    object_type: one of Audio, Phrase, Word, Syllable, Phone
+    offset_ms: integer offset in milliseconds
     '''
-    rank = object_to_rank(item)
+    rank = object_type_to_rank(object_type)
+    return struct_key.pack_segment_key(audio_id, rank, offset_ms, segment_id)
 
-    # audio and speaker only have identifier
-    if rank in [0,5]: 
-        return f"{item.identifier}:{rank}"
+def audio_id_to_key(audio_id):
+    '''Make LMDB key for an audio.
+    audio_id: hex string of audio UUID
+    '''
+    return struct_key.pack_audio_key(audio_id)
 
-    # --- Everything else: Phrase, Word, Syllable, Phone ---
-    # Normalize start time to milliseconds
-    start_ms = int(round(item.start * 1000))
+def speaker_id_to_key(speaker_id):
+    '''Make LMDB key for a speaker.
+    speaker_id: hex string of speaker UUID
+    '''
+    return struct_key.pack_speaker_key(speaker_id)
 
-    # Zero-pad to 8 digits for lexicographic ordering
-    start_str = f"{start_ms:08d}"
-    audio_key = item.audio_key
-    audio_id = key_to_identifier(audio_key)
 
-    return f"{audio_id}:{rank}:{start_str}:{item.identifier}"
-
-def object_to_rank(item):
+def instance_to_rank(instance):
     '''Map an object to its single-letter type code.
     Supports: Audio, Phrase, Word, Syllable, Phone.
     '''
-
-    object_type = item.__class__.__name__
+    object_type = instance.__class__.__name__
     return object_type_to_rank(object_type)
 
 def object_type_to_rank(object_type):
@@ -111,20 +66,6 @@ def rank_to_object_type(rank):
         if v == rank:
             return k
     raise ValueError(f'Unsupported rank: {rank}')
-
-def object_to_scan_prefix(item, all_in_same_audio=False):
-    '''Get LMDB scan prefix for a given segment type.
-    does not work YET
-    '''
-    rank = object_to_rank(item)
-
-    if rank == 0 or all_in_same_audio:
-        # Audio files only have identifier
-        return f'{item.identifier}:'
-
-    # Everything else: Phrase, Word, Syllable, Phone
-    return f'{rank}:'
-
 
 def key_to_object_type(key):
     '''Get object type string from LMDB key.
@@ -145,3 +86,18 @@ def key_to_identifier(key):
         return parts[0]
     return parts[-1]
     
+
+
+
+def object_to_scan_prefix(item, all_in_same_audio=False):
+    '''Get LMDB scan prefix for a given segment type.
+    does not work YET
+    '''
+    rank = object_to_rank(item)
+
+    if rank == 0 or all_in_same_audio:
+        # Audio files only have identifier
+        return f'{item.identifier}:'
+
+    # Everything else: Phrase, Word, Syllable, Phone
+    return f'{rank}:'
