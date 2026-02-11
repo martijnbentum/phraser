@@ -226,10 +226,15 @@ def delete(key, env=None, path=locations.cgn_lmdb):
 def delete_many(keys, env=None, path=locations.cgn_lmdb):
     env = open_lmdb(env, path)
     keys_b = [_key_bytes(k) for k in keys]
-
+    batch_size = 10_000
+    i = 0
     with env.begin(write=True) as txn:
-        for k in keys_b:
+        for k in progressbar(keys_b):
+            i += 1
             txn.delete(k)
+            if i % batch_size == 0:
+                txn.commit()
+                txn = env.begin(write=True)
 
 def delete_with_prefix( prefix, env = None, path = locations.cgn_lmdb):
     """Delete all keys starting with prefix (string or bytes)."""
@@ -249,9 +254,7 @@ def delete_all(env=None, path=locations.cgn_lmdb):
     keys_to_delete = all_keys(env)
     print(f"Deleting all {len(keys_to_delete)} keys.")
 
-    with env.begin(write=True) as txn:
-        for k in keys_to_delete:
-            txn.delete(k)
+    delete_many(keys_to_delete, env=env)
 
 
 
