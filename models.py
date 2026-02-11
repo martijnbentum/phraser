@@ -66,10 +66,9 @@ class Segment:
         self.end = float(end)
         self.identifier = lmdb_key.make_item_identifier(self)
 
-        self.parent_key = parent_key
-        self.child_keys = child_keys or []
-        self.audio_key = audio_key
-        self.speaker_key = speaker_key
+        self.parent_id= parent_id
+        self.audio_id = audio_id
+        self.speaker_id = speaker_id
         self.overwrite = overwrite
 
         # Extra metadata
@@ -97,9 +96,7 @@ class Segment:
     def __eq__(self, other):
         if not isinstance(other, Segment):
             return False
-        return self.key == other.key and \
-            self.audio_key == other.audio_key and \
-            self.object_type == other.object_type
+        return self.key== other.key
 
     def play(self, collar = None, wait = False):
         if collar is not None:
@@ -125,10 +122,15 @@ class Segment:
         return lmdb_key.item_to_key(self)
 
     @property
+    def parent_key(self):
+        parent_key = lmdb_key.segment_id_to_key(self.audio_id, self.parent_id,
+        self.parent_class, self.parent_offset_ms)
+
+    @property
     def parent(self):
         """Return the parent segment."""
         if hasattr(self, '_parent'): return self._parent
-        if self.parent_key is None:return None
+        if self.parent_id is None:return None
         self._parent = cache.load(self.parent_key, with_links=False)
         return self._parent
 
@@ -144,6 +146,10 @@ class Segment:
         return self._children
 
     @property
+    def audio_key(self):
+        return lmdb_key.audio_id_to_key(self.audio_id)
+
+    @property
     def audio(self):
         """Return the associated Audio object."""
         if self.audio_key is None or self.audio_key == 'EMPTY': return None
@@ -152,6 +158,10 @@ class Segment:
         self._audio = cache.load(self.audio_key, with_links=False)
         return self._audio
         
+    @property
+    def speaker_key(self):
+        return lmdb_key.speaker_id_to_key(self.speaker_id)
+
     @property
     def speaker(self):
         """Return the associated Speaker object."""
@@ -527,7 +537,7 @@ class Audio:
     IDENTITY_FIELDS= {'filename'}
     METADATA_FIELDS = {'sample_rate', 'duration', 'n_channels', 'dataset',
         'language', 'dialect'}
-    DB_FIELDS = {'filename', 'identifier','speaker_keys', 'phrase_keys'}
+    DB_FIELDS = {'filename', 'identifier'}
 
     @classmethod
     def get_default_cache(cls):
@@ -544,11 +554,9 @@ class Audio:
     def __init__(self, filename = None,  save=True, overwrite=False, **kwargs):
         self.object_type = self.__class__.__name__
         self.filename = filename
-        self.identifier = lmdb_key.make_item_identifier(self)
+        self.identifier = lmdb_key.make_identifier(self)
         self.overwrite = overwrite
 
-        self.speaker_keys = []
-        self.phrase_keys = []
         self._set_kwargs(**kwargs)
 
         if save:
@@ -671,7 +679,7 @@ class Audio:
     @property
     def key(self):
         """Return the LMDB key for this segment."""
-        return lmdb_key.item_to_key(self)
+        return lmdb_key.instance_to_key(self)
     
 
     def save(self, overwrite=None, fail_gracefully=False):
@@ -705,7 +713,7 @@ class Audio:
 
 class Speaker:
     IDENTITY_FIELDS= {'name', 'dataset'}
-    DB_FIELDS = {'name', 'dataset','identifier', 'audio_keys', 'phrase_keys'}
+    DB_FIELDS = {'name', 'dataset','identifier'}
     METADATA_FIELDS = {'gender', 'age', 'language', 'dialect', 'region', 
         'channel'}
     FIELDS = DB_FIELDS.union(METADATA_FIELDS)
@@ -727,7 +735,7 @@ class Speaker:
         self.object_type = self.__class__.__name__
         self.name = name
         self.dataset = dataset
-        self.identifier = lmdb_key.make_item_identifier(self)
+        self.identifier = lmdb_key.make_identifier(self)
         self.overwrite = overwrite
         self.audio_keys = []
         self.phrase_keys = []
@@ -864,7 +872,7 @@ class Speaker:
     @property
     def key(self):
         """Return the LMDB key for this segment."""
-        return lmdb_key.item_to_key(self)
+        return lmdb_key.instance_to_key(self)
             
     def save(self, overwrite=None, fail_gracefully=False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
