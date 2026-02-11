@@ -332,6 +332,7 @@ def word_layout():
     for name in 'version flags'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
     fixed_specs.append({'name': 'duration_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'parent_offset_ms', 'kind': 'int', 'bits': 32})
     for name in 'speaker_uuid parent_uuid'.split():
         fixed_specs.append({'name': name, 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
@@ -344,6 +345,8 @@ def syllable_layout():
     for name in 'version flags stress'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
     fixed_specs.append({'name': 'duration_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'parent_offset_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'phrase_offset_ms', 'kind': 'int', 'bits': 32})
     for name in 'speaker_uuid parent_uuid phrase_uuid'.split():
         fixed_specs.append({'name': name, 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
@@ -355,6 +358,8 @@ def phone_layout():
     for name in 'version flags position_code'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
     fixed_specs.append({'name': 'duration_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'parent_offset_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'phrase_offset_ms', 'kind': 'int', 'bits': 32})
     for name in 'speaker_uuid parent_uuid phrase_uuid'.split():
         fixed_specs.append({'name': name, 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
