@@ -17,11 +17,13 @@ RE= "\033[0m"
 object_type_to_ljust_label = {'Phrase': 40, 'Word': 15, 
     'Syllable': 12, 'Phone': 3}
 
+EMPTY_ID= '0000000000000000'
+
 
 class Segment:
     IDENTITY_FIELDS= {'label', 'start', 'end', 'audio_key'}
-    DB_FIELDS = {'identifier', 'label', 'start', 'end', 'parent_key',
-        'child_keys', 'audio_key', 'speaker_key'}
+    DB_FIELDS = {'identifier', 'label', 'start', 'end', 'parent_id',
+        'audio_id', 'speaker_id'}
     METADATA_FIELDS = {}# subclasses override
     '''
     Base time-aligned segment with a unique ID and parent/child links.
@@ -55,8 +57,8 @@ class Segment:
         return existing is not None
 
     def __init__(self, label = None, start = None, end = None, 
-        parent_key=None, child_keys=None, audio_key = 'EMPTY', 
-        speaker_key = 'EMPTY', save = True, overwrite = False, **kwargs):
+        parent_id=None, audio_id= EMPTY_ID, 
+        speaker_id= EMPTY_ID, save = True, overwrite = False, **kwargs):
         
         self.object_type = self.__class__.__name__
         self.label = label
