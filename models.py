@@ -28,7 +28,7 @@ class Segment:
     '''
     Base time-aligned segment with a unique ID and parent/child links.
     '''
-    allowed_child_types = []# subclasses override
+    allowed_child_type = []# subclasses override
 
     @classmethod
     def get_default_cache(cls):
@@ -115,6 +115,16 @@ class Segment:
         for child in self.children:
             child.play(collar=collar, wait = True)
             time.sleep(0.3)
+
+    @property
+    def child_class(self):
+        if self.allowed_child_type:
+            return self.allowed_child_type
+    @property
+    def child_class_name(self):
+        if self.child_class is None: return None
+        return self.child_class.__name__
+         
 
     @property
     def key(self):
@@ -258,7 +268,7 @@ class Segment:
         update_database = True):
         """    Add a child segment, enforcing the declared hierarchy.
         """
-        if self.allowed_child_types is []:
+        if self.allowed_child_type is None:
             raise TypeError(f"{self.object_type} cannot have children.")
         if child is None and child_key is None:
             raise ValueError("Either child or child_key must be provided.")
@@ -267,8 +277,8 @@ class Segment:
         if child_key in self.child_keys: return
         if child is None:
             child = cache.load(child_key, with_links=True)
-        if not child.__class__ in self.allowed_child_types:
-            m = f'{self.object_type} can only contain {self.allowed_child_types},'
+        if not child.__class__ in self.allowed_child_type:
+            m = f'{self.object_type} can only contain {self.allowed_child_type},'
             m += f'not {child.__class__}'
             raise TypeError(m)
         model_helper.ensure_consistent_link(self, child, 'audio_key',
@@ -294,7 +304,7 @@ class Segment:
             parent_key = parent.key
         if parent is None:
             parent = cache.load(parent_key, with_links=True)
-        if self.__class__ not in parent.allowed_child_types:
+        if self.__class__ not in parent.allowed_child_type:
             m = f'{parent.object_type} cannot contain '
             m += f'{self.object_type} as child.'
             raise TypeError(m)
@@ -916,10 +926,10 @@ class Speaker:
 
 
 
-Phrase.allowed_child_types = [Word]
-Word.allowed_child_types = [Syllable, Phone]
-Syllable.allowed_child_types = [Phone]
-Phone.allowed_child_types = []
+Phrase.allowed_child_type = Word
+Word.allowed_child_type = Syllable
+Syllable.allowed_child_type = Phone
+Phone.allowed_child_type = None
 
 
 def load_cache(fraction = None):
