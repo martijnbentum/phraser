@@ -19,7 +19,7 @@ def instance_to_key(obj):
     uuid = obj.identifier
     if obj.object_type == 'Audio': return pack_audio_key(uuid)
     if obj.object_type == 'Speaker': return pack_speaker_key(uuid)
-    ranks = CLASS_RANK_MAP[obj.object_type]
+    rank = CLASS_RANK_MAP[obj.object_type]
     offset = int(round(obj.start * 1000))
     audio_uuid = obj.audio_id
     return pack_segment_key(audio_uuid, rank, offset, uuid)
@@ -64,7 +64,7 @@ def pack_segment_key(audio_uuid_hex, class_rank, offset_ms, segment_uuid_hex):
     segment_uuid = _hex_to_8_bytes(segment_uuid_hex)
     audio_rank = CLASS_RANK_MAP['Audio']
 
-    return struct.pack(SEGMENT_FMT, struct_helper.AUDIO_RANK, audio_uuid, 
+    return struct.pack(SEGMENT_FMT, audio_rank, audio_uuid, 
         class_rank, offset_ms, segment_uuid)
         
 
@@ -88,7 +88,7 @@ def unpack_key(key_bytes):
             raise ValueError('Invalid audio key')
         return {
             'object_type': 'Audio',
-            'audio_uuid': audio_uuid.hex(),
+            'identifier': audio_uuid.hex(),
         }
 
     if n == SEGMENT_LEN:
@@ -97,10 +97,10 @@ def unpack_key(key_bytes):
         if audio_rank != AUDIO_RANK:
             raise ValueError('Invalid segment key (audio_rank must be 0)')
         return {
-            'object_type': struct_helper.class_rank_map[class_rank],
-            'audio_uuid': audio_uuid.hex(),
+            'object_type': RANK_CLASS_MAP[class_rank],
+            'audio_identifier': audio_uuid.hex(),
             'start_ms': start_ms,
-            'segment_uuid': segment_uuid.hex(),
+            'identifier': segment_uuid.hex(),
         }
 
     if n == SPEAKER_LEN:
@@ -110,19 +110,19 @@ def unpack_key(key_bytes):
             raise ValueError(m)
         return {
             'object_type': 'Speaker',
-            'speaker_uuid': speaker_uuid.hex(),
+            'identifier': speaker_uuid.hex(),
         }
 
     if n == TIME_SCAN_LEN:
         o = struct.unpack(TIME_SCAN_FMT, key_bytes)
         audio_rank, audio_uuid, child_class_rank, start_ms = o
-        object_type = struct_helper.class_rank_map.get(child_class_rank)
+        object_type = RANK_CLASS_MAP[child_class_rank]
         if audio_rank != AUDIO_RANK:
             raise ValueError('Invalid time scan key (audio_rank must be 0)')
         return {
             'child_object_type': object_type, 
-            'audio_uuid': audio_uuid.hex(),
             'start_ms': start_ms,
+            'audio_identifier': audio_uuid.hex(),
         }
 
     raise ValueError(f'Unknown key length: {n}')
