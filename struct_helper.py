@@ -51,7 +51,7 @@ def _make_key_fields_for_time_scan():
 
 def make_key_fmt_for_time_scan(byte_order='>'):
     fields = _make_key_fields_for_time_scan()
-    tokens = [byte_order] + [_key_token_for_field(f) for f in fields]
+    tokens = [byte_order] + [key_token_for_field(f) for f in fields]
     return ''.join(tokens)
 
 def make_key_fmt_for_class(class_name, byte_order='>'):
