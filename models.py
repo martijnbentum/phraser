@@ -64,7 +64,7 @@ class Segment:
         self.label = label
         self.start = float(start)
         self.end = float(end)
-        self.identifier = lmdb_key.make_item_identifier(self)
+        self.identifier = lmdb_key.make_identifier(self)
 
         self.parent_id= parent_id
         self.audio_id = audio_id
@@ -119,12 +119,12 @@ class Segment:
     @property
     def key(self):
         """Return the LMDB key for this segment."""
-        return lmdb_key.item_to_key(self)
+        return lmdb_key.instance_to_key(self)
 
     @property
     def parent_key(self):
         parent_key = lmdb_key.segment_id_to_key(self.audio_id, self.parent_id,
-        self.parent_class, self.parent_offset_ms)
+            self.parent_class, self.parent_offset_ms)
 
     @property
     def parent(self):
