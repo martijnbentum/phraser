@@ -64,22 +64,22 @@ def rank_to_object_type(rank):
 def key_to_object_type(key):
     '''Get object type string from LMDB key.
     '''
-    if isinstance(key, bytes): key = key.decode()
-    if ':' not in key:
-        raise ValueError(f'Invalid key format: {key}')
-    rank = int(key.split(":")[1]) 
-    return rank_to_object_type(rank)
+    info = key_to_info(key)
+    return info['object_type']
 
 def key_to_identifier(key):
-    if isinstance(key, bytes): key = key.decode()
-    if key == 'EMPTY': return key
-    if ':' not in key:
-        raise ValueError(f'Invalid key format: {key}')
-    parts = key.split(":")
-    if len(parts) == 2 and ('Audio' in key or 'Speaker' in key):
-        return parts[0]
-    return parts[-1]
+    '''Get identifier (UUID hex string) from LMDB key.
+    '''
+    info = key_to_info(key)
+    return info['identifier']
     
+def key_to_audio_identifier(key):
+    info = key_to_info(key)
+    if info['object_type'] == 'Audio':
+        return info['identifier']
+    if info['object_type'] == 'Speaker':
+        return None
+    return info['audio_identifier']
 
 
 
