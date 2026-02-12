@@ -80,7 +80,7 @@ class Cache:
                           exists in database
         '''
         if not self.db_saving_allowed: return
-        key = lmdb_key.item_to_key(obj)
+        key = lmdb_key.instance_to_key(obj)
         d = obj.to_dict()
         fail_message = f"Object with key {key} already exists. "
         fail_message += "Skipping save."
@@ -98,7 +98,7 @@ class Cache:
     def save_many(self, objs, overwrite = False, fail_gracefully = False):
         if not self.db_saving_allowed: return
         start = time.time()
-        cache_update = {lmdb_key.item_to_key(obj): obj.to_dict() for obj in objs}
+        cache_update = {lmdb_key.instance_to_key(obj): obj.to_dict() for obj in objs}
         # print('update dict done', time.time() - start)
         try: lmdb_helper.write_many(cache_update.keys(), cache_update.values(),
             env = self.env, overwrite = overwrite)
