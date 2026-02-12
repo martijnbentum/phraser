@@ -1,14 +1,8 @@
 import os
 import struct_key
+import struct_helper
+from struct_helper import CLASS_RANK_MAP
 
-TYPE_TO_RANK_MAP = {
-    "Audio":    0,
-    "Phrase":   1,
-    "Word":     2,
-    "Syllable": 3,
-    "Phone":    4,   
-    "Speaker":  5,
-}
 
 def instance_to_key(instance):
     return struct_key.instance_to_key(instance)
