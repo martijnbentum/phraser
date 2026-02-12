@@ -36,3 +36,5 @@ def pretty_print_object_dict(obj_dict):
 
     return '\n'.join(lines)
 
+def reverse_dict(d):
+    return {v: k for k, v in d.items()}
