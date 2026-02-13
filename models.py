@@ -1,10 +1,11 @@
 import uuid
-import lmdb_helper 
 import cache as cache_module
+import lmdb_helper 
 import lmdb_key
 import model_helper
 import query
 from ssh_audio_play import play
+import struct_value
 import time
 import utils
 
@@ -57,7 +58,7 @@ class Segment:
         return existing is not None
 
     def __init__(self, label = None, start = None, end = None, 
-        parent_id=None, audio_id= EMPTY_ID, 
+        parent_id=EMPTY_ID, audio_id= EMPTY_ID, 
         speaker_id= EMPTY_ID, save = True, overwrite = False, **kwargs):
         
         self.object_type = self.__class__.__name__
@@ -133,16 +134,32 @@ class Segment:
 
     @property
     def parent_key(self):
-        parent_key = lmdb_key.segment_id_to_key(self.audio_id, self.parent_id,
-            self.parent_class, self.parent_offset_ms)
+        parent_key = lmdb_key.segment_id_to_key(self.audio_id, 
+            self.parent_id, self.parent_class, self.parent_offset_ms)
+            
+    @property
+    def phrase_id(self):
+        if self.object_type == "Phrase": return self.identifier
+        if self.object_type == "Word": return self.parent_id
+        if hasattr(self, '_phrase_id'): return self._phrase_id
+        return EMPTY_ID
 
     @property
     def parent(self):
         """Return the parent segment."""
         if hasattr(self, '_parent'): return self._parent
-        if self.parent_id is None:return None
+        if self.parent_id == EMPTY_ID:return None
         self._parent = cache.load(self.parent_key, with_links=False)
         return self._parent
+
+    @property
+    def parent_start(self):
+        if self.parent is None : return 0
+        return self.parent.start
+
+    @property
+    def parent_start_ms(self):
+        return int(self.parent_start * 1000)
 
     @property
     def children(self):
@@ -175,7 +192,8 @@ class Segment:
     @property
     def speaker(self):
         """Return the associated Speaker object."""
-        if self.speaker_key is None or self.speaker_key == 'EMPTY': return None
+        if self.speaker_id is None or self.speaker_id == EMPTY_ID: 
+            return None
         if hasattr(self, '_speaker'): return self._speaker
         self._speaker = cache.load(self.speaker_key, with_links=False)
         return self._speaker
@@ -188,6 +206,21 @@ class Segment:
             if segment.object_type == "Phrase":
                 self._phrase = segment
                 return self._phrase
+
+    @property
+    def phrase_start_ms(self):
+        if self.phrase is None: return 0
+        return int(self.phrase.start * 1000)
+    
+    @property
+    def start_ms(self):
+        return int(self.start * 1000)
+
+    @property
+    def end_ms(self):
+        return int(self.end * 1000)
+
+    
 
     @property
     def duration(self):
@@ -325,13 +358,20 @@ class Segment:
     def delete(self):
         cache.delete(self.key)
 
+    def has_extra(self):
+        if hasattr(self, 'extra') and self.extra:
+            return True
+        return False
+
     def to_dict(self):
         """
         Serialize to a clean dict (for LMDB storage).
         """
         base = {}
         for name in self.DB_FIELDS:
-            base[name] = getattr(self, name)
+            if name in ['start', 'end']:
+                base[f'{name}_ms'] = int(getattr(self, name) * 1000)
+            else: base[name] = getattr(self, name)
         for name in self.METADATA_FIELDS:
             if hasattr(self, name):
                 base[name] = getattr(self, name)
@@ -348,7 +388,16 @@ class Segment:
             if k in extra: continue
             extra[k] = v
         base['extra'] = extra
+        if extra: base['flags'] = 1
+        else: base['flags'] = 0
         return base
+
+    
+
+    def to_struct_value(self):
+        '''Serialize to a struct value (for LMDB storage).
+        '''
+        return struct_value.pack_segment(self)
 
     @property
     def metadata_present(self):
@@ -511,6 +560,13 @@ class Syllable(Segment):
     METADATA_FIELDS = {'stress', 'stress_level','tone'}
 
     @property
+    def stress_code(self):
+        if hasattr(self, 'stress'):
+            if self.stress == True: return 1
+            else: return 0
+        return 9
+
+    @property
     def phones(self):
         """Return all phones in this syllable."""
         return self.children
@@ -527,6 +583,14 @@ class Syllable(Segment):
 
 class Phone(Segment):
     METADATA_FIELDS = {'features'}
+
+    @property
+    def position_code(self):
+        if hasattr(self, 'position'):
+            if self.position == 'onset': return 1
+            if self.position == 'nucleus': return 2
+            if self.position == 'coda': return 3
+        return 9
 
     @property
     def syllable(self):
