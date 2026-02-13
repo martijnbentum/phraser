@@ -1,26 +1,30 @@
 import struct 
+from struct_helper import hex_to_8_bytes
 
+VERSION = 1
 
 # ---- class-specific wrappers ----
 
-def pack_audio(obj):
+def pack_audio(instance):
     '''Pack Audio value bytes from dict.
     layout: layout dict for audio
-    obj: dict with keys matching audio fields
+    instance: Audio instance with fields matching audio layout
     '''
+
     layout = LAYOUTS['audio']
+    flags = 1 if instance.has_extra() else 0
     fixed = {
-        'version': obj['version'],
-        'flags': obj['flags'],
-        'n_channels': obj['n_channels'],
-        'duration_ms': obj['duration_ms'],
-        'sample_rate': obj['sample_rate'],
+        'version': VERSION,
+        'flags': flags,
+        'n_channels': instance.n_channels,
+        'end_ms': instance.end_ms,
+        'sample_rate': instance.sample_rate,
     }
     var = {
-        'filename': obj.get('filename', ''),
-        'dialect': obj.get('dialect', ''),
-        'language': obj.get('language', ''),
-        'dataset': obj.get('dataset', ''),
+        'filename': instance.filename,
+        'dialect': instance.dialect,
+        'language': instance.language,
+        'dataset': instance.dataset,
     }
     return _pack_with_layout(layout, fixed, var, 'audio')
 
@@ -33,18 +37,24 @@ def unpack_audio(value_bytes):
     layout = LAYOUTS['audio']
     return _unpack_with_layout(layout, value_bytes, 'audio')
 
+def pack_segment(instance):
+    f = globals().get(f'pack_{instance.object_type.lower()}')
+    if f is None:
+        raise ValueError(f'Unsupported object type: {instance.object_type}')
+    return f(instance)
 
-def pack_phrase(obj):
+def pack_phrase(instance):
     '''Pack Phrase value bytes from dict.
     layout: layout dict for phrase
-    obj: dict with keys matching phrase fields
+    instance: Phrase instance with fields matching phrase layout
     '''
     layout = LAYOUTS['phrase']
+    flags = 1 if instance.has_extra() else 0
     fixed = {
-        'version': obj['version'],
-        'flags': obj['flags'],
-        'duration_ms': obj['duration_ms'],
-        'speaker_uuid': obj['speaker_uuid'],
+        'version': VERSION,
+        'flags': flags,
+        'end_ms': instance.end_ms,
+        'speaker_id': hex_to_8_bytes(instance.speaker_id),
     }
     var = {'label': obj.get('label', '')}
     return _pack_with_layout(layout, fixed, var, 'phrase')
@@ -59,22 +69,24 @@ def unpack_phrase(value_bytes):
     return _unpack_with_layout(layout, value_bytes, 'phrase')
 
 
-def pack_word(obj):
+def pack_word(instance):
     '''Pack Word value bytes from dict.
     layout: layout dict for word
-    obj: dict with keys matching word fields
+    instance: Word instance with fields matching word layout
     '''
     layout = LAYOUTS['word']
+    flags = 1 if instance.has_extra() else 0
     fixed = {
-        'version': obj['version'],
-        'flags': obj['flags'],
-        'duration_ms': obj['duration_ms'],
-        'speaker_uuid': obj['speaker_uuid'],
-        'parent_uuid': obj['parent_uuid'],
+        'version': VERSION,
+        'flags': flags,
+        'end_ms': instance.end_ms,
+        'speaker_id': hex_to_8_bytes(instance.speaker_id),
+        'parent_id': hex_to_8_bytes(instance.parent_id),
+        'parent_start_ms': instance.parent_start_ms,
     }
     var = {
-        'label': obj.get('label', ''),
-        'ipa_label': obj.get('ipa_label', ''),
+        'label': instance.label,
+        'ipa_label': instance.ipa_label,
     }
     return _pack_with_layout(layout, fixed, var, 'word')
 
@@ -88,22 +100,25 @@ def unpack_word(value_bytes):
     return _unpack_with_layout(layout, value_bytes, 'word')
 
 
-def pack_syllable(obj):
+def pack_syllable(instance):
     '''Pack Syllable value bytes from dict.
     layout: layout dict for syllable
-    obj: dict with keys matching syllable fields
+    instance: Syllable instance with fields matching syllable layout
     '''
     layout = LAYOUTS['syllable']
+    flags = 1 if instance.has_extra() else 0
     fixed = {
-        'version': obj['version'],
-        'flags': obj['flags'],
-        'stress': obj['stress'],
-        'duration_ms': obj['duration_ms'],
-        'speaker_uuid': obj['speaker_uuid'],
-        'parent_uuid': obj['parent_uuid'],
-        'phrase_uuid': obj['phrase_uuid'],
+        'version': VERSION,
+        'flags': flags,
+        'stress_code': instance.stress_code,
+        'end_ms': instance.end_ms,
+        'speaker_id': hex_to_8_bytes(instance.speaker_id),
+        'parent_id': hex_to_8_bytes(instance.parent_id),
+        'parent_start_ms': instance.parent_start_ms,
+        'phrase_id': hex_to_8_bytes(instance.phrase_id),
+        'phrase_start_ms': instance.phrase_start_ms,
     }
-    var = {'label': obj.get('label', '')}
+    var = {'label': instance.label}
     return _pack_with_layout(layout, fixed, var, 'syllable')
 
 
@@ -116,22 +131,25 @@ def unpack_syllable(value_bytes):
     return _unpack_with_layout(layout, value_bytes, 'syllable')
 
 
-def pack_phone(obj):
+def pack_phone(instance):
     '''Pack Phone value bytes from dict.
     layout: layout dict for phone
-    obj: dict with keys matching phone fields
+    instance: Phone instance with fields matching phone layout
     '''
     layout = LAYOUTS['phone']
+    flags = 1 if instance.has_extra() else 0
     fixed = {
-        'version': obj['version'],
-        'flags': obj['flags'],
-        'position_code': obj['position_code'],
-        'duration_ms': obj['duration_ms'],
-        'speaker_uuid': obj['speaker_uuid'],
-        'parent_uuid': obj['parent_uuid'],
-        'phrase_uuid': obj['phrase_uuid'],
+        'version': VERSION,
+        'flags': flags,
+        'position_code': instance.position_code,
+        'end_ms': instance.end_ms,
+        'speaker_id': hex_to_8_bytes(instance.speaker_id),
+        'parent_id': hex_to_8_bytes(instance.parent_id),
+        'parent_start_ms': instance.parent_start_ms,
+        'phrase_id': hex_to_8_bytes(instance.phrase_id),
+        'phrase_start_ms': instance.phrase_start_ms,
     }
-    var = {'label': obj.get('label', '')}
+    var = {'label': instance.label}
     return _pack_with_layout(layout, fixed, var, 'phone')
 
 
@@ -144,24 +162,25 @@ def unpack_phone(value_bytes):
     return _unpack_with_layout(layout, value_bytes, 'phone')
 
 
-def pack_speaker(obj):
+def pack_speaker(instance):
     '''Pack Speaker value bytes from dict.
     layout: layout dict for speaker
-    obj: dict with keys matching speaker fields
+    instance: Speaker instance with fields matching speaker layout
     '''
     layout = LAYOUTS['speaker']
+    flags = 1 if instance.has_extra() else 0
     fixed = {
-        'version': obj['version'],
-        'flags': obj['flags'],
-        'gender_code': obj['gender_code'],
-        'age_years': obj['age_years'],
+        'version': VERSION,
+        'flags': flags,
+        'gender_code': instance.gender_code,
+        'age_years': instance.age_years,
     }
     var = {
-        'name': obj.get('name', ''),
-        'dataset': obj.get('dataset', ''),
-        'dialect': obj.get('dialect', ''),
-        'region': obj.get('region', ''),
-        'language': obj.get('language', ''),
+        'name': instance.name,
+        'dataset': instance.dataset,
+        'dialect': instance.dialect,
+        'region': instance.region,
+        'language': instance.language,
     }
     return _pack_with_layout(layout, fixed, var, 'speaker')
 
@@ -310,7 +329,7 @@ def audio_layout():
     fixed_specs = []
     for name in 'version flags n_channels'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
-    for name in 'duration_ms sample_rate'.split():
+    for name in 'end_ms sample_rate'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 32})
     variable_specs = []
     for name in 'filename dialect language dataset'.split():
@@ -321,8 +340,8 @@ def phrase_layout():
     fixed_specs = []
     for name in 'version flags'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
-    fixed_specs.append({'name': 'duration_ms', 'kind': 'int', 'bits': 32})
-    fixed_specs.append({'name': 'speaker_uuid', 'kind': 'bytes', 'n_bytes': 8})
+    fixed_specs.append({'name': 'end_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'speaker_id', 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
     variable_specs.append({'name': 'label', 'kind': 'str', 'bits': 16})
     return build_layout(fixed_specs=fixed_specs, variable_specs=variable_specs)
@@ -331,9 +350,9 @@ def word_layout():
     fixed_specs = []
     for name in 'version flags'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
-    fixed_specs.append({'name': 'duration_ms', 'kind': 'int', 'bits': 32})
-    fixed_specs.append({'name': 'parent_offset_ms', 'kind': 'int', 'bits': 32})
-    for name in 'speaker_uuid parent_uuid'.split():
+    fixed_specs.append({'name': 'end_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'parent_start_ms', 'kind': 'int', 'bits': 32})
+    for name in 'speaker_id parent_id'.split():
         fixed_specs.append({'name': name, 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
     for name in 'label ipa_label'.split():
@@ -344,10 +363,10 @@ def syllable_layout():
     fixed_specs = []
     for name in 'version flags stress'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
-    fixed_specs.append({'name': 'duration_ms', 'kind': 'int', 'bits': 32})
-    fixed_specs.append({'name': 'parent_offset_ms', 'kind': 'int', 'bits': 32})
-    fixed_specs.append({'name': 'phrase_offset_ms', 'kind': 'int', 'bits': 32})
-    for name in 'speaker_uuid parent_uuid phrase_uuid'.split():
+    fixed_specs.append({'name': 'end_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'parent_start_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'phrase_start_ms', 'kind': 'int', 'bits': 32})
+    for name in 'speaker_id parent_id phrase_id'.split():
         fixed_specs.append({'name': name, 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
     variable_specs.append({'name': 'label', 'kind': 'str', 'bits': 16})
@@ -357,10 +376,10 @@ def phone_layout():
     fixed_specs = []
     for name in 'version flags position_code'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
-    fixed_specs.append({'name': 'duration_ms', 'kind': 'int', 'bits': 32})
-    fixed_specs.append({'name': 'parent_offset_ms', 'kind': 'int', 'bits': 32})
-    fixed_specs.append({'name': 'phrase_offset_ms', 'kind': 'int', 'bits': 32})
-    for name in 'speaker_uuid parent_uuid phrase_uuid'.split():
+    fixed_specs.append({'name': 'end_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'parent_start_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'phrase_start_ms', 'kind': 'int', 'bits': 32})
+    for name in 'speaker_id parent_id phrase_id'.split():
         fixed_specs.append({'name': name, 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
     variable_specs.append({'name': 'label', 'kind': 'str', 'bits': 8})
