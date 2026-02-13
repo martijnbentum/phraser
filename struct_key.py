@@ -37,7 +37,7 @@ def make_time_scan_prefix(audio_uuid_hex, child_class, time_ms):
     child_class: Word, Syllable, Phone
     time_ms: integer offset in milliseconds
     '''
-    audio_uuid = _hex_to_8_bytes(audio_uuid_hex)
+    audio_uuid = struct_helper.hex_to_8_bytes(audio_uuid_hex)
     child_class_rank = CLASS_RANK_MAP[child_class]
     audio_rank = CLASS_RANK_MAP['Audio']
     return struct.pack(TIME_SCAN_FMT, audio_rank, 
@@ -45,13 +45,13 @@ def make_time_scan_prefix(audio_uuid_hex, child_class, time_ms):
 
 
 def pack_speaker_key(speaker_uuid_hex):
-    speaker_uuid = _hex_to_8_bytes(speaker_uuid_hex)
+    speaker_uuid = struct_helper.hex_to_8_bytes(speaker_uuid_hex)
     speaker_rank = CLASS_RANK_MAP['Speaker']
     return struct.pack(SPEAKER_FMT, speaker_rank, speaker_uuid)
 
 
 def pack_audio_key(audio_uuid_hex):
-    audio_uuid = _hex_to_8_bytes(audio_uuid_hex)
+    audio_uuid = struct_helper.hex_to_8_bytes(audio_uuid_hex)
     rank = CLASS_RANK_MAP['Audio']
     return struct.pack(AUDIO_FMT, rank, audio_uuid, rank)
 
@@ -60,8 +60,8 @@ def pack_segment_key(audio_uuid_hex, class_rank, offset_ms, segment_uuid_hex):
     if not (0 <= offset_ms <= 0xFFFFFFFF):
         raise ValueError('offset_ms must fit in uint32')
 
-    audio_uuid = _hex_to_8_bytes(audio_uuid_hex)
-    segment_uuid = _hex_to_8_bytes(segment_uuid_hex)
+    audio_uuid = struct_helper.hex_to_8_bytes(audio_uuid_hex)
+    segment_uuid = struct_helper.hex_to_8_bytes(segment_uuid_hex)
     audio_rank = CLASS_RANK_MAP['Audio']
 
     return struct.pack(SEGMENT_FMT, audio_rank, audio_uuid, 
@@ -128,9 +128,4 @@ def unpack_key(key_bytes):
     raise ValueError(f'Unknown key length: {n}')
 
 
-def _hex_to_8_bytes(hex_str):
-    '''Convert 16-hex-char string to 8 raw bytes.'''
-    if len(hex_str) != 16:
-        raise ValueError(f'Expected 16 hex chars, got {len(hex_str)}')
-    return bytes.fromhex(hex_str)
 
