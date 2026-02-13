@@ -42,6 +42,26 @@ def _key_bytes(key):
         return key
     return str(key).encode("utf-8")
 
+def write_new(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
+    '''Write byte value to LMDB under byte key.
+    key : byte
+        Key under which the object is stored. 
+    value : byte
+        struct made in struct_value.
+    env : lmdb.Environment or None
+        Existing LMDB environment; if None, a default one is opened.
+    path : str
+        Path to the LMDB directory (only used when env is None).
+    '''
+    env = open_lmdb(env, path)
+    if not overwrite:
+        exists= key_exists(k, env=env)
+        if exists:
+            m = f'Key {key} already exists in LMDB store at {path}. '
+            m += f'Use overwrite=True to overwrite.'
+            raise KeyError(m)
+    with env.begin(write=True) as txn:
+        txn.put(k, v)  # overwrite=True by default
 
 def write(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
     '''Write value as a pickled object to LMDB under key.
