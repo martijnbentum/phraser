@@ -62,3 +62,9 @@ def make_key_fmt_for_class(class_name, byte_order='>'):
     fields = make_key_fields_for_class(class_name)
     tokens = [byte_order] + [key_token_for_field(f) for f in fields]
     return ''.join(tokens)
+
+def hex_to_8_bytes(hex_str):
+    '''Convert 16-hex-char string to 8 raw bytes.'''
+    if len(hex_str) != 16:
+        raise ValueError(f'Expected 16 hex chars, got {len(hex_str)}')
+    return bytes.fromhex(hex_str)
