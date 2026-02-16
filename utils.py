@@ -38,3 +38,11 @@ def pretty_print_object_dict(obj_dict):
 
 def reverse_dict(d):
     return {v: k for k, v in d.items()}
+
+def make_gender_dict(reverse=False):
+    d = {name:code for name,code in zip(['unknown','female','male'], range(3))}
+    if reverse: return reverse_dict(d)
+    return d
+
+gender_dict = make_gender_dict()
+reverse_gender_dict = make_gender_dict(reverse=True)
