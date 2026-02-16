@@ -5,6 +5,18 @@ VERSION = 1
 
 # ---- class-specific wrappers ----
 
+def pack_instance(instance):
+    f = globals().get(f'pack_{instance.object_type.lower()}')
+    if f is None:
+        raise ValueError(f'Unsupported object type: {instance.object_type}')
+    return f(instance)
+
+def unpack_instance(object_type, value_bytes):
+    f = globals().get(f'unpack_{object_type.lower()}')
+    if f is None:
+        raise ValueError(f'Unsupported object type: {object_type}')
+    return f(value_bytes)
+
 def pack_audio(instance):
     '''Pack Audio value bytes from dict.
     layout: layout dict for audio
@@ -17,7 +29,7 @@ def pack_audio(instance):
         'version': VERSION,
         'flags': flags,
         'n_channels': instance.n_channels,
-        'end_ms': instance.end_ms,
+        'duration_ms': instance.duration_ms,
         'sample_rate': instance.sample_rate,
     }
     var = {
@@ -36,12 +48,6 @@ def unpack_audio(value_bytes):
     '''
     layout = LAYOUTS['audio']
     return _unpack_with_layout(layout, value_bytes, 'audio')
-
-def pack_segment(instance):
-    f = globals().get(f'pack_{instance.object_type.lower()}')
-    if f is None:
-        raise ValueError(f'Unsupported object type: {instance.object_type}')
-    return f(instance)
 
 def pack_phrase(instance):
     '''Pack Phrase value bytes from dict.
@@ -86,7 +92,7 @@ def pack_word(instance):
     }
     var = {
         'label': instance.label,
-        'ipa_label': instance.ipa_label,
+        'ipa': instance.ipa,
     }
     return _pack_with_layout(layout, fixed, var, 'word')
 
@@ -173,7 +179,7 @@ def pack_speaker(instance):
         'version': VERSION,
         'flags': flags,
         'gender_code': instance.gender_code,
-        'age_years': instance.age_years,
+        'age': instance.age,
     }
     var = {
         'name': instance.name,
@@ -318,7 +324,7 @@ def _unpack_with_layout(layout, value_bytes, obj_name):
 
 def speaker_layout():
     fixed_specs = []
-    for name in 'version flags gender_code age_years'.split():
+    for name in 'version flags gender_code age'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
     variable_specs = []
     for name in 'name dataset dialect region language'.split():
@@ -329,7 +335,7 @@ def audio_layout():
     fixed_specs = []
     for name in 'version flags n_channels'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
-    for name in 'end_ms sample_rate'.split():
+    for name in 'duration_ms sample_rate'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 32})
     variable_specs = []
     for name in 'filename dialect language dataset'.split():
@@ -361,7 +367,7 @@ def word_layout():
 
 def syllable_layout():
     fixed_specs = []
-    for name in 'version flags stress'.split():
+    for name in 'version flags stress_code'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
     fixed_specs.append({'name': 'end_ms', 'kind': 'int', 'bits': 32})
     fixed_specs.append({'name': 'parent_start_ms', 'kind': 'int', 'bits': 32})
