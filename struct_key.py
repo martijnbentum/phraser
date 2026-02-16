@@ -98,7 +98,7 @@ def unpack_key(key_bytes):
             raise ValueError('Invalid segment key (audio_rank must be 0)')
         return {
             'object_type': RANK_CLASS_MAP[class_rank],
-            'audio_identifier': audio_uuid.hex(),
+            'audio_id': audio_uuid.hex(),
             'start_ms': start_ms,
             'identifier': segment_uuid.hex(),
         }
@@ -122,7 +122,7 @@ def unpack_key(key_bytes):
         return {
             'child_object_type': object_type, 
             'start_ms': start_ms,
-            'audio_identifier': audio_uuid.hex(),
+            'audio_id': audio_uuid.hex(),
         }
 
     raise ValueError(f'Unknown key length: {n}')
