@@ -4,7 +4,10 @@ import lmdb_key
 import locations
 import pickle
 import random
+import struct_key
+import struct_value
 import time
+import utils
 
 R= "\033[91m"
 G= "\033[92m"
@@ -81,10 +84,10 @@ class Cache:
         '''
         if not self.db_saving_allowed: return
         key = lmdb_key.instance_to_key(obj)
-        d = obj.to_dict()
+        value = struct_value.pack_instance(obj)
         fail_message = f"Object with key {key} already exists. "
         fail_message += "Skipping save."
-        try: lmdb_helper.write(key = key, value = d, env = self.env, 
+        try: lmdb_helper.write(key = key, value = value, env = self.env, 
             overwrite = overwrite)
         except KeyError as e:
             if fail_gracefully: print(fail_message)
@@ -99,7 +102,8 @@ class Cache:
         if not self.db_saving_allowed: return
         start = time.time()
         itk = lmdb_key.instance_to_key
-        cache_update = {itk(obj): obj.to_dict() for obj in objs}
+        pi = struct_value.pack_instance
+        cache_update = {itk(obj): pi(obj) for obj in objs}
         # print('update dict done', time.time() - start)
         try: lmdb_helper.write_many(cache_update.keys(), cache_update.values(),
             env = self.env, overwrite = overwrite)
@@ -123,11 +127,10 @@ class Cache:
 
     def load(self, key, with_links = False):
         '''load an object from LMDB by key.
-        key: can be str or bytes to load the object from the database.
+        key: to load the object from the database.
         with_links: if True, load linked objects (e.g.children, audio, speaker)
                     rarely used because it requires multiple LMDB hits.
         '''
-        if isinstance(key, bytes): key = key.decode()
             
         if self.verbose: print(f"Loading key: {key}")
         if key in self._cache:
@@ -135,12 +138,10 @@ class Cache:
             return self._cache[key]
         if self.verbose: print(' Not in cache. Loading from LMDB...')
         
-        object_type = lmdb_key.key_to_object_type(key)
-        cls = self.CLASS_MAP[object_type]
-        data = lmdb_helper.load(key = key, env = self.env)
-        obj = data_dict_to_instance(cls, data)
+        value = lmdb_helper.load(key = key, env = self.env)
+        obj = value_key_to_instance(self, value, key)
         self._cache[key] = obj
-        self.load_counter[object_type] += 1
+        self.load_counter[obj.object_type] += 1
         return obj
 
     def load_many(self, keys, with_links = False):
@@ -188,12 +189,11 @@ class Cache:
             if self.verbose: print(time.time() - start, 'lmdb data loaded')
             for key, data in zip(not_found_in_cache, results):
                 index = key_to_index[key]
-                object_type = lmdb_key.key_to_object_type(key)
-                cls = self.CLASS_MAP[object_type]
-                obj = data_dict_to_instance(cls, data)
+                value = lmdb_helper.load(key = key, env = self.env)
+                obj = value_key_to_instance(self, value, key)
                 self._cache[key] = obj
                 objs[index] = obj
-                self.load_counter[object_type] += 1
+                self.load_counter[obj.object_type] += 1
             # print(time.time() - start, 'objs created')
         finally:
             # reenable garbage collection (also in case of error)
@@ -272,16 +272,46 @@ class Cache:
 
 
 
-def data_dict_to_instance(cls, data):
-    '''convert a data dict loaded from LMDB to an instance of cls
+def value_key_to_instance(cache, value, key):
+    '''convert value, key loaded from LMDB to an instance of cls
     this speeds up loading by avoiding __init__ calls
     '''
+
+    info = lmdb_key.key_to_info(key)
+    object_type = info['object_type']
+    cls = cache.CLASS_MAP[object_type]
     obj = cls.__new__(cls)
-    data['object_type'] = cls.__name__
-    extra = data.pop('extra')
+    data = struct_value.unpack_instance(object_type, value)
+    data.update(info)
+    if object_type == 'Speaker': _convert_speaker(data)
+    if object_type == 'Audio': pass
+    else: _convert_segment(data)
+    # extra = data.pop('extra')
     obj.__dict__.update(data)
-    obj.__dict__['extra'] = extra
+    # obj.__dict__['extra'] = extra
     return obj
+
+def _convert_segment(d):
+    '''
+    convert db values to instance values
+    Map *_ms fields to seconds and rename key without _ms suffix.
+    Map *_id fields to hex strings and rename key without _id suffix.
+    '''
+    for k in list(d.keys()):
+        v = d[k]
+        if k.endswith('_ms') and isinstance(v, (int)):
+            new_key = k[:-3]  # remove '_ms'
+            d[new_key] = v * 0.001 
+            del d[k]
+        if k.endswith('_id') and isinstance(v, (bytes)):
+            d[k] = v.hex()
+
+def _convert_speaker(d):
+    gender_code = d.pop('gender_code')
+    d['gender'] = utils.reverse_gender_dict[gender_code]
+    
+
+
 
     
 
