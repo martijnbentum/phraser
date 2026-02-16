@@ -133,9 +133,14 @@ class Segment:
         return lmdb_key.instance_to_key(self)
 
     @property
+    def key_info(self):
+        return lmdb_key.key_to_info(self.key)
+
+    @property
     def parent_key(self):
+        if self.parent_id == EMPTY_ID: return None
         parent_key = lmdb_key.segment_id_to_key(self.audio_id, 
-            self.parent_id, self.parent_class, self.parent_offset_ms)
+            self.parent_id, self.parent_class, self.parent_start_ms)
             
     @property
     def phrase_id(self):
@@ -143,6 +148,13 @@ class Segment:
         if self.object_type == "Word": return self.parent_id
         if hasattr(self, '_phrase_id'): return self._phrase_id
         return EMPTY_ID
+
+    @property
+    def phrase_key(self):
+        if self.phrase_id == EMPTY_ID: return None
+        if self.object_type == "Phrase": return self.key
+        return lmdb_key.segment_id_to_key(self.audio_id, self.phrase_id, 
+            'Phrase', self.phrase_start_ms)
 
     @property
     def parent(self):
@@ -174,12 +186,13 @@ class Segment:
 
     @property
     def audio_key(self):
+        if self.audio_id == EMPTY_ID: return None
         return lmdb_key.audio_id_to_key(self.audio_id)
 
     @property
     def audio(self):
         """Return the associated Audio object."""
-        if self.audio_key is None or self.audio_key == 'EMPTY': return None
+        if self.audio_key is None: return None
         if hasattr(self, '_audio') and self._audio is not None: 
             return self._audio
         self._audio = cache.load(self.audio_key, with_links=False)
@@ -187,13 +200,13 @@ class Segment:
         
     @property
     def speaker_key(self):
+        if self.speaker_id == EMPTY_ID: return None
         return lmdb_key.speaker_id_to_key(self.speaker_id)
 
     @property
     def speaker(self):
         """Return the associated Speaker object."""
-        if self.speaker_id is None or self.speaker_id == EMPTY_ID: 
-            return None
+        if self.speaker_key is None: return None 
         if hasattr(self, '_speaker'): return self._speaker
         self._speaker = cache.load(self.speaker_key, with_links=False)
         return self._speaker
@@ -202,10 +215,8 @@ class Segment:
     def phrase(self):
         if self.object_type == "Phrase": return self
         if hasattr(self, '_phrase'): return self._phrase
-        for segment in self.iter_ancestors():
-            if segment.object_type == "Phrase":
-                self._phrase = segment
-                return self._phrase
+        if self.phrase_key is None: return None
+        self._phrase = cache.load(self.phrase_key, with_links=False)
 
     @property
     def phrase_start_ms(self):
@@ -220,8 +231,6 @@ class Segment:
     def end_ms(self):
         return int(self.end * 1000)
 
-    
-
     @property
     def duration(self):
         return self.end - self.start
@@ -229,15 +238,15 @@ class Segment:
     def save(self, overwrite = None, fail_gracefully = False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
 
-    def add_audio(self, audio = None, audio_key = None, reverse_link = True,
+    def add_audio(self, audio = None, audio_id = None, reverse_link = True,
         update_database = True, propagate = True):
         ''' Link this segment (and by default its family) to an Audio object.
         '''
-        if audio is None and audio_key is None:
+        if audio is None and audio_id is None:
             raise ValueError("Provide audio or audio_key.")
 
-        if audio_key is None:
-            audio_key = audio.key
+        if audio_id is None:
+            audio_id= audio.identifier
 
         self._audio = audio
         all_segments = [self]
@@ -246,52 +255,61 @@ class Segment:
         if propagate: all_segments += list(self.iter_family())[1:]
 
         for segment in all_segments:
-            segment._apply_audio_key(audio_key)
+            segment._apply_audio_id(audio_id)
+        '''
+        # not needed anymore??
         for segment in all_segments:
             model_helper.fix_references(segment, segment._old_key, segment.key)
+        '''
 
         if update_database:  
             model_helper.write_changes_to_db(all_segments, cache)
 
+        '''
+        # should be updated to link database
         if reverse_link and audio is not None:
             if self.object_type == 'Phrase':
                 audio.add_phrase(self, reverse_link=False, 
                     update_database=update_database)
+        '''
 
         '''
+        # was already commented out
         if update_database and old_key != new_key:
             cache.update(old_key, self)
         '''
 
-    def _apply_audio_key(self, audio_key):
+    def _apply_audio_id(self, audio_id):
         old_key = self.key
-        self.audio_key = audio_key
+        self.audio_id= audio_id
         new_key = self.key
         if old_key != new_key: 
             self._save_status = 'update'
         self._old_key = old_key
 
-    def add_speaker(self, speaker = None, speaker_key = None, 
+    def add_speaker(self, speaker = None, speaker_id= None, 
         reverse_link = True, update_database = True, propagate = True):
-        if speaker is None and speaker_key is None:
-            raise ValueError("Either speaker or speaker_key must be provided.")
-        if speaker_key is None:
-            speaker_key = speaker.key
-        self.speaker_key = speaker_key
-        self._speaker = speaker
+        if speaker is None and speaker_id is None:
+            raise ValueError("Either speaker or speaker_id must be provided.")
+        if speaker_id is None:
+            speaker_id = speaker.identifier
+            self._speaker = speaker
         all_segments = [self]
         if propagate:
             all_segments += list(self.iter_family())[1:]
         for segment in all_segments:
-            segment._apply_speaker_key(speaker_key, update_database)
+            segment._apply_speaker_id(speaker_id, update_database)
+        '''
+        # should be a link database update instead of updating each segment
         if reverse_link and speaker is not None:
             if self.object_type == 'Phrase':
                 speaker.add_phrase(self, reverse_link=False, 
                     update_database=update_database)
+        '''
 
-    def _apply_speaker_key(self, speaker_key, update_database):
-        if self.speaker_key == speaker_key: return
-        self.speaker_key = speaker_key
+    def _apply_speaker_id(self, speaker_id, update_database):
+        if self.speaker_id == speaker_id: return
+        self.speaker_id = speaker_id
         if update_database: self.save(overwrite = True)
             
 
@@ -378,7 +396,7 @@ class Segment:
 
         # Extra metadata
         reserved = set(base.keys()) | {'overwrite','extra', 'object_type',
-            'children', 'parent','audio', 'speaker'}
+            'children', 'parent','audio', 'speaker', 'start', 'end'}
         extra = {} 
         if hasattr(self, 'extra'):
             extra.update(self.extra)
@@ -536,6 +554,7 @@ class Phrase(Segment):
 class Word(Segment):
     METADATA_FIELDS = {'pos', 'overlap', 'sos',
         'eos','freq', 'ipa'}
+    ipa = ''
 
     @property
     def syllables(self):
@@ -557,14 +576,16 @@ class Word(Segment):
         return query.queryset_from_items(self.phones, cache)
 
 class Syllable(Segment):
-    METADATA_FIELDS = {'stress', 'stress_level','tone'}
+    METADATA_FIELDS = {'stress_code', 'tone'}
+
+    stress_code = 9
 
     @property
-    def stress_code(self):
-        if hasattr(self, 'stress'):
-            if self.stress == True: return 1
-            else: return 0
-        return 9
+    def stress(self):
+        if self.stress_code == 0: return 'unstressed'
+        if self.stress_code == 1: return 'primary'
+        if self.stress_code == 2: return 'secondary'
+        return 'unknown'
 
     @property
     def phones(self):
@@ -612,6 +633,12 @@ class Audio:
     METADATA_FIELDS = {'sample_rate', 'duration', 'n_channels', 'dataset',
         'language', 'dialect'}
     DB_FIELDS = {'filename', 'identifier'}
+
+    dialect = ''
+    language = ''
+    dataset = ''
+    n_channels = 0
+    sample_rate = 0
 
     @classmethod
     def get_default_cache(cls):
@@ -691,6 +718,16 @@ class Audio:
         if update_database:
             self.save(overwrite=True)
 
+    def has_extra(self):
+        if hasattr(self, 'extra') and self.extra:
+            return True
+        return False
+
+    @property
+    def duration_ms(self):
+        if hasattr(self, 'duration'):
+            return int(self.duration * 1000)
+        return 0
 
     @property
     def speakers(self):
@@ -792,6 +829,13 @@ class Speaker:
         'channel'}
     FIELDS = DB_FIELDS.union(METADATA_FIELDS)
 
+    gender = 'unknown'
+    age = 0
+    dataset = ''
+    dialect = ''
+    region = ''
+    language = ''
+
     @classmethod
     def get_default_cache(cls):
         if hasattr(cls, 'objects'): 
@@ -811,8 +855,6 @@ class Speaker:
         self.dataset = dataset
         self.identifier = lmdb_key.make_identifier(self)
         self.overwrite = overwrite
-        self.audio_keys = []
-        self.phrase_keys = []
 
         # Extra metadata
         extra = {}
@@ -885,6 +927,15 @@ class Speaker:
                 update_database=update_database)
         if update_database:
             self.save(overwrite=True)
+
+    def has_extra(self):
+        if hasattr(self, 'extra') and self.extra:
+            return True
+        return False
+
+    @property
+    def gender_code(self):
+        return utils.gender_dict[self.gender]
 
     @property
     def audios(self):
@@ -1034,6 +1085,7 @@ def load_cache(fraction = None):
         cache._preload_sampled_fraction(fraction)
     print(f'Cache loaded in {time.time() - t:.2f} seconds')
             
+load_cache()
 
 def touch_db():
     load_cache()
