@@ -42,7 +42,7 @@ def _key_bytes(key):
         return key
     return str(key).encode("utf-8")
 
-def write_new(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
+def write(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
     '''Write byte value to LMDB under byte key.
     key : byte
         Key under which the object is stored. 
@@ -55,15 +55,15 @@ def write_new(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
     '''
     env = open_lmdb(env, path)
     if not overwrite:
-        exists= key_exists(k, env=env)
+        exists= key_exists(key, env=env)
         if exists:
             m = f'Key {key} already exists in LMDB store at {path}. '
             m += f'Use overwrite=True to overwrite.'
             raise KeyError(m)
     with env.begin(write=True) as txn:
-        txn.put(k, v)  # overwrite=True by default
+        txn.put(key, value)  # overwrite=True by default
 
-def write(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
+def write_old(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
     '''Write value as a pickled object to LMDB under key.
     key : Any
         Key under which the object is stored. Converted to bytes if needed.
@@ -100,9 +100,7 @@ def write_many(keys, values, env=None, path=locations.cgn_lmdb,
 
     with env.begin(write=True) as txn:
         for key, value in progressbar(zip(keys, values), max_value=len(keys)):
-            k = _key_bytes(key)
-            v = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)  
-            txn.put(k, v)
+            txn.put(key, value)
 
 
 def check_any_key_exist(keys, env=None, path=locations.cgn_lmdb):
@@ -123,13 +121,13 @@ def load(key, env=None, path=locations.cgn_lmdb):
         Path to the LMDB directory (only used when env is None).
     '''
     env = open_lmdb(env, path)
-    k = _key_bytes(key)
+    # k = _key_bytes(key)
 
     with env.begin() as txn:
-        raw = txn.get(k)
+        raw = txn.get(key)
         if raw is None:
             return None
-        return pickle.loads(raw) 
+    return raw
 
 def load_many(keys, env=None, path=locations.cgn_lmdb):
     """
@@ -142,16 +140,11 @@ def load_many(keys, env=None, path=locations.cgn_lmdb):
         LMDB path (only used if env is None).
     """
     env = open_lmdb(env, path)
-    keys_b = [_key_bytes(k) for k in keys]
 
     objs = [[] for _ in range(len(keys))]
     with env.begin() as txn:
-        for index, k_raw in enumerate(keys_b):
-            raw = txn.get(k_raw)
-            if raw is not None:
-                objs[index] = pickle.loads(raw)
-            else:
-                objs[index] = None
+        for index, key in enumerate(keys):
+            objs[index] = txn.get(key)
     return objs
 
 def key_exists(key, env=None, path=locations.cgn_lmdb):
