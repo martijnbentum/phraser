@@ -1,3 +1,5 @@
+EMPTY_ID= '0000000000000000'
+
 def ensure_consistent_link(a, b, attr, add_method_name, update_database=True):
     """
     Generic consistency + propagation:
@@ -7,11 +9,11 @@ def ensure_consistent_link(a, b, attr, add_method_name, update_database=True):
     """
     a_val = getattr(a, attr, None)
     b_val = getattr(b, attr, None)
-    if a_val == 'EMPTY' and b_val == 'EMPTY' :
+    if a_val == EMPTY_ID  and b_val == EMPTY_ID :
         return
-    if a_val == 'EMPTY': 
+    if a_val == EMPTY_ID: 
         a_val = None
-    if b_val == 'EMPTY':
+    if b_val == EMPTY_ID:
         b_val = None
 
     # both set → must match
@@ -22,6 +24,7 @@ def ensure_consistent_link(a, b, attr, add_method_name, update_database=True):
 
     # propagate from a → b
     if a_val and not b_val:
+        if not hasattr(b, add_method_name): return
         getattr(b, add_method_name)(
             **{attr: a_val},
             reverse_link=False,
@@ -32,6 +35,7 @@ def ensure_consistent_link(a, b, attr, add_method_name, update_database=True):
 
     # propagate from b → a
     if b_val and not a_val:
+        if not hasattr(a, add_method_name): return
         getattr(a, add_method_name)(
             **{attr: b_val},
             reverse_link=False,
