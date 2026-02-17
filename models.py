@@ -100,7 +100,16 @@ class Segment:
     def __eq__(self, other):
         if not isinstance(other, Segment):
             return False
-        return self.key== other.key
+        if self.object_type != other.object_type:
+            return False
+        for field in self.IDENTITY_FIELDS:
+            if getattr(self, field) != getattr(other, field):
+                return False
+        return True
+
+    def __hash__(self):
+        values = tuple(getattr(self, field) for field in self.IDENTITY_FIELDS)
+        return hash(values)
 
     def play(self, collar = None, wait = False):
         if collar is not None:
@@ -144,6 +153,11 @@ class Segment:
         return int(self.parent_start * 1000)
 
     @property
+    def parent_class_name(self):
+        if self.object_type == 'Phrase': return None
+        return self.parent_class.__name__
+
+    @property
     def parent_key(self):
         if self.object_type == "Phrase": return None
         if self.parent_id == EMPTY_ID: return None
@@ -174,7 +188,7 @@ class Segment:
     def child_keys(self):
         if self.allowed_child_type is None: 
             self._child_keys = None
-        return list(lmdb_helper.instance_to_child_keys(self, env = cache.env))
+        return list(cache.DB.instance_to_child_keys(self))
 
     @property
     def children(self):
@@ -222,6 +236,7 @@ class Segment:
         if hasattr(self, '_phrase'): return self._phrase
         if self.phrase_key is None: return None
         self._phrase = cache.load(self.phrase_key, with_links=False)
+        return self._phrase
 
     
     @property
@@ -239,46 +254,20 @@ class Segment:
     def save(self, overwrite = None, fail_gracefully = False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
 
-    def add_audio(self, audio = None, audio_id = None, reverse_link = True,
-        update_database = True, propagate = True):
+    def add_audio(self, audio, update_database = True, propagate = True):
         ''' Link this segment (and by default its family) to an Audio object.
         '''
-        if audio is None and audio_id is None:
-            raise ValueError("Provide audio or audio_key.")
-
-        if audio_id is None:
-            audio_id= audio.identifier
-
+        audio_id= audio.identifier
         self._audio = audio
         all_segments = [self]
-
         # family starts with self
         if propagate: all_segments += list(self.iter_family())[1:]
 
         for segment in all_segments:
             segment._apply_audio_id(audio_id)
-        '''
-        # not needed anymore??
-        for segment in all_segments:
-            model_helper.fix_references(segment, segment._old_key, segment.key)
-        '''
 
         if update_database:  
             model_helper.write_changes_to_db(all_segments, cache)
-
-        '''
-        # should be updated to link database
-        if reverse_link and audio is not None:
-            if self.object_type == 'Phrase':
-                audio.add_phrase(self, reverse_link=False, 
-                    update_database=update_database)
-        '''
-
-        '''
-        # was already commented out
-        if update_database and old_key != new_key:
-            cache.update(old_key, self)
-        '''
 
     def _apply_audio_id(self, audio_id):
         old_key = self.key
@@ -288,30 +277,20 @@ class Segment:
             self._save_status = 'update'
         self._old_key = old_key
 
-    def add_speaker(self, speaker = None, speaker_id= None, 
-        reverse_link = True, update_database = True, propagate = True):
-        if speaker is None and speaker_id is None:
-            raise ValueError("Either speaker or speaker_id must be provided.")
-        if speaker_id is None:
-            speaker_id = speaker.identifier
-            self._speaker = speaker
+    def add_speaker(self, speaker, update_database = True, propagate = True):
+        speaker_id = speaker.identifier
+        self._speaker = speaker
         all_segments = [self]
         if propagate:
             all_segments += list(self.iter_family())[1:]
         for segment in all_segments:
             segment._apply_speaker_id(speaker_id, update_database)
-        '''
-        # should be a link database update instead of updating each segment
-        if reverse_link and speaker is not None:
-            if self.object_type == 'Phrase':
-                speaker.add_phrase(self, reverse_link=False, 
-                    update_database=update_database)
-        '''
+        if update_database:  
+            model_helper.write_changes_to_db(all_segments, cache)
 
     def _apply_speaker_id(self, speaker_id, update_database):
         if self.speaker_id == speaker_id: return
         self.speaker_id = speaker_id
-        if update_database: self.save(overwrite = True)
             
 
     # ------------------ hierarchy helpers ------------------
@@ -331,9 +310,8 @@ class Segment:
             'add_speaker', update_database=update_database)
         if update_database: self.save(overwrite = True)
 
-
-
-        
+    def add_child(self, child, update_database = True):
+        child.add_parent(self, update_database=update_database)
 
     # ------------------ serialization ------------------
 
@@ -714,30 +692,17 @@ class Audio:
     def __eq__(self, other):
         if not isinstance(other, Audio):
             return False
-        return self.identifier == other.identifier 
+        return self.filename == other.filename
+
+    def __hash__(self):
+        return hash(self.filename)
 
     def _set_kwargs(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-
-    def add_speaker(self, speaker=None, speaker_key=None, reverse_link=True,
-        update_database=True):
-        if speaker is None and speaker_key is None:
-            raise ValueError("Either speaker or speaker_key must be provided.")
-        if speaker_key is None:
-            speaker_key = speaker.key
-        if speaker_key in self.speaker_keys: return
-        self.speaker_keys.append(speaker_key)
-        if speaker is None: 
-            speaker = cache.load(speaker_key, with_links=True)
-            if not hasattr(self, '_speakers'):self._speakers = []
-            self._speakers.append(speaker)
-        if reverse_link:
-            speaker.add_audio(self, reverse_link=False, 
-                update_database=update_database)
-        if update_database:
-            self.save(overwrite=True)
+    def add_speaker(self, speaker):
+        speaker.add_audio(self)
 
     def has_extra(self):
         if hasattr(self, 'extra') and self.extra:
@@ -759,8 +724,8 @@ class Audio:
     @property
     def phrase_keys(self):
         if hasattr(self, '_phrase_keys'): return self._phrase_keys
-        self._phrase_keys = list(lmdb_helper.audio_id_to_child_keys(
-            self.identifier, env = cache.env))
+        self._phrase_keys = list(cache.DB.audio_id_to_child_keys(
+            self.identifier))
         return self._phrase_keys
 
     @property
@@ -812,42 +777,15 @@ class Audio:
     def phones_query(self):
         """Return a query object for all phones for this speaker."""
         return query.queryset_from_items(self.phones, cache)
-
-
     
     @property
     def key(self):
         """Return the LMDB key for this segment."""
         return lmdb_key.instance_to_key(self)
-    
 
     def save(self, overwrite=None, fail_gracefully=False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
 
-    def to_dict(self):
-        """
-        Serialize to a clean dict (for LMDB storage).
-        """
-        base = {}
-        for name in self.DB_FIELDS:
-            base[name] = getattr(self, name)
-        for name in self.METADATA_FIELDS:
-            if hasattr(self, name):
-                base[name] = getattr(self, name)
-
-        # Extra metadata
-        reserved = set(base.keys()) | {'overwrite', 'object_type'}
-        extra = {} 
-        if hasattr(self, 'extra') and self.extra is not None:
-            extra.update(self.extra)
-        for k, v in self.__dict__.items():
-            if k.startswith('_'): continue
-            if k == 'extra': continue
-            if k in reserved: continue
-            if k in extra: continue
-            extra[k] = v
-        base['extra'] = extra
-        return base
 
 
 class Speaker:
@@ -863,12 +801,6 @@ class Speaker:
     dialect = ''
     region = ''
     language = ''
-
-    def __eq__(self, other):
-        return isinstance(other, Speaker) and self.identifier == other.identifier
-
-    def __hash__(self):
-        return hash(self.identifier)
 
     @classmethod
     def get_default_cache(cls):
@@ -918,49 +850,19 @@ class Speaker:
     def __eq__(self, other):
         if not isinstance(other, Speaker):
             return False
-        return self.key == other.key
+        return self.identifier == other.identifier
+
+    def __hash__(self):
+        return hash(self.identifier)
 
     def __contains__(self, key):
         return hasattr(self, key) or key in self.extra
 
-    def add_audio(self, audio=None, audio_key=None, reverse_link=True,
-        update_database = True, propagate = None):
-        if audio is None and audio_key is None:
-            raise ValueError("Either audio or audio_key must be provided.")
-        if audio_key is None:
-            audio_key = audio.key
-        if audio_key in self.audio_keys: return
-        if audio is None:
-            audio = cache.load(audio_key, with_links=False)
+    def add_audio(self, audio):
         if not hasattr(self, '_audios'): self._audios = []
         if audio not in self._audios:
             self._audios.append(audio)
-        self.audio_keys.append(audio.key)
-        if reverse_link:
-            audio.add_speaker(self, reverse_link=False, 
-                update_database=update_database)
-        if update_database:
-            self.save(overwrite=True)
-
-    def add_phrase(self, phrase=None, phrase_key=None, reverse_link=True,
-        update_database=True):
-        if phrase is None and phrase_key is None:
-            raise ValueError("Either phrase or phrase_key must be provided.")
-        if phrase_key is None:
-            phrase_key = phrase.key
-        if phrase_key in self.phrase_keys: return
-        self.phrase_keys.append(phrase_key)
-        if phrase is None:
-            phrase = cache.load(phrase_key, with_links=True)
-            if not hasattr(self, '_phrases'):self._phrases = []
-            self._phrases.append(phrase)
-        model_helper.ensure_consistent_link(self, phrase, 'audio_key',
-            'add_audio', update_database=update_database)
-        if reverse_link:
-            phrase.add_speaker(self, reverse_link=False, 
-                update_database=update_database)
-        if update_database:
-            self.save(overwrite=True)
+        cache.DB.write_speaker_audio_link(self, audio) 
 
     def has_extra(self):
         if hasattr(self, 'extra') and self.extra:
@@ -974,7 +876,8 @@ class Speaker:
     @property
     def audios(self):
         if hasattr(self, '_audios'): return self._audios 
-        self._audios = cache.load_many(self.audio_keys, with_links=False)
+        audio_keys = cache.DB.speaker_to_audio_keys(self)
+        self._audios = cache.load_many(audio_keys, with_links=False)
         return self._audios
 
     @property
@@ -1041,30 +944,6 @@ class Speaker:
         if do_reconnect_db:
             reconnect_db()
 
-    def to_dict(self):
-        """
-        Serialize to a clean dict (for LMDB storage).
-        """
-        base = {}
-        for name in self.DB_FIELDS:
-            base[name] = getattr(self, name)
-        for name in self.METADATA_FIELDS:
-            if hasattr(self, name):
-                base[name] = getattr(self, name)
-
-        # Extra metadata
-        reserved = set(base.keys()) | {'overwrite','extra', 'object_type'}
-        extra = {} 
-        if hasattr(self, 'extra'):
-            extra.update(self.extra)
-        for k, v in self.__dict__.items():
-            if k.startswith('_'): continue
-            if k in reserved: continue
-            if k in extra: continue
-            extra[k] = v
-        base['extra'] = extra
-        return base
-
     @property
     def metadata_present(self):
         names = []
@@ -1077,8 +956,11 @@ class Speaker:
 
 Phrase.allowed_child_type = Word
 Word.allowed_child_type = Syllable
+Word.parent_class = Phrase
 Syllable.allowed_child_type = Phone
+Syllable.parent_class = Word
 Phone.allowed_child_type = None
+Phone.parent_class = Syllable
 
 
 def load_cache(fraction = None):
