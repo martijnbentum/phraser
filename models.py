@@ -625,22 +625,6 @@ class Phone(Segment):
         if self.parent.object_type == "Word":
             return self.parent
         return self.parent.parent
-    def add_phrase(self, phrase=None, phrase_key=None, reverse_link=True,
-        update_database=True):
-        if phrase is None and phrase_key is None:
-            raise ValueError("Either phrase or phrase_key must be provided.")
-        if phrase_key is None:
-            phrase_key = phrase.key
-        if phrase_key in self.phrase_keys: return
-        if phrase is None: 
-            phrase = cache.load(phrase_key, with_links=True)
-            if not hasattr(self, '_phrases'):self._phrases = []
-            self._phrases.append(phrase)
-        phrase.add_audio(self, reverse_link=False, 
-            update_database=update_database)
-        self.phrase_keys.append(phrase.key)
-        if update_database:
-            self.save(overwrite=True)
 
 
 class Audio:
