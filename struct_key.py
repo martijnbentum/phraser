@@ -6,9 +6,12 @@ SPEAKER_FMT = struct_helper.make_key_fmt_for_class('speaker')  # '>B8s'
 AUDIO_FMT   = struct_helper.make_key_fmt_for_class('audio')    # '>B8sB'
 SEGMENT_FMT = struct_helper.make_key_fmt_for_class('segment')  # '>B8sBI8s'
 TIME_SCAN_FMT = struct_helper.make_key_fmt_for_time_scan()     # '>B8sBI'
+SPEAKER_AUDIO_FMT = struct_helper.make_key_fmt_for_class('speaker_audio')#'>8s8s'
+
 
 SPEAKER_LEN = struct.calcsize(SPEAKER_FMT)  # 9
 AUDIO_LEN   = struct.calcsize(AUDIO_FMT)    # 10
+SPEAKER_AUDIO_LEN = struct.calcsize(SPEAKER_AUDIO_FMT)  # 16
 SEGMENT_LEN = struct.calcsize(SEGMENT_FMT)  # 22
 TIME_SCAN_LEN = struct.calcsize(TIME_SCAN_FMT)  # 17
 
@@ -23,6 +26,7 @@ def instance_to_key(obj):
     offset = int(round(obj.start * 1000))
     audio_uuid = obj.audio_id
     return pack_segment_key(audio_uuid, rank, offset, uuid)
+
 
 def instance_to_child_time_scan_keys(instance):
     child_class = instance.child_class_name
@@ -44,11 +48,23 @@ def make_time_scan_prefix(audio_uuid_hex, child_class, time_ms):
     return struct.pack(TIME_SCAN_FMT, audio_rank, 
          audio_uuid, child_class_rank, time_ms)
 
+def make_speaker_scan_prefix(speaker_uuid_hex):
+    '''Make key prefix for scan of speaker-audio pairs for a speaker.
+    speaker_uuid_hex: hex string of speaker UUID
+    '''
+    speaker_uuid = struct_helper.hex_to_8_bytes(speaker_uuid_hex)
+    return struct.pack('>8s', speaker_uuid)
+
 
 def pack_speaker_key(speaker_uuid_hex):
     speaker_uuid = struct_helper.hex_to_8_bytes(speaker_uuid_hex)
     speaker_rank = CLASS_RANK_MAP['Speaker']
     return struct.pack(SPEAKER_FMT, speaker_rank, speaker_uuid)
+
+def pack_speaker_audio_key(speaker_uuid_hex, audio_uuid_hex):
+    speaker_uuid = struct_helper.hex_to_8_bytes(speaker_uuid_hex)
+    audio_uuid = struct_helper.hex_to_8_bytes(audio_uuid_hex)
+    return struct.pack(SPEAKER_AUDIO_FMT, speaker_uuid, audio_uuid)
 
 
 def pack_audio_key(audio_uuid_hex):
@@ -118,6 +134,13 @@ def unpack_key(key_bytes):
         return {
             'object_type': 'Speaker',
             'identifier': speaker_uuid.hex(),
+        }
+
+    if n == SPEAKER_AUDIO_LEN:
+        speaker_uuid, audio_uuid = struct.unpack(SPEAKER_AUDIO_FMT, key_bytes)
+        return {
+            'speaker_id': speaker_uuid.hex(),
+            'audio_id': audio_uuid.hex(),
         }
 
     if n == TIME_SCAN_LEN:
