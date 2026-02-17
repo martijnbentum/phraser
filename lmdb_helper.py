@@ -6,6 +6,20 @@ from pathlib import Path
 from progressbar import progressbar
 
 
+def audio_id_to_child_keys(audio_id, child_class = 'Phrase', env = None, 
+    path = locations.cgn_lmdb):
+    env = open_lmdb(env, path)
+    prefix = lmdb_key.audio_id_to_scan_prefix(audio_id, child_class)
+    with env.begin() as txn:
+        cur = txn.cursor()
+        if not cur.set_range(prefix):
+            return
+        for k in cur.iternext(keys=True, values=False):
+            if not k.startswith(prefix):
+                break
+            yield k  # or (k, v)
+
+
 def instance_to_child_keys(instance, env = None, path = locations.cgn_lmdb):
     env = open_lmdb(env, path)
     start_prefix, end_prefix = lmdb_key.instance_to_child_time_scan_keys(instance)
@@ -30,7 +44,8 @@ def instance_to_children(instance, env = None, path = locations.cgn_lmdb):
                 break
             yield k, v
 
-def open_lmdb(env=None, path=locations.cgn_lmdb, map_size=1024**4):
+def open_lmdb(path=locations.cgn_lmdb, map_size=1024**4):
+     
     '''
     env : lmdb.Environment or None
     path : str
@@ -38,18 +53,19 @@ def open_lmdb(env=None, path=locations.cgn_lmdb, map_size=1024**4):
 
     lmdb.Environment    The LMDB environment ready for use.
     '''
-    if env is None:
-        path = Path(path)
-        path.mkdir(parents=True, exist_ok=True)
-        env = lmdb.open(str(path), map_size = map_size)
-    return env
 
-def _key_bytes(key):
-    '''Convert key to bytes if necessary.
-    '''
-    if isinstance(key, bytes):
-        return key
-    return str(key).encode("utf-8")
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+    env = lmdb.open(str(path), map_size = map_size)
+
+    with env.begin(write=not read_only) as txn:
+        db = {
+            'main': env.open_db(b'main', txn=txn),
+            'speaker_audio': env.open_db(b'speaker_audio', txn=txn),
+        }
+
+    return env, db
+
 
 def write(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
     '''Write byte value to LMDB under byte key.
@@ -72,29 +88,6 @@ def write(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
     with env.begin(write=True) as txn:
         txn.put(key, value)  # overwrite=True by default
 
-def write_old(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
-    '''Write value as a pickled object to LMDB under key.
-    key : Any
-        Key under which the object is stored. Converted to bytes if needed.
-    value : Any
-        Python object to store (pickled before writing).
-    env : lmdb.Environment or None
-        Existing LMDB environment; if None, a default one is opened.
-    path : str
-        Path to the LMDB directory (only used when env is None).
-    '''
-    env = open_lmdb(env, path)
-    k = _key_bytes(key)
-    v = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)  
-    if not overwrite:
-        exists= key_exists(k, env=env)
-        if exists:
-            m = f'Key {key} already exists in LMDB store at {path}. '
-            m += f'Use overwrite=True to overwrite.'
-            raise KeyError(m)
-    with env.begin(write=True) as txn:
-        txn.put(k, v)  # overwrite=True by default
-
 def write_many(keys, values, env=None, path=locations.cgn_lmdb, 
     overwrite = False):
 
@@ -115,8 +108,7 @@ def write_many(keys, values, env=None, path=locations.cgn_lmdb,
 def check_any_key_exist(keys, env=None, path=locations.cgn_lmdb):
     db_keys = all_keys(env, path)
     for key in keys:
-        k = _key_bytes(key)
-        if k in db_keys: return True
+        if key in db_keys: return True
     return False
 
 
@@ -130,7 +122,6 @@ def load(key, env=None, path=locations.cgn_lmdb):
         Path to the LMDB directory (only used when env is None).
     '''
     env = open_lmdb(env, path)
-    # k = _key_bytes(key)
 
     with env.begin() as txn:
         raw = txn.get(key)
@@ -166,9 +157,8 @@ def key_exists(key, env=None, path=locations.cgn_lmdb):
         Path to the LMDB directory (only used when env is None).
     '''
     env = open_lmdb(env, path)
-    k = _key_bytes(key)
     with env.begin() as txn:
-        return txn.get(k) is not None
+        return txn.get(key) is not None
 
 def iter_model_keys_for_audio_id(audio_id, model_type = 'Phrase', env = None,
     path = locations.cgn_lmdb):
@@ -191,7 +181,6 @@ def get_all_keys_with_audio_id(audio_id, env = None, path = locations.cgn_lmdb):
 def get_all_keys_with_prefix(prefix, env = None, path = locations.cgn_lmdb):
     """Return all keys (as bytes) starting with prefix (string or bytes)."""
     env = open_lmdb(env, path)
-    prefix = _key_bytes(prefix)
 
     result = []
     with env.begin() as txn:
@@ -255,19 +244,17 @@ def all_speaker_keys(env = None, path = locations.cgn_lmdb):
 
 def delete(key, env=None, path=locations.cgn_lmdb):
     env = open_lmdb(env, path)
-    k= _key_bytes(key)
     if not key_exists(k, env=env): return
 
     with env.begin(write=True) as txn:
-        txn.delete(k)
+        txn.delete(key)
 
 def delete_many(keys, env=None, path=locations.cgn_lmdb):
     env = open_lmdb(env, path)
-    keys_b = [_key_bytes(k) for k in keys]
     batch_size = 10_000
     i = 0
     with env.begin(write=True) as txn:
-        for k in progressbar(keys_b):
+        for k in progressbar(keys):
             i += 1
             txn.delete(k)
             if i % batch_size == 0:
@@ -295,41 +282,3 @@ def delete_all(env=None, path=locations.cgn_lmdb):
     delete_many(keys_to_delete, env=env)
 
 
-
-
-
-
-
-'''
-other open_env with read_only mode check and reuse if possible:
-def get_lmdb_env(env = None, path = None, read_only = True, max_dbs = 0, 
-    readahead = True):
-    Return an LMDB environment matching the requested mode.
-
-    If an existing env is provided and its read_only mode matches,
-    it is reused. If the mode differs, the env is closed and a new
-    one is opened.
-
-    env:  Optional existing lmdb.Environment.
-    path: Path to the LMDB directory (required if env is None).
-    read_only: Open environment in read-only mode if True.
-    max_dbs: LMDB max_dbs parameter.
-    readahead: Enable LMDB readahead (default True). Set to False for random access patterns.
-
-    if env is not None:
-        # lmdb.Environment exposes read-only state
-        if env.readonly == read_only:
-            return env
-        env.close()
-
-    if path is None:
-        raise ValueError('path is required when env is None')
-
-    return lmdb.open(
-        path,
-        readonly=read_only,
-        lock=not read_only,
-        readahead=readahead,
-        max_dbs=max_dbs,
-    )
-'''
