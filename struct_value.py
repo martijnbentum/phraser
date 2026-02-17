@@ -62,7 +62,7 @@ def pack_phrase(instance):
         'end_ms': instance.end_ms,
         'speaker_id': hex_to_8_bytes(instance.speaker_id),
     }
-    var = {'label': obj.get('label', '')}
+    var = {'label': instance.label}
     return _pack_with_layout(layout, fixed, var, 'phrase')
 
 
