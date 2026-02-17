@@ -69,6 +69,7 @@ class Segment:
         self.identifier = lmdb_key.make_identifier(self)
 
         self.parent_id= parent_id
+        self.parent_start = parent_start
         self.audio_id = audio_id
         self.speaker_id = speaker_id
         self.overwrite = overwrite
@@ -144,22 +145,26 @@ class Segment:
 
     @property
     def parent_key(self):
+        if self.object_type == "Phrase": return None
         if self.parent_id == EMPTY_ID: return None
         audio_id = self.audio_id
-        return audio_id_segment_id_class_to_key(self.audio_id, self.parent_id, 
-            self.parent_class_name, self.parent_start_ms)
+        return lmdb_key.audio_id_segment_id_class_to_key(self.audio_id, 
+            self.parent_id, self.parent_class_name, self.parent_start_ms)
+            
             
     @property
     def phrase_key(self):
-        if self.phrase_id == EMPTY_ID: return None
         if self.object_type == "Phrase": return self.key
-        return lmdb_key.segment_id_to_key(self.audio_id, self.phrase_id, 
-            'Phrase', self.phrase_start_ms)
+        if self.object_type == 'Word': return self.parent_key
+        if self.phrase_id == EMPTY_ID: return None
+        return lmdb_key.audio_id_segment_id_class_to_key(self.audio_id, 
+            self.phrase_id, 'Phrase', self.phrase_start_ms)
+            
 
     @property
     def parent(self):
         """Return the parent segment."""
-        if self.object_type == "Phrase": return 
+        if self.object_type == "Phrase": return None
         if hasattr(self, '_parent'): return self._parent
         if self.parent_id == EMPTY_ID: return 
         self._parent = cache.load(self.parent_key, with_links=False)
@@ -169,7 +174,7 @@ class Segment:
     def child_keys(self):
         if self.allowed_child_type is None: 
             self._child_keys = None
-        return list(lmdb_helper.instance_to_child_keys(self))
+        return list(lmdb_helper.instance_to_child_keys(self, env = cache.env))
 
     @property
     def children(self):
@@ -213,14 +218,11 @@ class Segment:
     @property
     def phrase(self):
         if self.object_type == "Phrase": return self
+        if self.object_type == 'Word': return self.parent
         if hasattr(self, '_phrase'): return self._phrase
         if self.phrase_key is None: return None
         self._phrase = cache.load(self.phrase_key, with_links=False)
 
-    @property
-    def phrase_start_ms(self):
-        if self.phrase is None: return 0
-        return int(self.phrase.start * 1000)
     
     @property
     def start_ms(self):
@@ -322,17 +324,13 @@ class Segment:
             raise TypeError(m)
         self.parent_id = parent.identifier
         self.parent_start = parent.start
-        if self.object_type == 'Word': 
-            self.phrase_id = parent.identifier
-            self.phrase_start = parent.start
         self._parent = parent
         model_helper.ensure_consistent_link(self, parent, 'audio_id',
             'add_audio', update_database=update_database)
         model_helper.ensure_consistent_link(self, parent, 'speaker_id',
             'add_speaker', update_database=update_database)
-        model_helper.ensure_consistent_link(self, parent, 'phrase_id',
-            'add_phrase', update_database=update_database)
         if update_database: self.save(overwrite = True)
+
 
 
         
@@ -392,12 +390,16 @@ class Segment:
         return names
 
     @property
+    def siblings(self):
+        if parent is None: return
+        return self.parent.children
+
+    @property
     def next_sibling(self):
         """Return the next segment at the same level (same parent)."""
         if self.parent is None:
             return None
-
-        siblings = self.parent.children
+        siblings = self.siblings
         try:
             idx = siblings.index(self)
         except ValueError:
@@ -413,7 +415,7 @@ class Segment:
         if self.parent is None:
             return None
 
-        siblings = self.parent.children
+        siblings = self.siblings
         try:
             idx = siblings.index(self)
         except ValueError:
@@ -439,6 +441,7 @@ class Segment:
         Yield all ancestor segments of the given class type.
         Walks upward (child → parent → parent → ...).
         """
+        if cls == Phrase and self.phrase is not None: yield self.phrase
         parent = self.parent
         while parent is not None:
             if isinstance(parent, cls):
@@ -489,6 +492,14 @@ class Phrase(Segment):
             reconnect_db()
 
     @property
+    def phrase_start(self):
+        return self.start
+
+    @property
+    def phrase_id(self):
+        return self.identifier
+
+    @property
     def words(self):
         """Return all words in this phrase."""
         return self.children
@@ -517,10 +528,27 @@ class Phrase(Segment):
         return query.queryset_from_items(self.phones, cache)
 
 
+    def apply_phrase_id_and_start(self, update_database = True):
+        for syllable in self.syllables:
+            syllable._add_phrase(self, update_database=update_database)
+        for phone in self.phones:
+            phone._add_phrase(self, update_database=update_database)
+
+        
+
+
 class Word(Segment):
     METADATA_FIELDS = {'pos', 'overlap', 'sos',
         'eos','freq', 'ipa'}
     ipa = ''
+
+    @property
+    def phrase_start(self):
+        return self.parent_start
+
+    @property
+    def phrase_id(self):
+        return self.parent_id
 
     @property
     def syllables(self):
@@ -544,7 +572,8 @@ class Word(Segment):
 def _add_phrase(self, phrase, update_database = True):
     if self.phrase_id == phrase.identifier: return
     if self.phrase_id != EMPTY_ID and self.phrase_id != phrase.identifier:
-        raise ValueError(f"This {self.object_type} is already linked to a different phrase.")
+        m = f"This {self.object_type} is already linked to a different phrase."
+        raise ValueError(m)
     self.phrase_id = phrase.identifier
     self.phrase_start = phrase.start
     if update_database: self.save(overwrite = True)
@@ -558,6 +587,10 @@ class Syllable(Segment):
 
     _add_phrase = _add_phrase
 
+
+    @property
+    def phrase_start_ms(self):
+        return int(self.phrase_start * 1000)
 
     @property
     def stress(self):
@@ -590,6 +623,10 @@ class Phone(Segment):
     _add_phrase = _add_phrase
 
     @property
+    def phrase_start_ms(self):
+        return int(self.phrase_start * 1000)
+
+    @property
     def position_code(self):
         if hasattr(self, 'position'):
             if self.position == 'onset': return 1
@@ -610,6 +647,22 @@ class Phone(Segment):
         if self.parent.object_type == "Word":
             return self.parent
         return self.parent.parent
+    def add_phrase(self, phrase=None, phrase_key=None, reverse_link=True,
+        update_database=True):
+        if phrase is None and phrase_key is None:
+            raise ValueError("Either phrase or phrase_key must be provided.")
+        if phrase_key is None:
+            phrase_key = phrase.key
+        if phrase_key in self.phrase_keys: return
+        if phrase is None: 
+            phrase = cache.load(phrase_key, with_links=True)
+            if not hasattr(self, '_phrases'):self._phrases = []
+            self._phrases.append(phrase)
+        phrase.add_audio(self, reverse_link=False, 
+            update_database=update_database)
+        self.phrase_keys.append(phrase.key)
+        if update_database:
+            self.save(overwrite=True)
 
 
 class Audio:
@@ -667,22 +720,6 @@ class Audio:
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-    def add_phrase(self, phrase=None, phrase_key=None, reverse_link=True,
-        update_database=True):
-        if phrase is None and phrase_key is None:
-            raise ValueError("Either phrase or phrase_key must be provided.")
-        if phrase_key is None:
-            phrase_key = phrase.key
-        if phrase_key in self.phrase_keys: return
-        if phrase is None: 
-            phrase = cache.load(phrase_key, with_links=True)
-            if not hasattr(self, '_phrases'):self._phrases = []
-            self._phrases.append(phrase)
-        phrase.add_audio(self, reverse_link=False, 
-            update_database=update_database)
-        self.phrase_keys.append(phrase.key)
-        if update_database:
-            self.save(overwrite=True)
 
     def add_speaker(self, speaker=None, speaker_key=None, reverse_link=True,
         update_database=True):
@@ -718,6 +755,13 @@ class Audio:
         if hasattr(self, '_speakers'): return self._speakers
         self._speakers= cache.load_many(self.speaker_keys, with_links=False)
         return self._speakers
+
+    @property
+    def phrase_keys(self):
+        if hasattr(self, '_phrase_keys'): return self._phrase_keys
+        self._phrase_keys = list(lmdb_helper.audio_id_to_child_keys(
+            self.identifier, env = cache.env))
+        return self._phrase_keys
 
     @property
     def phrases(self):
@@ -819,6 +863,12 @@ class Speaker:
     dialect = ''
     region = ''
     language = ''
+
+    def __eq__(self, other):
+        return isinstance(other, Speaker) and self.identifier == other.identifier
+
+    def __hash__(self):
+        return hash(self.identifier)
 
     @classmethod
     def get_default_cache(cls):
