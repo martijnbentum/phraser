@@ -62,6 +62,8 @@ def save_cgn_speakers_to_db(speaker_infos = None, reconnect_db = True):
         if name in speaker_names:
             skipped.append(name)
             continue
+        if speaker_info['age'] is None:
+            speaker_info['age'] = 0
         speaker = models.Speaker(**speaker_info, save=False)
         speakers.append(speaker)
         added.append(name)
@@ -86,9 +88,10 @@ def ort_info_to_speaker_and_audio(ort_info, reconnect_db = True):
     filename = ort_info['audio_filename']
     speaker = get_db_cgn_speaker(sid, reconnect_db = False)
     audio = get_db_audio(filename, reconnect_db = False)
+    models.cache.DB.write_speaker_audio_link(speaker, audio)
     return speaker, audio
 
-def ort_infos_to_db_items(ort_infos, reconnect_db = True):
+def ort_infos_to_db_items(ort_infos, reconnect_db = True, check_status = True):
     name_to_speaker_dict = make_cgn_speaker_name_to_db_speaker_dict()
     fn_to_audio_dict = make_cgn_audio_filename_to_db_audio_dict()
     add_items, errors, skipped, no_textgrid = [], [], [], []
@@ -106,18 +109,24 @@ def ort_infos_to_db_items(ort_infos, reconnect_db = True):
         db_items = ort_info_to_db_items(ort_info, speaker = speaker, 
             audio = audio)
         status = _check_db_status_items_ort_info(db_items, reconnect_db = False)
-        if status == 'not in db':
-            add_items.extend(db_items)
-        elif status == 'all in db':
-            skipped.append((ort_info['output_filename'], status))
-        elif status == 'partly in db':
-            errors.append((ort_info, db_items))
+        if check_status:
+            if status == 'not in db':
+                add_items.extend(db_items)
+            elif status == 'all in db':
+                skipped.append((ort_info['output_filename'], status))
+            elif status == 'partly in db':
+                errors.append((ort_info, db_items))
+            else:
+                print(f'WARNING: unknown status {status} for ort_info: {ort_info}')
         else:
-            print(f'WARNING: unknown status {status} for ort_info: {ort_info}')
+            add_items.extend(db_items)
     print(f'found {len(add_items)} items to add to database')
-    print(f'found {len(skipped)} ort_infos fully in database')
-    print(f'found {len(errors)} errors, ort_infos partly in database')
-    print(f'found {len(no_textgrid)} ort_infos without textgrid file')
+    if not check_status:
+        print('WARNING: not checked whether items already exist in database')
+    else:
+        print(f'found {len(skipped)} ort_infos fully in database')
+        print(f'found {len(errors)} errors, ort_infos partly in database')
+        print(f'found {len(no_textgrid)} ort_infos without textgrid file')
     return add_items, errors, skipped, no_textgrid
     
 
