@@ -3,6 +3,8 @@ import struct_key
 import struct_helper
 from struct_helper import CLASS_RANK_MAP
 
+def instance_to_child_time_scan_keys(instance):
+    return struct_key.instance_to_child_time_scan_keys(instance)
 
 def instance_to_key(instance):
     return struct_key.instance_to_key(instance)
