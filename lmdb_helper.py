@@ -5,46 +5,243 @@ import pickle
 from pathlib import Path
 from progressbar import progressbar
 
+default_db_name = 'main'
 
-def audio_id_to_child_keys(audio_id, child_class = 'Phrase', env = None, 
-    path = locations.cgn_lmdb):
-    env = open_lmdb(env, path)
-    prefix = lmdb_key.audio_id_to_scan_prefix(audio_id, child_class)
-    with env.begin() as txn:
-        cur = txn.cursor()
-        if not cur.set_range(prefix):
-            return
-        for k in cur.iternext(keys=True, values=False):
-            if not k.startswith(prefix):
-                break
-            yield k  # or (k, v)
+class DB:
+    def __init__(self, path=locations.cgn_lmdb, map_size=1024**4,
+        db_names = ['main', 'speaker_audio']):
+        self.path = path
+        self.map_size = map_size
+        self.db_names = db_names
+        self.max_dbs = len(db_names)
+        self._open_env()
+
+    def _open_env(self):
+        env, db = open_lmdb(self.path, self.map_size, self.db_names, 
+            self.max_dbs)
+        self.env = env
+        self.db = db
+
+    def all_keys(self, db_name = 'main'):
+        '''Return a list of all keys in the LMDB store for a named db.
+        db_name:   Name of the LMDB database to use (default 'main').
+        '''
+        keys = []
+        db = self.db[db_name]
+        with self.env.begin() as txn:
+            cursor = txn.cursor(db = db)
+            for k in cursor.iternext(keys=True, values=False):
+                keys.append(k)
+        return keys
+
+    def all_links(self, db_name = 'speaker_audio'):
+        return self.all_keys(db_name = db_name)
+
+    def key_exists(self, key, db_name = 'main'):
+        '''Check whether a key exists in the LMDB store.
+        key:       Key to retrieve. 
+        db_name:   Name of the LMDB database to use (default 'main').
+        '''
+        db = self.db[db_name]
+        with self.env.begin() as txn:
+            return txn.get(key, db = db) is not None
+
+    def check_any_key_exist(self, keys, db_name = 'main'):
+        db_keys = set(self.all_keys(db_name = db_name))
+        for key in keys:
+            if key in db_keys: return True
+        return False
+
+    def load(self, key, db_name = 'main'):
+        '''load an object from LMDB under key.
+        key:       Key to retrieve. 
+        db_name:   Name of the LMDB database to use (default 'main').
+        '''
+        db = self.db[db_name]
+        with self.env.begin() as txn:
+            raw = txn.get(key, db= db)
+            if raw is None: return None
+        return raw
+
+    def load_many(self, keys, db_name = 'main'):
+        """
+        Load multiple LMDB values in a single read transaction.
+        keys:       List of keys (bytes) to retrieve.
+        db_name:   Name of the LMDB database to use (default 'main').
+        """
+
+        objs = [[] for _ in range(len(keys))]
+        db = self.db[db_name]
+        with self.env.begin() as txn:
+            for index, key in enumerate(keys):
+                objs[index] = txn.get(key, db = db)
+        return objs
+
+    def write(self, key, value, db_name = 'main', overwrite = False):
+        '''Write byte value to LMDB under byte key.
+        key:       Key to write value under. 
+        value:     struct made in struct_value.  
+        db_name:   Name of the LMDB database to use (default 'main').
+        overwrite:  If False, raises an error if the key already exists. 
+                    If True, overwrites existing value.
+        '''
+        if not overwrite:
+            exists= self.key_exists(key, db_name = db_name)
+            if exists:
+                m = f'Key {key} already exists in LMDB store at {path}. '
+                m += f'Use overwrite=True to overwrite.'
+                raise KeyError(m)
+        db = self.db[db_name]
+        with self.env.begin(write=True) as txn:
+            txn.put(key, value, db = db)  
+
+    def write_many(self, keys, values, db_name = 'main', overwrite = False):
+        '''
+        key:       Key to write value under. 
+        value:     struct made in struct_value.  
+        db_name:   Name of the LMDB database to use (default 'main').
+        overwrite:  If False, raises an error if the key already exists. 
+                    If True, overwrites existing value.
+        '''
+        #fail early if any key exists and overwrite is False
+        if check_any_key_exist(keys, db_name) and not overwrite:
+            m = f'At least one key already exists in LMDB store at {path}. '
+            m += f'Use overwrite=True to overwrite.'
+            m += f'written nothing.'
+            raise KeyError(m)
+
+        db = self.db[db_name]
+        with self.env.begin(write=True) as txn:
+            for k, v in progressbar(zip(keys, values), max_value=len(keys)):
+                txn.put(k, v, db = db)
+
+    def audio_id_to_child_keys(self, audio_id, child_class = 'Phrase'):
+        db = self.db['main']
+        prefix = lmdb_key.audio_id_to_scan_prefix(audio_id, child_class)
+        with self.env.begin() as txn:
+            cur = txn.cursor(db = db)
+            if not cur.set_range(prefix):
+                return
+            for k in cur.iternext(keys=True, values=False):
+                if not k.startswith(prefix):
+                    break
+                yield k  # or (k, v)
+
+    def instance_to_child_keys(self, instance):
+        db = self.db['main']
+        f = lmdb_key.instance_to_child_time_scan_keys
+        start_prefix, end_prefix = f(instance)
+        with self.env.begin() as txn:
+            cur = txn.cursor(db = db)
+            if not cur.set_range(start_prefix):
+                return
+            for k in cur.iternext(keys=True, values=False):
+                if k > end_prefix:
+                    break
+                yield k  # or (k, v)
+
+    def object_type_to_keys_dict(self):
+        db = self.db['main']
+        d = {}
+        with self.env.begin() as txn:
+            cursor = txn.cursor(db = db)
+            for key, _ in cursor:
+                object_type = lmdb_key.key_to_object_type(key)
+                d.setdefault(object_type, []).append(key)
+        return d
+
+    def all_object_type_keys(self, object_type, d = None):
+        db = self.db['main']
+        if d is None: d = self.object_type_to_keys_dict()
+        if object_type not in d:
+            raise ValueError(f'No keys found for object type: {object_type}')
+        selected_keys = d[object_type]
+        return selected_keys
+
+    def all_audio_keys(self):
+        return self.all_object_type_keys('Audio')
+
+    def all_phrase_keys(self):
+        return self.all_object_type_keys('Phrase')
+
+    def all_word_keys(self):
+        return self.all_object_type_keys('Word')
+
+    def all_syllable_keys(self):
+        return self.all_object_type_keys('Syllable')
+
+    def all_phone_keys(self):
+        return self.all_object_type_keys('Phone')
+
+    def all_speaker_keys(self):
+        return self.all_object_type_keys('Speaker')
+
+    def delete(self, key, db_name = 'main'):
+        db = self.db[db_name]
+        if not self.key_exists(key): return
+        with self.env.begin(write=True) as txn:
+            txn.delete(key, db = db)
+
+    def delete_many(self, keys, db_name = 'main'):
+        db = self.db[db_name]
+        batch_size = 10_000
+        i = 0
+        with self.env.begin(write=True) as txn:
+            for k in progressbar(keys):
+                i += 1
+                txn.delete(k, db = db)
+                if i % batch_size == 0:
+                    txn.commit()
+                    txn = self.env.begin(write=True)
+
+    def delete_main(self):
+        """Delete all keys in the main LMDB database."""
+        keys_to_delete = self.all_keys(db_name = 'main')
+        print(f"Deleting all {len(keys_to_delete)} keys in db main.")
+        self.delete_many(keys_to_delete, db_name = 'main')
+
+    def delete_all_speaker_audio(self):
+        """Delete all keys in the speaker_audio LMDB database."""
+        keys_to_delete = self.all_links()
+        print(f"Deleting all {len(keys_to_delete)} keys in db speaker_audio.")
+        self.delete_many(keys_to_delete, db_name = 'speaker_audio')
+
+    def delete_all(self) :
+        """Delete all keys in the LMDB store."""
+        self.delete_main()
+        self.delete_all_speaker_audio()
+
+    def write_speaker_audio_link(self, speaker, audio):
+        link= lmdb_key.speaker_audio_link(speaker, audio)
+        self.write(link, b'', db_name = 'speaker_audio', overwrite = True)
+
+    def delete_speaker_audio_link(self, speaker, audio):
+        link = lmdb_key.speaker_audio_link(speaker, audio)
+        self.delete(link, db_name = 'speaker_audio')
+
+    def _speaker_audio_links(self, speaker):
+        db = self.db['speaker_audio']
+        prefix = lmdb_key.speaker_id_to_scan_prefix(speaker.identifier)
+        with self.env.begin() as txn:
+            cur = txn.cursor(db = db)
+            if not cur.set_range(prefix):
+                return
+            for k in cur.iternext(keys=True, values=False):
+                if not k.startswith(prefix):
+                    break
+                yield k
+
+    def speaker_to_audio_keys(self, speaker):
+        links = self._speaker_audio_links(speaker)
+        z = b'\x00'
+        audio_keys = [z + k[-8:] + z for k in links]
+        return audio_keys
+
+        
 
 
-def instance_to_child_keys(instance, env = None, path = locations.cgn_lmdb):
-    env = open_lmdb(env, path)
-    start_prefix, end_prefix = lmdb_key.instance_to_child_time_scan_keys(instance)
-    with env.begin() as txn:
-        cur = txn.cursor()
-        if not cur.set_range(start_prefix):
-            return
-        for k in cur.iternext(keys=True, values=False):
-            if k > end_prefix:
-                break
-            yield k  # or (k, v)
-
-def instance_to_children(instance, env = None, path = locations.cgn_lmdb):
-    env = open_lmdb(env, path)
-    start_prefix, end_prefix = lmdb_key.instance_to_child_time_scan_keys(instance)
-    with env.begin() as txn:
-        cur = txn.cursor()
-        if not cur.set_range(start_prefix):
-            return
-        for k, v in cur.iternext(keys=True, values=True):
-            if k > end_prefix:
-                break
-            yield k, v
-
-def open_lmdb(path=locations.cgn_lmdb, map_size=1024**4):
+def open_lmdb(path=locations.cgn_lmdb, map_size=1024**4, 
+    db_names = ['main', 'speaker_audio'], max_dbs = 2):
      
     '''
     env : lmdb.Environment or None
@@ -56,229 +253,11 @@ def open_lmdb(path=locations.cgn_lmdb, map_size=1024**4):
 
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
-    env = lmdb.open(str(path), map_size = map_size)
+    env = lmdb.open(str(path), map_size = map_size, max_dbs = max_dbs)
 
-    with env.begin(write=not read_only) as txn:
-        db = {
-            'main': env.open_db(b'main', txn=txn),
-            'speaker_audio': env.open_db(b'speaker_audio', txn=txn),
-        }
-
+    db = {}
+    with env.begin(write = True) as txn:
+        for name in db_names:
+            db[name] = env.open_db(name.encode(), txn=txn)
     return env, db
-
-
-def write(key, value, env=None, path=locations.cgn_lmdb, overwrite = False):
-    '''Write byte value to LMDB under byte key.
-    key : byte
-        Key under which the object is stored. 
-    value : byte
-        struct made in struct_value.
-    env : lmdb.Environment or None
-        Existing LMDB environment; if None, a default one is opened.
-    path : str
-        Path to the LMDB directory (only used when env is None).
-    '''
-    env = open_lmdb(env, path)
-    if not overwrite:
-        exists= key_exists(key, env=env)
-        if exists:
-            m = f'Key {key} already exists in LMDB store at {path}. '
-            m += f'Use overwrite=True to overwrite.'
-            raise KeyError(m)
-    with env.begin(write=True) as txn:
-        txn.put(key, value)  # overwrite=True by default
-
-def write_many(keys, values, env=None, path=locations.cgn_lmdb, 
-    overwrite = False):
-
-    env = open_lmdb(env, path)
-        
-    #fail early if any key exists and overwrite is False
-    if check_any_key_exist(keys, env=env, path=path) and not overwrite:
-        m = f'At least one key already exists in LMDB store at {path}. '
-        m += f'Use overwrite=True to overwrite.'
-        m += f'written nothing.'
-        raise KeyError(m)
-
-    with env.begin(write=True) as txn:
-        for key, value in progressbar(zip(keys, values), max_value=len(keys)):
-            txn.put(key, value)
-
-
-def check_any_key_exist(keys, env=None, path=locations.cgn_lmdb):
-    db_keys = all_keys(env, path)
-    for key in keys:
-        if key in db_keys: return True
-    return False
-
-
-def load(key, env=None, path=locations.cgn_lmdb):
-    '''load and unpickle object from LMDB under key.
-    key : Any
-        Key to retrieve. Converted to bytes automatically.
-    env : lmdb.Environment or None
-        Existing LMDB environment; if None, a default one is opened.
-    path : str
-        Path to the LMDB directory (only used when env is None).
-    '''
-    env = open_lmdb(env, path)
-
-    with env.begin() as txn:
-        raw = txn.get(key)
-        if raw is None:
-            return None
-    return raw
-
-def load_many(keys, env=None, path=locations.cgn_lmdb):
-    """
-    Load multiple LMDB values in a single read transaction.
-    keys : list
-        List of keys (bytes or convertible to bytes) to retrieve.
-    env : lmdb.Environment or None
-        Existing environment. If None, one is created.
-    db_path : str
-        LMDB path (only used if env is None).
-    """
-    env = open_lmdb(env, path)
-
-    objs = [[] for _ in range(len(keys))]
-    with env.begin() as txn:
-        for index, key in enumerate(keys):
-            objs[index] = txn.get(key)
-    return objs
-
-def key_exists(key, env=None, path=locations.cgn_lmdb):
-    '''Check whether a key exists in the LMDB store.
-    key : Any
-        Key to check. Converted to bytes automatically.
-    env : lmdb.Environment or None
-        Existing LMDB environment; if None, a default one is opened.
-    path : str
-        Path to the LMDB directory (only used when env is None).
-    '''
-    env = open_lmdb(env, path)
-    with env.begin() as txn:
-        return txn.get(key) is not None
-
-def iter_model_keys_for_audio_id(audio_id, model_type = 'Phrase', env = None,
-    path = locations.cgn_lmdb):
-    import lmdb_key
-    mapper = lmdb_key.TYPE_TO_RANK_MAP 
-    rank = mapper[model_type]
-    prefix = f"{audio_id}:{rank}:".encode()
-    with env.begin() as txn:
-        cur = txn.cursor()
-        if not cur.set_range(prefix):
-            return
-        for k in cur.iternext(keys=True, values=False):
-            if not k.startswith(prefix):
-                break
-            yield k  # or (k, v)
-
-def get_all_keys_with_audio_id(audio_id, env = None, path = locations.cgn_lmdb):
-    return get_all_keys_with_prefix(audio_id, env, path)
-
-def get_all_keys_with_prefix(prefix, env = None, path = locations.cgn_lmdb):
-    """Return all keys (as bytes) starting with prefix (string or bytes)."""
-    env = open_lmdb(env, path)
-
-    result = []
-    with env.begin() as txn:
-        cursor = txn.cursor()
-        if cursor.set_range(prefix):      # jump to first >= prefix
-            for k in cursor.iternext(keys=True, values=False):
-                if not k.startswith(prefix):
-                    break
-                result.append(k)
-    return result
-
-def all_keys(env = None, path = locations.cgn_lmdb):
-    if env is None: env = open_lmdb(env, path)
-    keys = []
-    with env.begin() as txn:
-        cursor = txn.cursor()
-        for k, _ in cursor:
-            keys.append(k)
-    return set(keys)
-
-def object_type_to_keys_dict(env = None, path = locations.cgn_lmdb):
-    import lmdb_key
-    if env is None: env = open_lmdb(path = path)
-    d = {}
-    with env.begin() as txn:
-        cursor = txn.cursor()
-        for key, _ in cursor:
-            object_type = lmdb_key.key_to_object_type(key)
-            d.setdefault(object_type, []).append(key)
-    return d
-
-def all_object_type_keys(object_type, env = None, 
-    path = locations.cgn_lmdb, d = None):
-    if d is None: d = object_type_to_keys_dict(env, path)
-    if object_type not in d:
-        raise ValueError(f'No keys found for object type: {object_type}')
-    selected_keys = d[object_type]
-    return selected_keys
-
-def all_audio_keys(env = None, path = locations.cgn_lmdb):
-    return all_object_type_keys('Audio', env, path)
-
-def all_phrase_keys(env = None, path = locations.cgn_lmdb):
-    return all_object_type_keys('Phrase', env, path)
-
-def all_word_keys(env = None, path = locations.cgn_lmdb):
-    return all_object_type_keys('Word', env, path)
-
-def all_syllable_keys(env = None, path = locations.cgn_lmdb):
-    return all_object_type_keys('Syllable', env, path)
-
-def all_phone_keys(env = None, path = locations.cgn_lmdb):
-    return all_object_type_keys('Phone', env, path)
-
-def all_speaker_keys(env = None, path = locations.cgn_lmdb):
-    return all_object_type_keys('Speaker', env, path)
-
-
-        
-    
-
-def delete(key, env=None, path=locations.cgn_lmdb):
-    env = open_lmdb(env, path)
-    if not key_exists(k, env=env): return
-
-    with env.begin(write=True) as txn:
-        txn.delete(key)
-
-def delete_many(keys, env=None, path=locations.cgn_lmdb):
-    env = open_lmdb(env, path)
-    batch_size = 10_000
-    i = 0
-    with env.begin(write=True) as txn:
-        for k in progressbar(keys):
-            i += 1
-            txn.delete(k)
-            if i % batch_size == 0:
-                txn.commit()
-                txn = env.begin(write=True)
-
-def delete_with_prefix( prefix, env = None, path = locations.cgn_lmdb):
-    """Delete all keys starting with prefix (string or bytes)."""
-    env = open_lmdb(env, path)
-
-    keys_to_delete = lmdb_keys_with_prefix(prefix, env=env, path=path)
-    print(f"Deleting {len(keys_to_delete)} keys with prefix {prefix}.")
-
-    with env.begin(write=True) as txn:
-        for k in keys_to_delete:
-            txn.delete(k)
-
-def delete_all(env=None, path=locations.cgn_lmdb):
-    """Delete all keys in the LMDB store."""
-    env = open_lmdb(env, path)
-
-    keys_to_delete = all_keys(env)
-    print(f"Deleting all {len(keys_to_delete)} keys.")
-
-    delete_many(keys_to_delete, env=env)
-
 
