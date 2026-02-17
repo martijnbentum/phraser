@@ -3,6 +3,7 @@ import cache as cache_module
 import lmdb_helper 
 import lmdb_key
 import model_helper
+from model_helper import EMPTY_ID
 import query
 from ssh_audio_play import play
 import struct_value
@@ -18,13 +19,12 @@ RE= "\033[0m"
 object_type_to_ljust_label = {'Phrase': 40, 'Word': 15, 
     'Syllable': 12, 'Phone': 3}
 
-EMPTY_ID= '0000000000000000'
 
 
 class Segment:
     IDENTITY_FIELDS= {'label', 'start', 'end', 'audio_key'}
     DB_FIELDS = {'identifier', 'label', 'start', 'end', 'parent_id',
-        'audio_id', 'speaker_id'}
+        'parent_start', 'audio_id', 'speaker_id'}
     METADATA_FIELDS = {}# subclasses override
     '''
     Base time-aligned segment with a unique ID and parent/child links.
@@ -59,7 +59,8 @@ class Segment:
 
     def __init__(self, label = None, start = None, end = None, 
         parent_id=EMPTY_ID, audio_id= EMPTY_ID, 
-        speaker_id= EMPTY_ID, save = True, overwrite = False, **kwargs):
+        speaker_id= EMPTY_ID, parent_start = 0,  
+        save = True, overwrite = False, **kwargs):
         
         self.object_type = self.__class__.__name__
         self.label = label
@@ -71,6 +72,7 @@ class Segment:
         self.audio_id = audio_id
         self.speaker_id = speaker_id
         self.overwrite = overwrite
+            
 
         # Extra metadata
         for k, v in kwargs.items():
@@ -137,18 +139,16 @@ class Segment:
         return lmdb_key.key_to_info(self.key)
 
     @property
+    def parent_start_ms(self):
+        return int(self.parent_start * 1000)
+
+    @property
     def parent_key(self):
         if self.parent_id == EMPTY_ID: return None
-        parent_key = lmdb_key.segment_id_to_key(self.audio_id, 
-            self.parent_id, self.parent_class, self.parent_start_ms)
+        audio_id = self.audio_id
+        return audio_id_segment_id_class_to_key(self.audio_id, self.parent_id, 
+            self.parent_class_name, self.parent_start_ms)
             
-    @property
-    def phrase_id(self):
-        if self.object_type == "Phrase": return self.identifier
-        if self.object_type == "Word": return self.parent_id
-        if hasattr(self, '_phrase_id'): return self._phrase_id
-        return EMPTY_ID
-
     @property
     def phrase_key(self):
         if self.phrase_id == EMPTY_ID: return None
@@ -159,23 +159,22 @@ class Segment:
     @property
     def parent(self):
         """Return the parent segment."""
+        if self.object_type == "Phrase": return 
         if hasattr(self, '_parent'): return self._parent
-        if self.parent_id == EMPTY_ID:return None
+        if self.parent_id == EMPTY_ID: return 
         self._parent = cache.load(self.parent_key, with_links=False)
         return self._parent
 
     @property
-    def parent_start(self):
-        if self.parent is None : return 0
-        return self.parent.start
-
-    @property
-    def parent_start_ms(self):
-        return int(self.parent_start * 1000)
+    def child_keys(self):
+        if self.allowed_child_type is None: 
+            self._child_keys = None
+        return list(lmdb_helper.instance_to_child_keys(self))
 
     @property
     def children(self):
         """Return the list of child segments."""
+        if self.allowed_child_type is None: return []
         if not hasattr(self, '_children'):
             if self.child_keys: 
                 self._children = cache.load_many(self.child_keys, 
@@ -314,61 +313,28 @@ class Segment:
             
 
     # ------------------ hierarchy helpers ------------------
-
-    def add_child(self, child= None, child_key = None, reverse_link = True,
-        update_database = True):
-        """    Add a child segment, enforcing the declared hierarchy.
-        """
-        if self.allowed_child_type is None:
-            raise TypeError(f"{self.object_type} cannot have children.")
-        if child is None and child_key is None:
-            raise ValueError("Either child or child_key must be provided.")
-        if child_key is None:
-            child_key = child.key
-        if child_key in self.child_keys: return
-        if child is None:
-            child = cache.load(child_key, with_links=True)
-        if not child.__class__ in self.allowed_child_type:
-            m = f'{self.object_type} can only contain {self.allowed_child_type},'
-            m += f'not {child.__class__}'
-            raise TypeError(m)
-        model_helper.ensure_consistent_link(self, child, 'audio_key',
-            'add_audio', update_database=update_database)
-        model_helper.ensure_consistent_link(self, child, 'speaker_key',
-            'add_speaker', update_database=update_database)
-        self.child_keys.append(child.key)
-        if not hasattr(self, '_children'):
-            self._children = []
-        self._children.append(child)
-        if reverse_link:
-            child.add_parent(self, reverse_link=False, 
-                update_database=update_database)
-        if update_database: self.save(overwrite = True)
-
-    def add_parent(self, parent = None, parent_key = None, reverse_link = True,
-        update_database = True):
+    def add_parent(self, parent, update_database = True):
         if self.object_type == 'Phrase':
             raise TypeError("Phrase cannot have a parent segment.")
-        if parent is None and parent_key is None:
-            raise ValueError("Either parent or parent_key must be provided.")
-        if parent_key is None:
-            parent_key = parent.key
-        if parent is None:
-            parent = cache.load(parent_key, with_links=True)
-        if self.__class__ not in parent.allowed_child_type:
+        if self.__class__ != parent.allowed_child_type:
             m = f'{parent.object_type} cannot contain '
             m += f'{self.object_type} as child.'
             raise TypeError(m)
-        self.parent_key = parent_key
+        self.parent_id = parent.identifier
+        self.parent_start = parent.start
+        if self.object_type == 'Word': 
+            self.phrase_id = parent.identifier
+            self.phrase_start = parent.start
         self._parent = parent
-        model_helper.ensure_consistent_link(self, parent, 'audio_key',
+        model_helper.ensure_consistent_link(self, parent, 'audio_id',
             'add_audio', update_database=update_database)
-        model_helper.ensure_consistent_link(self, parent, 'speaker_key',
+        model_helper.ensure_consistent_link(self, parent, 'speaker_id',
             'add_speaker', update_database=update_database)
-        if reverse_link:
-            parent.add_child(self, reverse_link=False, 
-                update_database=update_database)
+        model_helper.ensure_consistent_link(self, parent, 'phrase_id',
+            'add_phrase', update_database=update_database)
         if update_database: self.save(overwrite = True)
+
+
         
 
     # ------------------ serialization ------------------
@@ -575,10 +541,23 @@ class Word(Segment):
         """Return a query object for all phones for this speaker."""
         return query.queryset_from_items(self.phones, cache)
 
+def _add_phrase(self, phrase, update_database = True):
+    if self.phrase_id == phrase.identifier: return
+    if self.phrase_id != EMPTY_ID and self.phrase_id != phrase.identifier:
+        raise ValueError(f"This {self.object_type} is already linked to a different phrase.")
+    self.phrase_id = phrase.identifier
+    self.phrase_start = phrase.start
+    if update_database: self.save(overwrite = True)
+
+
 class Syllable(Segment):
     METADATA_FIELDS = {'stress_code', 'tone'}
-
+    phrase_id = EMPTY_ID
+    phrase_start = 0
     stress_code = 9
+
+    _add_phrase = _add_phrase
+
 
     @property
     def stress(self):
@@ -604,6 +583,11 @@ class Syllable(Segment):
 
 class Phone(Segment):
     METADATA_FIELDS = {'features'}
+
+    phrase_id = EMPTY_ID
+    phrase_start = 0
+
+    _add_phrase = _add_phrase
 
     @property
     def position_code(self):
