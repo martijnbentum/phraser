@@ -41,6 +41,9 @@ def make_key_fields_for_class(class_name):
     if class_name == 'speaker':
         return ['class_id', 'uuid']
 
+    if class_name == 'speaker_audio':
+        return ['uuid', 'uuid']
+
     if class_name in ['phrase', 'word', 'syllable', 'phone', 'segment']:
         return ['class_id', 'uuid', 'class_id', 'start_ms', 'uuid']
 
