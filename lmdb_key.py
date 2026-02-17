@@ -83,17 +83,8 @@ def key_to_audio_identifier(key):
         return None
     return info['audio_identifier']
 
-
-
-def object_to_scan_prefix(item, all_in_same_audio=False):
-    '''Get LMDB scan prefix for a given segment type.
-    does not work YET
+def audio_id_to_scan_prefix(audio_id, child_class = 'Phrase'):
+    '''Get LMDB scan prefix for a given audio ID.
     '''
-    rank = object_to_rank(item)
+    return struct_key.pack_audio_prefix(audio_id, child_class)
 
-    if rank == 0 or all_in_same_audio:
-        # Audio files only have identifier
-        return f'{item.identifier}:'
-
-    # Everything else: Phrase, Word, Syllable, Phone
-    return f'{rank}:'
