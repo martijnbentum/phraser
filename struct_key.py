@@ -56,6 +56,12 @@ def pack_audio_key(audio_uuid_hex):
     rank = CLASS_RANK_MAP['Audio']
     return struct.pack(AUDIO_FMT, rank, audio_uuid, rank)
 
+def pack_audio_prefix(audio_uuid_hex, child_class):
+    audio_uuid = struct_helper.hex_to_8_bytes(audio_uuid_hex)
+    child_class_rank = CLASS_RANK_MAP[child_class]
+    audio_rank = CLASS_RANK_MAP['Audio']
+    return struct.pack(AUDIO_FMT, audio_rank, audio_uuid, child_class_rank)
+
 
 def pack_segment_key(audio_uuid_hex, class_rank, offset_ms, segment_uuid_hex):
     if not (0 <= offset_ms <= 0xFFFFFFFF):
