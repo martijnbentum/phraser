@@ -105,7 +105,7 @@ class Cache:
         pi = struct_value.pack_instance
         cache_update = {itk(obj): pi(obj) for obj in objs}
         # print('update dict done', time.time() - start)
-        try: DB.write_many(cache_update.keys(), cache_update.values(),
+        try: self.DB.write_many(cache_update.keys(), cache_update.values(),
             overwrite = overwrite)
 
         except KeyError as e:
@@ -287,7 +287,6 @@ def value_key_to_instance(cache, value, key):
     data = struct_value.unpack_instance(object_type, value)
     data.update(info)
     if object_type == 'Speaker': _convert_speaker(data)
-    if object_type == 'Audio': pass
     else: _convert_segment(data)
     # extra = data.pop('extra')
     obj.__dict__.update(data)
