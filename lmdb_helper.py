@@ -104,7 +104,7 @@ class DB:
                     If True, overwrites existing value.
         '''
         #fail early if any key exists and overwrite is False
-        if check_any_key_exist(keys, db_name) and not overwrite:
+        if self.check_any_key_exist(keys, db_name) and not overwrite:
             m = f'At least one key already exists in LMDB store at {path}. '
             m += f'Use overwrite=True to overwrite.'
             m += f'written nothing.'
@@ -186,13 +186,19 @@ class DB:
         db = self.db[db_name]
         batch_size = 10_000
         i = 0
-        with self.env.begin(write=True) as txn:
+        txn = self.env.begin(write=True)
+        try:
             for k in progressbar(keys):
                 i += 1
                 txn.delete(k, db = db)
                 if i % batch_size == 0:
                     txn.commit()
                     txn = self.env.begin(write=True)
+            txn.commit()
+        except Exception as e:
+            print(f'Error {e}, while deleting key: {k}')
+            txn.abort()
+            raise e
 
     def delete_main(self):
         """Delete all keys in the main LMDB database."""
