@@ -24,9 +24,9 @@ class Cache:
     - resolver for parent, children, speaker, audio
     """
 
-    def __init__(self, env = None, path = locations.cgn_lmdb, verbose= False):
-        self.env = lmdb_helper.open_lmdb(env, path)
-        self.path = self.env.path()
+    def __init__(self, path = locations.cgn_lmdb, verbose = False):
+        self.DB = lmdb_helper.DB(path = path)
+        self.path = path
         self._cache = {}      # key:str → object
         self.CLASS_MAP = {}   # filled externally (Audio, etc.)
         self.save_counter = {}
@@ -87,8 +87,8 @@ class Cache:
         value = struct_value.pack_instance(obj)
         fail_message = f"Object with key {key} already exists. "
         fail_message += "Skipping save."
-        try: lmdb_helper.write(key = key, value = value, env = self.env, 
-            overwrite = overwrite)
+        try: self.DB.write(key = key, value = value, overwrite = overwrite)
+            
         except KeyError as e:
             if fail_gracefully: print(fail_message)
             else: raise e
@@ -105,8 +105,8 @@ class Cache:
         pi = struct_value.pack_instance
         cache_update = {itk(obj): pi(obj) for obj in objs}
         # print('update dict done', time.time() - start)
-        try: lmdb_helper.write_many(cache_update.keys(), cache_update.values(),
-            env = self.env, overwrite = overwrite)
+        try: DB.write_many(cache_update.keys(), cache_update.values(),
+            overwrite = overwrite)
 
         except KeyError as e:
             
@@ -138,7 +138,7 @@ class Cache:
             return self._cache[key]
         if self.verbose: print(' Not in cache. Loading from LMDB...')
         
-        value = lmdb_helper.load(key = key, env = self.env)
+        value = self.DB.load(key = key) 
         obj = value_key_to_instance(self, value, key)
         self._cache[key] = obj
         self.load_counter[obj.object_type] += 1
@@ -184,12 +184,12 @@ class Cache:
         # disable garbage collection for large loads to speed up loading
         if len(not_found_in_cache) > 100_000: gc.disable()
         try:
-            results = lmdb_helper.load_many(keys = not_found_in_cache, 
-                env = self.env)
+            results = self.DB.load_many(keys = not_found_in_cache) 
+                
             if self.verbose: print(time.time() - start, 'lmdb data loaded')
             for key, data in zip(not_found_in_cache, results):
                 index = key_to_index[key]
-                value = lmdb_helper.load(key = key, env = self.env)
+                value = self.DB.load(key = key)
                 obj = value_key_to_instance(self, value, key)
                 self._cache[key] = obj
                 objs[index] = obj
@@ -203,12 +203,12 @@ class Cache:
 
     def delete(self, key):
         '''delete an object from LMDB by key'''
-        lmdb_helper.delete(key = key, env = self.env)
+        self.DB.delete(key = key)
         if key in self._cache: del self._cache[key]
 
     def delete_many(self, keys):
         '''delete many objects from LMDB by keys'''
-        lmdb_helper.delete_many(keys = keys, env = self.env)
+        self.DB.delete_many(keys = keys)
         for key in keys:
             if key in self._cache: del self._cache[key]
 
@@ -223,12 +223,15 @@ class Cache:
         if not update:
             if hasattr(self, '_object_type_to_keys_dict'):
                 return self._object_type_to_keys_dict
-        d = lmdb_helper.object_type_to_keys_dict(env = self.env)
+        d = self.DB.object_type_to_keys_dict()
         self._object_type_to_keys_dict = d
         return self._object_type_to_keys_dict
 
     def all_keys(self):
-        return lmdb_helper.all_keys(env = self.env)
+        return self.DB.all_keys()
+
+    def all_links(self):
+        return self.DB.all_links()
 
     def preload_class_instances(self,cls = None, class_name = None):
         if cls is None and class_name is None:
