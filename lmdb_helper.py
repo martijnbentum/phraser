@@ -1,25 +1,34 @@
 import lmdb
+import lmdb_key
 import locations
 import pickle
 from pathlib import Path
 from progressbar import progressbar
 
 
-def instance_to_child_keys(audio_id, model_type = 'Phrase', env = None,
-    path = locations.cgn_lmdb):
-    import lmdb_key
-    mapper = lmdb_key.TYPE_TO_RANK_MAP 
-    rank = mapper[model_type]
-    prefix = f"{audio_id}:{rank}:".encode()
+def instance_to_child_keys(instance, env = None, path = locations.cgn_lmdb):
+    env = open_lmdb(env, path)
+    start_prefix, end_prefix = lmdb_key.instance_to_child_time_scan_keys(instance)
     with env.begin() as txn:
         cur = txn.cursor()
-        if not cur.set_range(prefix):
+        if not cur.set_range(start_prefix):
             return
         for k in cur.iternext(keys=True, values=False):
-            if not k.startswith(prefix):
+            if k > end_prefix:
                 break
             yield k  # or (k, v)
 
+def instance_to_children(instance, env = None, path = locations.cgn_lmdb):
+    env = open_lmdb(env, path)
+    start_prefix, end_prefix = lmdb_key.instance_to_child_time_scan_keys(instance)
+    with env.begin() as txn:
+        cur = txn.cursor()
+        if not cur.set_range(start_prefix):
+            return
+        for k, v in cur.iternext(keys=True, values=True):
+            if k > end_prefix:
+                break
+            yield k, v
 
 def open_lmdb(env=None, path=locations.cgn_lmdb, map_size=1024**4):
     '''
