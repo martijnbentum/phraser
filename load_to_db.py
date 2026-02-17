@@ -23,16 +23,18 @@ def textgrid_to_database_objects(tg, offset = 0.0, audio = None, speaker = None,
     words = list(textgrid_to_words(tg, offset))
     syllables = list(textgrid_to_syllables(tg, offset))
     phones = list(textgrid_to_phones(tg, offset))
-    phrase = words_to_phrase(words) 
-    if audio is not None: 
-        phrase.add_audio(audio, update_database=False)
-    if speaker is not None: 
-        phrase.add_speaker(speaker, update_database=False)
-    for word in words:
-        find_and_add_syllables_to_word(word, syllables, save_to_db=False)
+    phrase = words_to_phrase(words)  
+    for phone in phones:
+        phone._add_phrase(phrase, update_database = False)
     for syllable in syllables:
         find_and_add_phones_to_syllable(syllable, phones, save_to_db=False)
+        syllable._add_phrase(phrase, update_database = False)
+    for word in words:
+        find_and_add_syllables_to_word(word, syllables, save_to_db=False)
     items = words + syllables + phones + [phrase]
+    for item in items:
+        item.add_audio(audio, update_database = False, propagate = False)
+        item.add_speaker(speaker, update_database = False, propagate = False)
     if save_to_db: save_items_to_db(items)
     return items
          
@@ -45,7 +47,7 @@ def words_to_phrase(words):
     label = ' '.join([word.label for word in words])
     phrase = models.Phrase(start=start, end=end, label=label, save = False)
     for word in words:
-        phrase.add_child(word, update_database = False)
+        word.add_parent(phrase, update_database = False)
     return phrase 
 
 def textgrid_to_words(tg, offset = 0.0, save_to_db=False):
@@ -61,7 +63,8 @@ def textgrid_to_words(tg, offset = 0.0, save_to_db=False):
         if ort.mark == '': continue
         assert ort.minTime == ipa.minTime and ort.maxTime == ipa.maxTime, \
             "ORT-MAU and KAN-MAU tiers must have matching intervals."
-        yield interval_to_word(ort, ipa, offset=offset)
+        yield interval_to_word(ort, ipa, offset=offset)  
+            
     handle_db_save_option(revert=True)
 
 def textgrid_to_syllables(tg, offset = 0.0, save_to_db=False):
@@ -77,6 +80,7 @@ def textgrid_to_syllables(tg, offset = 0.0, save_to_db=False):
     handle_db_save_option(revert=True)
 
 def textgrid_to_phones(tg, offset = 0.0, save_to_db=False):
+    
     update_db_save_state()
     handle_db_save_option(save_to_db=save_to_db)
     names = tg.getNames()
@@ -93,7 +97,7 @@ def interval_to_word(ort_interval, ipa_interval = None, offset = 0.0,
     kwargs = {}):
     if ipa_interval: 
         kwargs['ipa'] = ipa_interval.mark
-    word = interval_to_database_object(ort_interval,  models.Word, 
+    word = interval_to_database_object(ort_interval, models.Word, 
         offset, kwargs)
     return word
         
@@ -149,7 +153,7 @@ def find_and_add_syllables_to_word(word, syllables, save_to_db=False):
     handle_db_save_option(save_to_db=save_to_db)
     syllables = select_objecs_in_range(syllables, word.start, word.end)
     for syl in syllables:
-        word.add_child(syl, update_database = save_to_db)
+        syl.add_parent(word, update_database = save_to_db)
     handle_db_save_option(revert=True)
 
 def find_and_add_phones_to_syllable(syllable, phones, save_to_db=False):
@@ -157,7 +161,7 @@ def find_and_add_phones_to_syllable(syllable, phones, save_to_db=False):
     handle_db_save_option(save_to_db=save_to_db)
     phones = select_objecs_in_range(phones, syllable.start, syllable.end)
     for phone in phones:
-        syllable.add_child(phone, update_database = save_to_db)
+        phone.add_parent(syllable, update_database = save_to_db)
     handle_db_save_option(revert=True)
 
 
