@@ -61,7 +61,9 @@ def pack_phrase(instance):
         'end': instance.end,
         'speaker_id': instance.speaker_id,
     }
-    var = {'label': instance.label}
+    var = {'label': instance.label,
+        'filename': instance.filename,
+    }
     return _pack_with_layout(layout, fixed, var, 'phrase')
 
 
@@ -349,6 +351,7 @@ def phrase_layout():
     fixed_specs.append({'name': 'speaker_id', 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
     variable_specs.append({'name': 'label', 'kind': 'str', 'bits': 16})
+    variable_specs.append({'name': 'filename', 'kind': 'str', 'bits': 16})
     return build_layout(fixed_specs=fixed_specs, variable_specs=variable_specs)
 
 def word_layout():
