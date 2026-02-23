@@ -19,12 +19,14 @@ def save_items_to_db(items):
     models.cache.save_many(items)
     handle_db_save_option(revert=True)
 
-def textgrid_to_database_objects(tg, offset = 0, audio = None, speaker = None,
-    save_to_db=False, overwrite = False):
+def textgrid_filename_to_database_objects(textgrid_filename, offset = 0, 
+    audio = None, speaker = None, save_to_db=False, overwrite = False):
+    
+    tg = load_textgrid(textgrid_filename)
     words = list(textgrid_to_words(tg, offset))
     syllables = list(textgrid_to_syllables(tg, offset))
     phones = list(textgrid_to_phones(tg, offset))
-    phrase = words_to_phrase(words)  
+    phrase = words_to_phrase(words, textgrid_filename = textgrid_filename)  
     for phone in phones:
         phone._add_phrase(phrase, update_database = False)
     for syllable in syllables:
@@ -39,14 +41,15 @@ def textgrid_to_database_objects(tg, offset = 0, audio = None, speaker = None,
     if save_to_db: save_items_to_db(items)
     return items
          
-def words_to_phrase(words):
+def words_to_phrase(words, textgrid_filename):
     words = list(words)
     if not words:
         return None
     start = words[0].start
     end = words[-1].end
     label = ' '.join([word.label for word in words])
-    phrase = models.Phrase(start=start, end=end, label=label, save = False)
+    phrase = models.Phrase(start=start, end=end, label=label, 
+        filename =textgrid_filename, save = False)
     for word in words:
         word.add_parent(phrase, update_database = False)
     return phrase 
