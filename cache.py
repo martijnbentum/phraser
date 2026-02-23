@@ -287,21 +287,10 @@ def value_key_to_instance(cache, value, key):
     data = struct_value.unpack_instance(object_type, value)
     data.update(info)
     if object_type == 'Speaker': _convert_speaker(data)
-    else: _convert_segment(data)
-    # extra = data.pop('extra')
     obj.__dict__.update(data)
     # obj.__dict__['extra'] = extra
     return obj
 
-def _convert_segment(d):
-    '''
-    convert db values to instance values
-    Map *_id fields to hex strings. 
-    '''
-    for k in list(d.keys()):
-        v = d[k]
-        if k.endswith('_id') and isinstance(v, (bytes)):
-            d[k] = v.hex()
 
 def _convert_speaker(d):
     gender_code = d.pop('gender_code')
