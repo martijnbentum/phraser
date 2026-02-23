@@ -36,55 +36,46 @@ def instance_to_child_time_scan_keys(instance):
     end_key = make_time_scan_prefix(instance.audio_id, child_class, end)
     return start_key, end_key
 
-def make_time_scan_prefix(audio_uuid_hex, child_class, time):
+def make_time_scan_prefix(audio_uuid, child_class, time):
     '''Make key prefix for time scan of segments in an audio.
-    audio_uuid_hex: hex string of audio UUID
+    audio_uuid: audio UUID
     child_class: Word, Syllable, Phone
     time: integer offset in milliseconds
     '''
-    audio_uuid = struct_helper.hex_to_8_bytes(audio_uuid_hex)
     child_class_rank = CLASS_RANK_MAP[child_class]
     audio_rank = CLASS_RANK_MAP['Audio']
     return struct.pack(TIME_SCAN_FMT, audio_rank, 
          audio_uuid, child_class_rank, time)
 
-def make_speaker_scan_prefix(speaker_uuid_hex):
+def make_speaker_scan_prefix(speaker_uuid):
     '''Make key prefix for scan of speaker-audio pairs for a speaker.
-    speaker_uuid_hex: hex string of speaker UUID
+    speaker_uuid: speaker UUID
     '''
-    speaker_uuid = struct_helper.hex_to_8_bytes(speaker_uuid_hex)
     return struct.pack('>8s', speaker_uuid)
 
 
-def pack_speaker_key(speaker_uuid_hex):
-    speaker_uuid = struct_helper.hex_to_8_bytes(speaker_uuid_hex)
+def pack_speaker_key(speaker_uuid):
     speaker_rank = CLASS_RANK_MAP['Speaker']
     return struct.pack(SPEAKER_FMT, speaker_rank, speaker_uuid)
 
-def pack_speaker_audio_key(speaker_uuid_hex, audio_uuid_hex):
-    speaker_uuid = struct_helper.hex_to_8_bytes(speaker_uuid_hex)
-    audio_uuid = struct_helper.hex_to_8_bytes(audio_uuid_hex)
+def pack_speaker_audio_key(speaker_uuid, audio_uuid):
     return struct.pack(SPEAKER_AUDIO_FMT, speaker_uuid, audio_uuid)
 
 
-def pack_audio_key(audio_uuid_hex):
-    audio_uuid = struct_helper.hex_to_8_bytes(audio_uuid_hex)
+def pack_audio_key(audio_uuid):
     rank = CLASS_RANK_MAP['Audio']
     return struct.pack(AUDIO_FMT, rank, audio_uuid, rank)
 
-def pack_audio_prefix(audio_uuid_hex, child_class):
-    audio_uuid = struct_helper.hex_to_8_bytes(audio_uuid_hex)
+def pack_audio_prefix(audio_uuid, child_class):
     child_class_rank = CLASS_RANK_MAP[child_class]
     audio_rank = CLASS_RANK_MAP['Audio']
     return struct.pack(AUDIO_FMT, audio_rank, audio_uuid, child_class_rank)
 
 
-def pack_segment_key(audio_uuid_hex, class_rank, offset, segment_uuid_hex):
+def pack_segment_key(audio_uuid, class_rank, offset, segment_uuid):
     if not (0 <= offset <= 0xFFFFFFFF):
         raise ValueError('offset must fit in uint32')
 
-    audio_uuid = struct_helper.hex_to_8_bytes(audio_uuid_hex)
-    segment_uuid = struct_helper.hex_to_8_bytes(segment_uuid_hex)
     audio_rank = CLASS_RANK_MAP['Audio']
 
     return struct.pack(SEGMENT_FMT, audio_rank, audio_uuid, 
@@ -111,7 +102,7 @@ def unpack_key(key_bytes):
             raise ValueError('Invalid audio key')
         return {
             'object_type': 'Audio',
-            'identifier': audio_uuid.hex(),
+            'identifier': audio_uuid,
         }
 
     if n == SEGMENT_LEN:
@@ -121,9 +112,9 @@ def unpack_key(key_bytes):
             raise ValueError('Invalid segment key (audio_rank must be 0)')
         return {
             'object_type': RANK_CLASS_MAP[class_rank],
-            'audio_id': audio_uuid.hex(),
+            'audio_id': audio_uuid,
             'start': start,
-            'identifier': segment_uuid.hex(),
+            'identifier': segment_uuid,
         }
 
     if n == SPEAKER_LEN:
@@ -133,14 +124,14 @@ def unpack_key(key_bytes):
             raise ValueError(m)
         return {
             'object_type': 'Speaker',
-            'identifier': speaker_uuid.hex(),
+            'identifier': speaker_uuid,
         }
 
     if n == SPEAKER_AUDIO_LEN:
         speaker_uuid, audio_uuid = struct.unpack(SPEAKER_AUDIO_FMT, key_bytes)
         return {
-            'speaker_id': speaker_uuid.hex(),
-            'audio_id': audio_uuid.hex(),
+            'speaker_id': speaker_uuid,
+            'audio_id': audio_uuid,
         }
 
     if n == TIME_SCAN_LEN:
@@ -152,7 +143,7 @@ def unpack_key(key_bytes):
         return {
             'child_object_type': object_type, 
             'start': start,
-            'audio_id': audio_uuid.hex(),
+            'audio_id': audio_uuid,
         }
 
     raise ValueError(f'Unknown key length: {n}')
