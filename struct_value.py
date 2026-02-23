@@ -29,7 +29,7 @@ def pack_audio(instance):
         'version': VERSION,
         'flags': flags,
         'n_channels': instance.n_channels,
-        'duration_ms': instance.duration_ms,
+        'duration': instance.duration,
         'sample_rate': instance.sample_rate,
     }
     var = {
@@ -59,7 +59,7 @@ def pack_phrase(instance):
     fixed = {
         'version': VERSION,
         'flags': flags,
-        'end_ms': instance.end_ms,
+        'end': instance.end,
         'speaker_id': hex_to_8_bytes(instance.speaker_id),
     }
     var = {'label': instance.label}
@@ -85,10 +85,10 @@ def pack_word(instance):
     fixed = {
         'version': VERSION,
         'flags': flags,
-        'end_ms': instance.end_ms,
+        'end': instance.end,
         'speaker_id': hex_to_8_bytes(instance.speaker_id),
         'parent_id': hex_to_8_bytes(instance.parent_id),
-        'parent_start_ms': instance.parent_start_ms,
+        'parent_start': instance.parent_start,
     }
     var = {
         'label': instance.label,
@@ -117,12 +117,12 @@ def pack_syllable(instance):
         'version': VERSION,
         'flags': flags,
         'stress_code': instance.stress_code,
-        'end_ms': instance.end_ms,
+        'end': instance.end,
         'speaker_id': hex_to_8_bytes(instance.speaker_id),
         'parent_id': hex_to_8_bytes(instance.parent_id),
-        'parent_start_ms': instance.parent_start_ms,
+        'parent_start': instance.parent_start,
         'phrase_id': hex_to_8_bytes(instance.phrase_id),
-        'phrase_start_ms': instance.phrase_start_ms,
+        'phrase_start': instance.phrase_start,
     }
     var = {'label': instance.label}
     return _pack_with_layout(layout, fixed, var, 'syllable')
@@ -148,12 +148,12 @@ def pack_phone(instance):
         'version': VERSION,
         'flags': flags,
         'position_code': instance.position_code,
-        'end_ms': instance.end_ms,
+        'end': instance.end,
         'speaker_id': hex_to_8_bytes(instance.speaker_id),
         'parent_id': hex_to_8_bytes(instance.parent_id),
-        'parent_start_ms': instance.parent_start_ms,
+        'parent_start': instance.parent_start,
         'phrase_id': hex_to_8_bytes(instance.phrase_id),
-        'phrase_start_ms': instance.phrase_start_ms,
+        'phrase_start': instance.phrase_start,
     }
     var = {'label': instance.label}
     return _pack_with_layout(layout, fixed, var, 'phone')
@@ -335,7 +335,7 @@ def audio_layout():
     fixed_specs = []
     for name in 'version flags n_channels'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
-    for name in 'duration_ms sample_rate'.split():
+    for name in 'duration sample_rate'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 32})
     variable_specs = []
     for name in 'filename dialect language dataset'.split():
@@ -346,7 +346,7 @@ def phrase_layout():
     fixed_specs = []
     for name in 'version flags'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
-    fixed_specs.append({'name': 'end_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'end', 'kind': 'int', 'bits': 32})
     fixed_specs.append({'name': 'speaker_id', 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
     variable_specs.append({'name': 'label', 'kind': 'str', 'bits': 16})
@@ -356,8 +356,8 @@ def word_layout():
     fixed_specs = []
     for name in 'version flags'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
-    fixed_specs.append({'name': 'end_ms', 'kind': 'int', 'bits': 32})
-    fixed_specs.append({'name': 'parent_start_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'end', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'parent_start', 'kind': 'int', 'bits': 32})
     for name in 'speaker_id parent_id'.split():
         fixed_specs.append({'name': name, 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
@@ -369,9 +369,9 @@ def syllable_layout():
     fixed_specs = []
     for name in 'version flags stress_code'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
-    fixed_specs.append({'name': 'end_ms', 'kind': 'int', 'bits': 32})
-    fixed_specs.append({'name': 'parent_start_ms', 'kind': 'int', 'bits': 32})
-    fixed_specs.append({'name': 'phrase_start_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'end', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'parent_start', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'phrase_start', 'kind': 'int', 'bits': 32})
     for name in 'speaker_id parent_id phrase_id'.split():
         fixed_specs.append({'name': name, 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
@@ -382,9 +382,9 @@ def phone_layout():
     fixed_specs = []
     for name in 'version flags position_code'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
-    fixed_specs.append({'name': 'end_ms', 'kind': 'int', 'bits': 32})
-    fixed_specs.append({'name': 'parent_start_ms', 'kind': 'int', 'bits': 32})
-    fixed_specs.append({'name': 'phrase_start_ms', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'end', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'parent_start', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'phrase_start', 'kind': 'int', 'bits': 32})
     for name in 'speaker_id parent_id phrase_id'.split():
         fixed_specs.append({'name': name, 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
