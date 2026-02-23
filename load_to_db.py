@@ -18,7 +18,7 @@ def save_items_to_db(items):
     models.cache.save_many(items)
     handle_db_save_option(revert=True)
 
-def textgrid_to_database_objects(tg, offset = 0.0, audio = None, speaker = None,
+def textgrid_to_database_objects(tg, offset = 0, audio = None, speaker = None,
     save_to_db=False, overwrite = False):
     words = list(textgrid_to_words(tg, offset))
     syllables = list(textgrid_to_syllables(tg, offset))
@@ -50,7 +50,7 @@ def words_to_phrase(words):
         word.add_parent(phrase, update_database = False)
     return phrase 
 
-def textgrid_to_words(tg, offset = 0.0, save_to_db=False):
+def textgrid_to_words(tg, offset = 0, save_to_db=False):
     update_db_save_state()
     handle_db_save_option(save_to_db=save_to_db)
     names = tg.getNames()
@@ -67,7 +67,7 @@ def textgrid_to_words(tg, offset = 0.0, save_to_db=False):
             
     handle_db_save_option(revert=True)
 
-def textgrid_to_syllables(tg, offset = 0.0, save_to_db=False):
+def textgrid_to_syllables(tg, offset = 0, save_to_db=False):
     update_db_save_state()
     handle_db_save_option(save_to_db=save_to_db)
     names = tg.getNames()
@@ -79,7 +79,7 @@ def textgrid_to_syllables(tg, offset = 0.0, save_to_db=False):
         yield interval_to_syllable(syl, offset=offset)
     handle_db_save_option(revert=True)
 
-def textgrid_to_phones(tg, offset = 0.0, save_to_db=False):
+def textgrid_to_phones(tg, offset = 0, save_to_db=False):
     
     update_db_save_state()
     handle_db_save_option(save_to_db=save_to_db)
@@ -93,7 +93,7 @@ def textgrid_to_phones(tg, offset = 0.0, save_to_db=False):
     handle_db_save_option(revert=True)
 
 
-def interval_to_word(ort_interval, ipa_interval = None, offset = 0.0, 
+def interval_to_word(ort_interval, ipa_interval = None, offset = 0, 
     kwargs = {}):
     if ipa_interval: 
         kwargs['ipa'] = ipa_interval.mark
@@ -101,19 +101,19 @@ def interval_to_word(ort_interval, ipa_interval = None, offset = 0.0,
         offset, kwargs)
     return word
         
-def interval_to_syllable(syl_interval, offset = 0.0, kwargs = {}):
+def interval_to_syllable(syl_interval, offset = 0, kwargs = {}):
     syllable = interval_to_database_object(syl_interval, models.Syllable, 
     offset, kwargs)
     return syllable
 
-def interval_to_phone(phone_interval, offset = 0.0, kwargs = {}):
+def interval_to_phone(phone_interval, offset = 0, kwargs = {}):
     phone = interval_to_database_object(phone_interval, models.Phone, 
     offset, kwargs)
     return phone
 
-def interval_to_database_object(interval, model_class, offset = 0.0, kwargs={}):
-    start = interval.minTime + offset
-    end = interval.maxTime + offset
+def interval_to_database_object(interval, model_class, offset = 0, kwargs={}):
+    start = utils.seconds_to_miliseconds(interval.minTime + offset)
+    end = utils.seconds_to_miliseconds(interval.maxTime + offset)
     o = model_class(start = start, end= end, label = interval.mark, **kwargs)
     return o
     
