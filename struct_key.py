@@ -23,7 +23,7 @@ def instance_to_key(obj):
     if obj.object_type == 'Audio': return pack_audio_key(uuid)
     if obj.object_type == 'Speaker': return pack_speaker_key(uuid)
     rank = CLASS_RANK_MAP[obj.object_type]
-    offset = int(round(obj.start * 1000))
+    offset = obj.start 
     audio_uuid = obj.audio_id
     return pack_segment_key(audio_uuid, rank, offset, uuid)
 
@@ -31,7 +31,7 @@ def instance_to_key(obj):
 def instance_to_child_time_scan_keys(instance):
     child_class = instance.child_class_name
     start = instance.start
-    start_key = make_time_scan_prefix(instance.audio_id, child_class, start_ms)
+    start_key = make_time_scan_prefix(instance.audio_id, child_class, start)
     end = instance.end
     end_key = make_time_scan_prefix(instance.audio_id, child_class, end)
     return start_key, end_key
