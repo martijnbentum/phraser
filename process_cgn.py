@@ -168,7 +168,6 @@ def make_or_load_audio_info(fn = None, overwrite=False):
     output = []
     for f in progressbar(fn):
         o = audio_filename_to_database_dict(f)
-        o['duration'] = utils.seconds_to_miliseconds(o['duration'])
         output.append(o)
     with open(p, 'w', encoding='utf-8') as f:
         json.dump(output, f)
