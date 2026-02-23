@@ -16,7 +16,7 @@ RANK_CLASS_MAP = utils.reverse_dict(CLASS_RANK_MAP)
 
 def key_token_for_field(field_name):
     '''Map key fields to struct fmt tokens for binary LMDB keys.
-    field_name: one of rank, audio_uuid, segment_uuid, start_ms, end_ms
+    field_name: one of rank, audio_uuid, segment_uuid, start, end
     '''
     field_name = field_name.lower()
 
@@ -24,7 +24,7 @@ def key_token_for_field(field_name):
         return 'B'     # u8
     if field_name == 'uuid':
         return '8s'    # 8 bytes
-    if field_name == 'start_ms':
+    if field_name == 'start':
         return 'I'     # u32
 
     raise ValueError(f'Unknown key field: {field_name}')
@@ -45,12 +45,12 @@ def make_key_fields_for_class(class_name):
         return ['uuid', 'uuid']
 
     if class_name in ['phrase', 'word', 'syllable', 'phone', 'segment']:
-        return ['class_id', 'uuid', 'class_id', 'start_ms', 'uuid']
+        return ['class_id', 'uuid', 'class_id', 'start', 'uuid']
 
     raise ValueError(f'Unknown class: {class_name}')
 
 def _make_key_fields_for_time_scan():
-    return ['class_id', 'uuid', 'class_id', 'start_ms']
+    return ['class_id', 'uuid', 'class_id', 'start']
 
 def make_key_fmt_for_time_scan(byte_order='>'):
     fields = _make_key_fields_for_time_scan()
