@@ -64,9 +64,9 @@ class Segment:
         
         self.object_type = self.__class__.__name__
         self.label = label
-        self.start = float(start)
-        self.end = float(end)
-        self.identifier = lmdb_key.make_identifier(self)
+        self.start = int(start)
+        self.end = int(end)
+        self.identifier = lmdb_key.make_identifier()
 
         self.parent_id= parent_id
         self.parent_start = parent_start
@@ -610,7 +610,7 @@ class Audio:
     def __init__(self, filename = None,  save=True, overwrite=False, **kwargs):
         self.object_type = self.__class__.__name__
         self.filename = filename
-        self.identifier = lmdb_key.make_identifier(self)
+        self.identifier = lmdb_key.make_identifier()
         self.overwrite = overwrite
 
         self._set_kwargs(**kwargs)
@@ -754,7 +754,7 @@ class Speaker:
         self.object_type = self.__class__.__name__
         self.name = name
         self.dataset = dataset
-        self.identifier = lmdb_key.make_identifier(self)
+        self.identifier = lmdb_key.make_identifier()
         self.overwrite = overwrite
 
         # Extra metadata
