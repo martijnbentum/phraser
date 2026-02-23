@@ -1,11 +1,12 @@
 import audio
+from dutch_text_clean import clean
 import glob
 import json
 import locations
 from pathlib import Path
 from progressbar import progressbar
 from textgrid import TextGrid
-from dutch_text_clean import clean
+import utils
 
 def ort_textgrid_filenames(cgn_ort_directory = None):
     if cgn_ort_directory is None:
@@ -167,6 +168,7 @@ def make_or_load_audio_info(fn = None, overwrite=False):
     output = []
     for f in progressbar(fn):
         o = audio_filename_to_database_dict(f)
+        o['duration'] = utils.seconds_to_miliseconds(o['duration'])
         output.append(o)
     with open(p, 'w', encoding='utf-8') as f:
         json.dump(output, f)
