@@ -28,6 +28,11 @@ def get_cgn_speaker_names_in_db(reconnect_db = True):
             print(f'  {d}')
     return names
 
+def get_cgn_textgrid_filenames_in_db(reconnect_db = True):
+    phrases = list(models.Phrase.objects.filter(audio__dataset='cgn'))
+    textgrid_fn = [x.filename for x in phrases]
+    return textgrid_fn
+
 
 def save_audio_to_db(audio_infos = None, reconnect_db = True):
     if audio_infos is None:
@@ -93,42 +98,37 @@ def ort_info_to_speaker_and_audio(ort_info, reconnect_db = True):
     models.cache.DB.write_speaker_audio_link(speaker, audio)
     return speaker, audio
 
-def ort_infos_to_db_items(ort_infos, reconnect_db = True, check_status = True):
+def ort_infos_to_db_items(ort_infos, reconnect_db = True, save = True):
+    if reconnect_db: models.reconnect_db()
     name_to_speaker_dict = make_cgn_speaker_name_to_db_speaker_dict()
     fn_to_audio_dict = make_cgn_audio_filename_to_db_audio_dict()
+    textgrid_fn = get_cgn_textgrid_filenames_in_db()
+
     add_items, errors, skipped, no_textgrid = [], [], [], []
-    if reconnect_db: models.reconnect_db()
     for ort_info in progressbar(ort_infos):
         p = Path(ort_info['output_filename'])
         if not p.exists(): 
             no_textgrid.append(ort_info)
             continue
+        textgrid_filename = str(p)
         speaker = name_to_speaker_dict.get(ort_info['tier_name'], None)
         audio = fn_to_audio_dict.get(ort_info['audio_filename'], None)
         if speaker is None or audio is None:
             errors.append((ort_info, 'missing speaker or audio in db'))
             continue
+        if textgrid_filename in textgrid_fn:
+            skipped.append(ort_info)
+            continue
         db_items = ort_info_to_db_items(ort_info, speaker = speaker, 
             audio = audio)
-        status = _check_db_status_items_ort_info(db_items, reconnect_db = False)
-        if check_status:
-            if status == 'not in db':
-                add_items.extend(db_items)
-            elif status == 'all in db':
-                skipped.append((ort_info['output_filename'], status))
-            elif status == 'partly in db':
-                errors.append((ort_info, db_items))
-            else:
-                print(f'WARNING: unknown status {status} for ort_info: {ort_info}')
-        else:
-            add_items.extend(db_items)
-    print(f'found {len(add_items)} items to add to database')
-    if not check_status:
-        print('WARNING: not checked whether items already exist in database')
-    else:
-        print(f'found {len(skipped)} ort_infos fully in database')
-        print(f'found {len(errors)} errors, ort_infos partly in database')
-        print(f'found {len(no_textgrid)} ort_infos without textgrid file')
+        add_items.extend(db_items)
+    if save:
+        print(f'saving {len(add_items)} db items to database')
+        load_to_db.save_items_to_db(add_items)
+    print(f'{len(add_items)} new db items')
+    print(f'{len(skipped)} existing db items skipped')
+    print(f'{len(errors)} ort infos with missing speaker or audio')
+    print(f'{len(no_textgrid)} ort infos with missing textgrid file')
     return add_items, errors, skipped, no_textgrid
     
 
@@ -136,23 +136,12 @@ def ort_info_to_db_items(ort_info, speaker = None, audio = None):
     if speaker is None or audio is None:
         speaker, audio = ort_info_to_speaker_and_audio(
             ort_info, reconnect_db = False)
-    textgrid = load_to_db.load_textgrid(ort_info['output_filename'])
+    textgrid_filename = ort_info['output_filename']
     offset = ort_info['start_time']
-    db_items = load_to_db.textgrid_to_database_objects(
-        textgrid, offset = offset, audio = audio, speaker = speaker, 
-        save_to_db = False)
+    db_items=load_to_db.textgrid_filename_to_database_objects(textgrid_filename,
+         offset = offset, audio = audio, speaker = speaker, save_to_db = False)
     return db_items
 
-def _check_db_status_items_ort_info(db_items, reconnect_db = True):
-    existing_items, new_items = load_to_db.check_items_excists_in_db(db_items,
-        reconnect_db = reconnect_db)
-    if len(new_items) == len(db_items):
-        status = 'not in db'
-    elif len(existing_items) == len(db_items):
-        status = 'all in db'
-    else:
-        status = 'partly in db'
-    return status
     
 def make_cgn_speaker_name_to_db_speaker_dict():
     speakers = models.Speaker.objects.filter(dataset='cgn')
