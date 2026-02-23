@@ -4,6 +4,7 @@ import load_to_db
 import models
 from pathlib import Path
 from progressbar import progressbar
+from utils import seconds_to_miliseconds
 
 def get_filenames_of_audios_in_db(reconnect_db = True):
     if reconnect_db: models.reconnect_db()
@@ -37,6 +38,7 @@ def save_audio_to_db(audio_infos = None, reconnect_db = True):
     for audio_info in progressbar(audio_infos):
         p = Path(audio_info['filename'])
         audio_info['dataset'] = 'cgn'
+        audio_info['duration'] = seconds_to_miliseconds(audio_info['duration'])
         name = p.name
         if name in fn:
             skipped.append(name)
