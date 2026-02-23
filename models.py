@@ -88,8 +88,8 @@ class Segment:
         else: label = self.label
         m = f'{R}{self.object_type}{RE} '
         m += f'{B}label {RE}{label:<{n}} | '
-        m += f'{B}duration {RE}{self.duration:.3f} | '
-        m += f'{GR}ID {self.identifier}{RE} '
+        m += f'{B}duration {RE}{self.duration} | '
+        m += f'{GR}ID {self.identifier.hex()}{RE} '
         return m
 
     def __str__(self):
@@ -103,7 +103,7 @@ class Segment:
         if self.object_type != other.object_type:
             return False
         if self.object_type == 'Phrase':
-            self.textgrid_filename = other.textgrid_filename
+            self.filename = other.filename
         for field in self.IDENTITY_FIELDS:
             if getattr(self, field) != getattr(other, field):
                 return False
@@ -111,7 +111,7 @@ class Segment:
 
     def __hash__(self):
         if self.object_type == 'Phrase':
-            return hash(self.textgrid_filename)
+            return hash(self.filename)
         values = tuple(getattr(self, field) for field in self.IDENTITY_FIELDS)
         return hash(values)
 
@@ -125,8 +125,13 @@ class Segment:
             end = self.end + collar
             if end > self.audio.duration: end = self.audio.duration
         else: start = self.start; end = self.end
+        start = utils.miliseconds_to_seconds(start)
+        end = utils.miliseconds_to_seconds(end)
         play.play_audio(self.audio.filename, start=start, end=end, wait = wait)
-        print(f'Playing {self.object_type} "{self.label}" ')
+        m = f'Playing {self.object_type} "{self.label}" '
+        m += f'from {start:.2f}s to {end:.2f}s\n'
+        m += f'(audio filename={self.audio.filename})'
+        print(m)
     
     def play_children(self, collar = None):
         for child in self.children:
@@ -408,9 +413,9 @@ class Segment:
 
 
 class Phrase(Segment):
-    METADATA_FIELDS = {'textgrid_filename','language', 'speech_style', 
+    METADATA_FIELDS = {'filename','language', 'speech_style', 
         'channel_index', 'overlap','version'}
-    textgrid_filename = ''
+    filename = ''
 
     @property
     def all_objects(self):
@@ -626,7 +631,7 @@ class Audio:
         m = f'{R}Audio{RE} {B}filename {RE}{filename} '
         if hasattr(self, 'duration'):
             m += f'{B}duration {RE}{self.duration} | '
-        m += f'{GR}ID={self.identifier}{RE}'
+        m += f'{GR}ID={self.identifier.hex()}{RE}'
         return m
 
     def __eq__(self, other):
@@ -779,7 +784,7 @@ class Speaker:
         else: name = self.name
             
         m = f'{R}Speaker{RE} {B}name {RE}{name:<20} | '
-        m += f'{GR}ID={self.identifier}{RE}'
+        m += f'{GR}ID={self.identifier.hex()}{RE}'
         return m
 
     def __eq__(self, other):
