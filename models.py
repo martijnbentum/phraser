@@ -102,12 +102,16 @@ class Segment:
             return False
         if self.object_type != other.object_type:
             return False
+        if self.object_type == 'Phrase':
+            self.textgrid_filename = other.textgrid_filename
         for field in self.IDENTITY_FIELDS:
             if getattr(self, field) != getattr(other, field):
                 return False
         return True
 
     def __hash__(self):
+        if self.object_type == 'Phrase':
+            return hash(self.textgrid_filename)
         values = tuple(getattr(self, field) for field in self.IDENTITY_FIELDS)
         return hash(values)
 
@@ -323,36 +327,6 @@ class Segment:
             return True
         return False
 
-    def to_dict(self):
-        """
-        Serialize to a clean dict (for LMDB storage).
-        """
-        base = {}
-        for name in self.DB_FIELDS:
-            if name in ['start', 'end']:
-                base[f'{name}_ms'] = int(getattr(self, name) * 1000)
-            else: base[name] = getattr(self, name)
-        for name in self.METADATA_FIELDS:
-            if hasattr(self, name):
-                base[name] = getattr(self, name)
-
-        # Extra metadata
-        reserved = set(base.keys()) | {'overwrite','extra', 'object_type',
-            'children', 'parent','audio', 'speaker', 'start', 'end'}
-        extra = {} 
-        if hasattr(self, 'extra'):
-            extra.update(self.extra)
-        for k, v in self.__dict__.items():
-            if k.startswith('_'): continue
-            if k in reserved: continue
-            if k in extra: continue
-            extra[k] = v
-        base['extra'] = extra
-        if extra: base['flags'] = 1
-        else: base['flags'] = 0
-        return base
-
-    
 
     def to_struct_value(self):
         '''Serialize to a struct value (for LMDB storage).
@@ -445,8 +419,9 @@ class Segment:
 
 
 class Phrase(Segment):
-    METADATA_FIELDS = {'language', 'speech_style', 'channel_index', 'overlap',
-        'version'}
+    METADATA_FIELDS = {'textgrid_filename','language', 'speech_style', 
+        'channel_index', 'overlap','version'}
+    textgrid_filename = ''
 
     @property
     def all_objects(self):
