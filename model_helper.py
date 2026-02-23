@@ -1,4 +1,4 @@
-EMPTY_ID= '0000000000000000'
+EMPTY_ID= b'\x00\x00\x00\x00\x00\x00\x00\x00'
 
 def ensure_consistent_link(a, b, attr, add_method_name, update_database=True):
     """
