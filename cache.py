@@ -296,15 +296,10 @@ def value_key_to_instance(cache, value, key):
 def _convert_segment(d):
     '''
     convert db values to instance values
-    Map *_ms fields to seconds and rename key without _ms suffix.
-    Map *_id fields to hex strings and rename key without _id suffix.
+    Map *_id fields to hex strings. 
     '''
     for k in list(d.keys()):
         v = d[k]
-        if k.endswith('_ms') and isinstance(v, (int)):
-            new_key = k[:-3]  # remove '_ms'
-            d[new_key] = v * 0.001 
-            del d[k]
         if k.endswith('_id') and isinstance(v, (bytes)):
             d[k] = v.hex()
 
