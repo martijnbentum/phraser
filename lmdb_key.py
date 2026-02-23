@@ -9,8 +9,8 @@ def instance_to_child_time_scan_keys(instance):
 def instance_to_key(instance):
     return struct_key.instance_to_key(instance)
     
-def make_identifier(item):
-    return os.urandom(8).hex()
+def make_identifier():
+    return os.urandom(8)
 
 def key_to_info(key):
     return struct_key.unpack_key(key)
