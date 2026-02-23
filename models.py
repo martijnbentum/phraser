@@ -625,7 +625,7 @@ class Audio:
         else: filename = self.filename
         m = f'{R}Audio{RE} {B}filename {RE}{filename} '
         if hasattr(self, 'duration'):
-            m += f'{B}duration {RE}{self.duration:.1f} | '
+            m += f'{B}duration {RE}{self.duration} | '
         m += f'{GR}ID={self.identifier}{RE}'
         return m
 
