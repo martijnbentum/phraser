@@ -152,9 +152,6 @@ class Segment:
     def key_info(self):
         return lmdb_key.key_to_info(self.key)
 
-    @property
-    def parent_start_ms(self):
-        return int(self.parent_start * 1000)
 
     @property
     def parent_class_name(self):
@@ -167,7 +164,7 @@ class Segment:
         if self.parent_id == EMPTY_ID: return None
         audio_id = self.audio_id
         return lmdb_key.audio_id_segment_id_class_to_key(self.audio_id, 
-            self.parent_id, self.parent_class_name, self.parent_start_ms)
+            self.parent_id, self.parent_class_name, self.parent_start)
             
             
     @property
@@ -176,7 +173,7 @@ class Segment:
         if self.object_type == 'Word': return self.parent_key
         if self.phrase_id == EMPTY_ID: return None
         return lmdb_key.audio_id_segment_id_class_to_key(self.audio_id, 
-            self.phrase_id, 'Phrase', self.phrase_start_ms)
+            self.phrase_id, 'Phrase', self.phrase_start)
             
 
     @property
@@ -242,14 +239,6 @@ class Segment:
         self._phrase = cache.load(self.phrase_key, with_links=False)
         return self._phrase
 
-    
-    @property
-    def start_ms(self):
-        return int(self.start * 1000)
-
-    @property
-    def end_ms(self):
-        return int(self.end * 1000)
 
     @property
     def duration(self):
@@ -542,10 +531,6 @@ class Syllable(Segment):
 
 
     @property
-    def phrase_start_ms(self):
-        return int(self.phrase_start * 1000)
-
-    @property
     def stress(self):
         if self.stress_code == 0: return 'unstressed'
         if self.stress_code == 1: return 'primary'
@@ -574,10 +559,6 @@ class Phone(Segment):
     phrase_start = 0
 
     _add_phrase = _add_phrase
-
-    @property
-    def phrase_start_ms(self):
-        return int(self.phrase_start * 1000)
 
     @property
     def position_code(self):
@@ -668,11 +649,6 @@ class Audio:
             return True
         return False
 
-    @property
-    def duration_ms(self):
-        if hasattr(self, 'duration'):
-            return int(self.duration * 1000)
-        return 0
 
     @property
     def speakers(self):
