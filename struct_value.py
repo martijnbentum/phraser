@@ -1,5 +1,4 @@
 import struct 
-from struct_helper import hex_to_8_bytes
 
 VERSION = 1
 
@@ -60,7 +59,7 @@ def pack_phrase(instance):
         'version': VERSION,
         'flags': flags,
         'end': instance.end,
-        'speaker_id': hex_to_8_bytes(instance.speaker_id),
+        'speaker_id': instance.speaker_id,
     }
     var = {'label': instance.label}
     return _pack_with_layout(layout, fixed, var, 'phrase')
@@ -86,8 +85,8 @@ def pack_word(instance):
         'version': VERSION,
         'flags': flags,
         'end': instance.end,
-        'speaker_id': hex_to_8_bytes(instance.speaker_id),
-        'parent_id': hex_to_8_bytes(instance.parent_id),
+        'speaker_id': instance.speaker_id,
+        'parent_id': instance.parent_id,
         'parent_start': instance.parent_start,
     }
     var = {
@@ -118,10 +117,10 @@ def pack_syllable(instance):
         'flags': flags,
         'stress_code': instance.stress_code,
         'end': instance.end,
-        'speaker_id': hex_to_8_bytes(instance.speaker_id),
-        'parent_id': hex_to_8_bytes(instance.parent_id),
+        'speaker_id': instance.speaker_id,
+        'parent_id': instance.parent_id,
         'parent_start': instance.parent_start,
-        'phrase_id': hex_to_8_bytes(instance.phrase_id),
+        'phrase_id': instance.phrase_id,
         'phrase_start': instance.phrase_start,
     }
     var = {'label': instance.label}
@@ -149,10 +148,10 @@ def pack_phone(instance):
         'flags': flags,
         'position_code': instance.position_code,
         'end': instance.end,
-        'speaker_id': hex_to_8_bytes(instance.speaker_id),
-        'parent_id': hex_to_8_bytes(instance.parent_id),
+        'speaker_id': instance.speaker_id,
+        'parent_id': instance.parent_id,
         'parent_start': instance.parent_start,
-        'phrase_id': hex_to_8_bytes(instance.phrase_id),
+        'phrase_id': instance.phrase_id,
         'phrase_start': instance.phrase_start,
     }
     var = {'label': instance.label}
