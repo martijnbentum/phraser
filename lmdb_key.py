@@ -18,23 +18,23 @@ def key_to_info(key):
 def audio_id_segment_id_class_to_key(audio_id, segment_id, object_type, 
     offset_ms):
     '''Make LMDB key for a segment.
-    audio_id: hex string of audio UUID
-    segment_id: hex string of segment UUID
+    audio_id:  audio UUID
+    segment_id:  segment UUID
     object_type: one of Audio, Phrase, Word, Syllable, Phone
-    offset_ms: integer offset in milliseconds
+    offset: integer offset in milliseconds
     '''
     rank = CLASS_RANK_MAP[object_type]
     return struct_key.pack_segment_key(audio_id, rank, offset_ms, segment_id)
 
 def audio_id_to_key(audio_id):
     '''Make LMDB key for an audio.
-    audio_id: hex string of audio UUID
+    audio_id:  audio UUID
     '''
     return struct_key.pack_audio_key(audio_id)
 
 def speaker_id_to_key(speaker_id):
     '''Make LMDB key for a speaker.
-    speaker_id: hex string of speaker UUID
+    speaker_id:  speaker UUID
     '''
     return struct_key.pack_speaker_key(speaker_id)
 
@@ -56,15 +56,15 @@ def key_to_object_type(key):
     return RANK_CLASS_MAP[rank]
 
 def key_to_identifier(key):
-    '''Get identifier (UUID hex string) from LMDB key.
+    '''Get identifier (UUID) from LMDB key.
     '''
-    if len(key) == struct_key.AUDIO_LEN: key[1:].hex()
+    if len(key) == struct_key.AUDIO_LEN: key[1:]
     if len(key) == struct_key.SPEAKER_LEN: return None
-    return key[-8:].hex()
+    return key[-8:]
     
 def key_to_audio_identifier(key):
     if len(key) == struct_key.SPEAKER_LEN: return None
-    return key[1:9].hex()
+    return key[1:9]
 
 def audio_id_to_scan_prefix(audio_id, child_class = 'Phrase'):
     '''Get LMDB scan prefix for a given audio ID.
@@ -73,8 +73,8 @@ def audio_id_to_scan_prefix(audio_id, child_class = 'Phrase'):
 
 def speaker_audio_link(speaker, audio):
     '''Make LMDB key for a speaker-audio pair.
-    speaker_id: hex string of speaker UUID
-    audio_id: hex string of audio UUID
+    speaker_id:  speaker UUID
+    audio_id:  audio UUID
     '''
     return struct_key.pack_speaker_audio_key(speaker.identifier, 
         audio.identifier)
