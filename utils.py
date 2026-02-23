@@ -48,4 +48,4 @@ gender_dict = make_gender_dict()
 reverse_gender_dict = make_gender_dict(reverse=True)
 
 def seconds_to_miliseconds(seconds):
-    return seconds * 1000
+    return int(seconds * 1000)
