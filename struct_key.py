@@ -30,23 +30,23 @@ def instance_to_key(obj):
 
 def instance_to_child_time_scan_keys(instance):
     child_class = instance.child_class_name
-    start_ms = int(round(instance.start * 1000))
+    start = instance.start
     start_key = make_time_scan_prefix(instance.audio_id, child_class, start_ms)
-    end_ms = int(round(instance.end * 1000))
-    end_key = make_time_scan_prefix(instance.audio_id, child_class, end_ms)
+    end = instance.end
+    end_key = make_time_scan_prefix(instance.audio_id, child_class, end)
     return start_key, end_key
 
-def make_time_scan_prefix(audio_uuid_hex, child_class, time_ms):
+def make_time_scan_prefix(audio_uuid_hex, child_class, time):
     '''Make key prefix for time scan of segments in an audio.
     audio_uuid_hex: hex string of audio UUID
     child_class: Word, Syllable, Phone
-    time_ms: integer offset in milliseconds
+    time: integer offset in milliseconds
     '''
     audio_uuid = struct_helper.hex_to_8_bytes(audio_uuid_hex)
     child_class_rank = CLASS_RANK_MAP[child_class]
     audio_rank = CLASS_RANK_MAP['Audio']
     return struct.pack(TIME_SCAN_FMT, audio_rank, 
-         audio_uuid, child_class_rank, time_ms)
+         audio_uuid, child_class_rank, time)
 
 def make_speaker_scan_prefix(speaker_uuid_hex):
     '''Make key prefix for scan of speaker-audio pairs for a speaker.
@@ -79,16 +79,16 @@ def pack_audio_prefix(audio_uuid_hex, child_class):
     return struct.pack(AUDIO_FMT, audio_rank, audio_uuid, child_class_rank)
 
 
-def pack_segment_key(audio_uuid_hex, class_rank, offset_ms, segment_uuid_hex):
-    if not (0 <= offset_ms <= 0xFFFFFFFF):
-        raise ValueError('offset_ms must fit in uint32')
+def pack_segment_key(audio_uuid_hex, class_rank, offset, segment_uuid_hex):
+    if not (0 <= offset <= 0xFFFFFFFF):
+        raise ValueError('offset must fit in uint32')
 
     audio_uuid = struct_helper.hex_to_8_bytes(audio_uuid_hex)
     segment_uuid = struct_helper.hex_to_8_bytes(segment_uuid_hex)
     audio_rank = CLASS_RANK_MAP['Audio']
 
     return struct.pack(SEGMENT_FMT, audio_rank, audio_uuid, 
-        class_rank, offset_ms, segment_uuid)
+        class_rank, offset, segment_uuid)
         
 
 
@@ -116,13 +116,13 @@ def unpack_key(key_bytes):
 
     if n == SEGMENT_LEN:
         o =  struct.unpack(SEGMENT_FMT, key_bytes)
-        audio_rank, audio_uuid, class_rank, start_ms, segment_uuid = o
+        audio_rank, audio_uuid, class_rank, start, segment_uuid = o
         if audio_rank != AUDIO_RANK:
             raise ValueError('Invalid segment key (audio_rank must be 0)')
         return {
             'object_type': RANK_CLASS_MAP[class_rank],
             'audio_id': audio_uuid.hex(),
-            'start_ms': start_ms,
+            'start': start,
             'identifier': segment_uuid.hex(),
         }
 
@@ -145,13 +145,13 @@ def unpack_key(key_bytes):
 
     if n == TIME_SCAN_LEN:
         o = struct.unpack(TIME_SCAN_FMT, key_bytes)
-        audio_rank, audio_uuid, child_class_rank, start_ms = o
+        audio_rank, audio_uuid, child_class_rank, start = o
         object_type = RANK_CLASS_MAP[child_class_rank]
         if audio_rank != AUDIO_RANK:
             raise ValueError('Invalid time scan key (audio_rank must be 0)')
         return {
             'child_object_type': object_type, 
-            'start_ms': start_ms,
+            'start': start,
             'audio_id': audio_uuid.hex(),
         }
 
