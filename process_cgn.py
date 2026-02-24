@@ -98,7 +98,8 @@ def textgrid_to_speaker_tiers(tg, exclude = ['BACKGROUND', 'COMMENT']):
     names = [name for name in tg.getNames() if name not in exclude]
     return names
 
-def handle_tier(tg, tier_name, audio_filename, component, language):
+def handle_tier(tg, tier_name, audio_filename, component, language, tier_names,
+        cgn_id):
     tier_index = tg.getNames().index(tier_name)
     tier = tg.tiers[tier_index]
     # speaker_info = load_speaker_info(tier_name, speakers_file)
@@ -119,7 +120,9 @@ def handle_tier(tg, tier_name, audio_filename, component, language):
             'language': language,
             'audio_filename': str(audio_filename), 
             'output_directory': str(output_dir),
-            'output_filename': str(output_filname)}
+            'output_filename': str(output_filname),
+            'cgn_id': cgn_id,
+            'speaker_ids_audio': tier_names}
         output.append(d)
     return output
 
@@ -135,7 +138,8 @@ def cgn_id_to_info(cgn_id, cgn_audio_filenames = None, cgn_ort_directory = None)
     output = []
     tier_names = textgrid_to_speaker_tiers(tg)
     for tier_name in tier_names:
-        tier_data = handle_tier(tg, tier_name, audio_path, comp, language)
+        tier_data = handle_tier(tg, tier_name, audio_path, comp, language, 
+            tier_names, cgn_id)
         output.extend(tier_data)
     return output
 
