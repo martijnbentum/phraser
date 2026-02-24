@@ -60,7 +60,7 @@ def pack_phrase(instance):
         'flags': flags,
         'end': instance.end,
         'speaker_id': instance.speaker_id,
-        'overlap': instance.overlap,
+        'overlap_code': instance.overlap_code,
     }
     var = {'label': instance.label,
         'filename': instance.filename,
@@ -91,7 +91,7 @@ def pack_word(instance):
         'speaker_id': instance.speaker_id,
         'parent_id': instance.parent_id,
         'parent_start': instance.parent_start,
-        'overlap': instance.overlap,
+        'overlap_code': instance.overlap_code,
     }
     var = {
         'label': instance.label,
@@ -126,7 +126,7 @@ def pack_syllable(instance):
         'parent_start': instance.parent_start,
         'phrase_id': instance.phrase_id,
         'phrase_start': instance.phrase_start,
-        'overlap': instance.overlap,
+        'overlap_code': instance.overlap_code,
     }
     var = {'label': instance.label}
     return _pack_with_layout(layout, fixed, var, 'syllable')
@@ -158,7 +158,7 @@ def pack_phone(instance):
         'parent_start': instance.parent_start,
         'phrase_id': instance.phrase_id,
         'phrase_start': instance.phrase_start,
-        'overlap': instance.overlap,
+        'overlap_code': instance.overlap_code,
     }
     var = {'label': instance.label}
     return _pack_with_layout(layout, fixed, var, 'phone')
