@@ -3,8 +3,8 @@ import struct_key
 import struct_helper
 from struct_helper import CLASS_RANK_MAP, RANK_CLASS_MAP
 
-def instance_to_child_time_scan_keys(instance):
-    return struct_key.instance_to_child_time_scan_keys(instance)
+def instance_to_child_time_scan_keys(instance, child_class = None):
+    return struct_key.instance_to_child_time_scan_keys(instance, child_class)
 
 def instance_to_key(instance):
     return struct_key.instance_to_key(instance)
@@ -65,6 +65,13 @@ def key_to_identifier(key):
 def key_to_audio_identifier(key):
     if len(key) == struct_key.SPEAKER_LEN: return None
     return key[1:9]
+
+def key_to_rank(key):
+    '''Get rank (single-letter code) from LMDB key.
+    '''
+    if len(key) == struct_key.AUDIO_LEN: return 0
+    if len(key) == struct_key.SPEAKER_LEN: return 5
+    return key[9]
 
 def audio_id_to_scan_prefix(audio_id, child_class = 'Phrase'):
     '''Get LMDB scan prefix for a given audio ID.
