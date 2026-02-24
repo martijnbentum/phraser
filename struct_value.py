@@ -60,6 +60,7 @@ def pack_phrase(instance):
         'flags': flags,
         'end': instance.end,
         'speaker_id': instance.speaker_id,
+        'overlap': instance.overlap,
     }
     var = {'label': instance.label,
         'filename': instance.filename,
@@ -90,6 +91,7 @@ def pack_word(instance):
         'speaker_id': instance.speaker_id,
         'parent_id': instance.parent_id,
         'parent_start': instance.parent_start,
+        'overlap': instance.overlap,
     }
     var = {
         'label': instance.label,
@@ -124,6 +126,7 @@ def pack_syllable(instance):
         'parent_start': instance.parent_start,
         'phrase_id': instance.phrase_id,
         'phrase_start': instance.phrase_start,
+        'overlap': instance.overlap,
     }
     var = {'label': instance.label}
     return _pack_with_layout(layout, fixed, var, 'syllable')
@@ -155,6 +158,7 @@ def pack_phone(instance):
         'parent_start': instance.parent_start,
         'phrase_id': instance.phrase_id,
         'phrase_start': instance.phrase_start,
+        'overlap': instance.overlap,
     }
     var = {'label': instance.label}
     return _pack_with_layout(layout, fixed, var, 'phone')
@@ -345,7 +349,7 @@ def audio_layout():
 
 def phrase_layout():
     fixed_specs = []
-    for name in 'version flags'.split():
+    for name in 'version flags overlap_code'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
     fixed_specs.append({'name': 'end', 'kind': 'int', 'bits': 32})
     fixed_specs.append({'name': 'speaker_id', 'kind': 'bytes', 'n_bytes': 8})
@@ -356,7 +360,7 @@ def phrase_layout():
 
 def word_layout():
     fixed_specs = []
-    for name in 'version flags'.split():
+    for name in 'version flags overlap_code'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
     fixed_specs.append({'name': 'end', 'kind': 'int', 'bits': 32})
     fixed_specs.append({'name': 'parent_start', 'kind': 'int', 'bits': 32})
@@ -369,7 +373,7 @@ def word_layout():
 
 def syllable_layout():
     fixed_specs = []
-    for name in 'version flags stress_code'.split():
+    for name in 'version flags stress_code overlap_code'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
     fixed_specs.append({'name': 'end', 'kind': 'int', 'bits': 32})
     fixed_specs.append({'name': 'parent_start', 'kind': 'int', 'bits': 32})
@@ -382,7 +386,7 @@ def syllable_layout():
 
 def phone_layout():
     fixed_specs = []
-    for name in 'version flags position_code'.split():
+    for name in 'version flags position_code overlap_code'.split():
         fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
     fixed_specs.append({'name': 'end', 'kind': 'int', 'bits': 32})
     fixed_specs.append({'name': 'parent_start', 'kind': 'int', 'bits': 32})
