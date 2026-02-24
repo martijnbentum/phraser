@@ -239,7 +239,6 @@ class DB:
         self.delete_all_speaker_audio()
 
     def write_speaker_audio_link(self, speaker, audio):
-        print(f'linking speaker {speaker.identifier} to audio {audio.filename}')
         link= lmdb_key.speaker_audio_link(speaker, audio)
         self.write(link, b'', db_name = 'speaker_audio', overwrite = True)
 
