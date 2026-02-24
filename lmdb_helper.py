@@ -127,10 +127,17 @@ class DB:
                     break
                 yield k  # or (k, v)
 
-    def instance_to_child_keys(self, instance):
+
+    def instance_to_child_keys(self, instance, child_class = None):
+        '''Yield keys for child objects of instance, ordered by start time.
+        instance:      An Segment instance (Phrase, Word, Syllable, Phone).
+        child_class:   Class name of child objects to retrieve 
+                       (Word, Syllable, Phone).
+                       If None, uses instance.child_class_name.
+        '''
         db = self.db['main']
         f = lmdb_key.instance_to_child_time_scan_keys
-        start_prefix, end_prefix = f(instance)
+        start_prefix, end_prefix = f(instance, child_class)
         with self.env.begin() as txn:
             cur = txn.cursor(db = db)
             if not cur.set_range(start_prefix):
