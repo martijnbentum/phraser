@@ -130,7 +130,7 @@ class DB:
 
     def instance_to_child_keys(self, instance, child_class = None):
         '''Yield keys for child objects of instance, ordered by start time.
-        instance:      An Segment instance (Phrase, Word, Syllable, Phone).
+        instance:      An Segment instance (Phrase, Word, Syllable).
         child_class:   Class name of child objects to retrieve 
                        (Word, Syllable, Phone).
                        If None, uses instance.child_class_name.
@@ -146,6 +146,20 @@ class DB:
                 if k > end_prefix:
                     break
                 yield k  # or (k, v)
+
+    def instance_to_descendant_keys(self, instance):
+        if instance.object_type == 'Phrase':
+            child_classes = ['Word', 'Syllable', 'Phone']
+        if instance.object_type == 'Word':
+            child_classes = ['Syllable', 'Phone']
+        if instance.object_type == 'Syllable':
+            return self.instance_to_child_keys(instance) 
+        keys = []
+        for child_class in child_classes:
+            o = self.instance_to_child_keys(instance, child_class)
+            if o: keys.extend(o)
+        return keys
+                
 
     def object_type_to_keys_dict(self):
         db = self.db['main']
