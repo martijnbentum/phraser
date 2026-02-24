@@ -20,8 +20,9 @@ def save_items_to_db(items):
     handle_db_save_option(revert=True)
 
 def textgrid_filename_to_database_objects(textgrid_filename, offset = 0, 
-    audio = None, speaker = None, save_to_db=False, overwrite = False):
-    
+    audio = None, speaker = None, save_to_db=False, overwrite = False, 
+    multiple_speakers = None):
+    no_overlap_code = utils.overlap_dict[False]
     tg = load_textgrid(textgrid_filename)
     words = list(textgrid_to_words(tg, offset))
     syllables = list(textgrid_to_syllables(tg, offset))
@@ -38,6 +39,7 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset = 0,
     for item in items:
         item.add_audio(audio, update_database = False, propagate = False)
         item.add_speaker(speaker, update_database = False, propagate = False)
+        if multiple_speakers is False: item.overlap_code = no_overlap_code
     if save_to_db: save_items_to_db(items)
     return items
          
