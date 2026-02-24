@@ -136,6 +136,7 @@ def ort_info_to_db_items(ort_info, speaker = None, audio = None):
     if speaker is None or audio is None:
         speaker, audio = ort_info_to_speaker_and_audio(
             ort_info, reconnect_db = False)
+    else: models.cache.DB.write_speaker_audio_link(speaker, audio)
     textgrid_filename = ort_info['output_filename']
     offset = ort_info['start_time']
     db_items=load_to_db.textgrid_filename_to_database_objects(textgrid_filename,
