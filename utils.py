@@ -12,6 +12,7 @@ def pretty_print_object_dict(obj_dict):
     width = max(len(str(k)) for k in obj_dict)
 
     for key, value in obj_dict.items():
+        if key.startswith('_'): continue
         key_pad = ' ' * (width - len(str(key)))
         prefix = f'{R}{key}{RE}{key_pad} : '
 
@@ -24,7 +25,7 @@ def pretty_print_object_dict(obj_dict):
             for subkey, subval in value.items():
                 sub_pad = ' ' * (sub_width - len(str(subkey)))
                 lines.append(f'  {R}{subkey}{RE}{sub_pad} : {subval}')
-        elif isinstance(value, list):
+        if isinstance(value, list):
             if not value:
                 lines.append(prefix + '[]')
                 continue
@@ -32,7 +33,7 @@ def pretty_print_object_dict(obj_dict):
             for item in value:
                 lines.append(f'  - {item}')
         else:
-            lines.append(prefix + str(value))
+            lines.append(prefix + value.__repr__())
 
     return '\n'.join(lines)
 
@@ -52,3 +53,10 @@ def seconds_to_miliseconds(seconds):
 
 def miliseconds_to_seconds(milliseconds):
     return milliseconds / 1000
+
+def overlap(object1, object2):
+    '''Return True if intervals overlap (partial or full), else False.
+    Assumes integer start and end, and start < end.
+    '''
+    return object1.start < object2.end and object2.start < object1.end
+
