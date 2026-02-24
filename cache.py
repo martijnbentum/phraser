@@ -301,18 +301,6 @@ def _convert_speaker(d):
 
     
 
-def collect_child_keys(parents):
-    '''Given a list of parent objects, return a flat list 
-    of all child keys without hitting LMDB.
-    '''
-    keys = []
-    extend = keys.extend  # local binding for speed
-
-    for parent in parents:
-        # assumes each object has .child_keys already loaded
-        extend(parent.child_keys)
-
-    return keys
 
 def collect_attribute_keys(objs, attr_name):
     '''Given a list of objects, return a flat list of the specified attribute keys
@@ -326,7 +314,7 @@ def collect_attribute_keys(objs, attr_name):
             append(key)
     return keys
 
-def load_descendants(cache, parents, terminal_descendant_class_name = None):
+def load_phrase_descendants(cache, phrases):
     '''
     load all descendants of given parent objects in order of classes.
     all descendants are bulk loaded per class to minimize LMDB hits.
@@ -334,20 +322,21 @@ def load_descendants(cache, parents, terminal_descendant_class_name = None):
     parents: list of root objects
     Returns a dict [class_name] = {'keys':keys, 'instances':objects}.
     '''
-    end_name = terminal_descendant_class_name
     results = {}
-    current_parents = parents
-
-    while True:
-        child_keys = collect_child_keys(current_parents)
-        if not child_keys: break
-        children = cache.load_many(child_keys)
-        child_class_name = children[0].object_type if children else None
-        if child_class_name is None: break
-        results[child_class_name] = {'keys': child_keys,'instances':children}
-        if child_class_name == terminal_descendant_class_name:break
-        current_parents = children
+    word_keys, syllable_keys, phone_keys = [], [], []  
+    for phrase in phrases:
+        k = cache.DB.instance_to_child_keys(phrase, 'Word')
+        if k: word_keys.extend(k)
+        k = cache.DB.instance_to_child_keys(phrase, 'Syllable')
+        if k: syllable_keys.extend(k)
+        k = cache.DB.instance_to_child_keys(phrase, 'Phone')
+        if k: phone_keys.extend(k)
+    items=[('Word',word_keys),('Syllable',syllable_keys),('Phone',phone_keys)]
+    for child_class_name, child_keys in items:
+        instances = cache.load_many(child_keys)
+        results[child_class_name] = {'keys': child_keys,'instances':instances}
     return results
+
 
 def load_linked_audio_and_speakers(cache, objs):
     '''based on a list of objects with audio_key and speaker_key attributes,
@@ -373,7 +362,7 @@ def load_hierarchy_from_phrases(cache, phrases):
     the list of phrases in bulk per class
     this avoids repeated LMDB hits when loading linked objects per phrase
     '''
-    instances_dict =  load_descendants(cache, phrases)
+    instances_dict =  load_phrase_descendants(cache, phrases)
     audio_speaker_dict = load_linked_audio_and_speakers(cache, phrases)
     instances_dict.update(audio_speaker_dict)
     return instances_dict
