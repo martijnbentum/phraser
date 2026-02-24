@@ -9,7 +9,7 @@ default_db_name = 'main'
 
 class DB:
     def __init__(self, path=locations.cgn_lmdb, map_size=1024**4,
-        db_names = ['main', 'speaker_audio']):
+        db_names = ['main', 'speaker_audio', 'label_segment']):
         self.path = path
         self.map_size = map_size
         self.db_names = db_names
