@@ -28,8 +28,8 @@ def instance_to_key(obj):
     return pack_segment_key(audio_uuid, rank, offset, uuid)
 
 
-def instance_to_child_time_scan_keys(instance):
-    child_class = instance.child_class_name
+def instance_to_child_time_scan_keys(instance, child_class = None):
+    if child_class is None: child_class = instance.child_class_name
     start = instance.start
     start_key = make_time_scan_prefix(instance.audio_id, child_class, start)
     end = instance.end
