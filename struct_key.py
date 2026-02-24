@@ -1,3 +1,4 @@
+import hashlib
 import struct
 import struct_helper
 from struct_helper import CLASS_RANK_MAP, RANK_CLASS_MAP
@@ -8,6 +9,10 @@ SEGMENT_FMT = struct_helper.make_key_fmt_for_class('segment')  # '>B8sBI8s'
 TIME_SCAN_FMT = struct_helper.make_key_fmt_for_time_scan()     # '>B8sBI'
 SPEAKER_AUDIO_FMT = struct_helper.make_key_fmt_for_class('speaker_audio')#'>8s8s'
 
+
+LABEL_HASH_LEN = 16  
+
+LABEL_INDEX_LEN =  39
 
 SPEAKER_LEN = struct.calcsize(SPEAKER_FMT)  # 9
 AUDIO_LEN   = struct.calcsize(AUDIO_FMT)    # 10
@@ -146,7 +151,33 @@ def unpack_key(key_bytes):
             'audio_id': audio_uuid,
         }
 
+    if n == LABEL_INDEX_LEN:
+        rank = key_bytes[0]
+        if rank not in RANK_CLASS_MAP:
+            m = f'Invalid label index key (rank {rank} not recognized)'
+            raise ValueError(m)
+        return {
+            'object_type': RANK_CLASS_MAP[rank],
+            'label_hash': key_bytes[1:1+LABEL_HASH_LEN],
+            'instance_key': key_bytes[1+LABEL_HASH_LEN:],
+        }
+
     raise ValueError(f'Unknown key length: {n}')
 
+
+
+def hash_label(label):
+    # blake2b is fast and stable
+    b = label.encode('utf-8')
+    return hashlib.blake2b(b, digest_size=LABEL_HASH_LEN).digest()
+
+def instance_to_label_index_key(instance):
+    key = instance_to_key(instance)
+    rank = CLASS_RANK_MAP[instance.object_type]
+    return bytes([rank]) + hash_label(instance.label) + key
+
+def label_index_key_to_instance_key(key):
+    return key[1+LABEL_HASH_LEN:]
+    
 
 
