@@ -286,15 +286,10 @@ def value_key_to_instance(cache, value, key):
     obj = cls.__new__(cls)
     data = struct_value.unpack_instance(object_type, value)
     data.update(info)
-    if object_type == 'Speaker': _convert_speaker(data)
     obj.__dict__.update(data)
-    # obj.__dict__['extra'] = extra
     return obj
 
 
-def _convert_speaker(d):
-    gender_code = d.pop('gender_code')
-    d['gender'] = utils.reverse_gender_dict[gender_code]
     
 
 
