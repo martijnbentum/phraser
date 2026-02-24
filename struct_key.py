@@ -179,5 +179,7 @@ def instance_to_label_index_key(instance):
 def label_index_key_to_instance_key(key):
     return key[1+LABEL_HASH_LEN:]
     
+def label_index_key_to_rank(key):
+    return key[0]
 
 
