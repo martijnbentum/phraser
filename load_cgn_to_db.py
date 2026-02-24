@@ -129,6 +129,7 @@ def ort_infos_to_db_items(ort_infos, reconnect_db = True, save = True):
     print(f'{len(skipped)} existing db items skipped')
     print(f'{len(errors)} ort infos with missing speaker or audio')
     print(f'{len(no_textgrid)} ort infos with missing textgrid file')
+    if reconnect_db: models.reconnect_db()
     return add_items, errors, skipped, no_textgrid
     
 
