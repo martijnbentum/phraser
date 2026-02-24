@@ -200,13 +200,26 @@ class Segment:
     def children(self):
         """Return the list of child segments."""
         if self.allowed_child_type is None: return []
-        if not hasattr(self, '_children'):
-            if self.child_keys: 
-                self._children = cache.load_many(self.child_keys, 
-                    with_links=False)
-            else:
-                self._children = []
+        if hasattr(self, '_children'): return self._children
+        self._children, self._related = [], []
+        if self.child_keys: 
+            children = cache.load_many(self.child_keys, 
+                with_links=False)
+        else:
+            children = []
+        sid = self.speaker_id
+        for child in children:
+            if child.speaker_id == sid: self._children.append(child)
+            else: self._related.append(child) 
         return self._children
+
+    @property
+    def related(self):
+        if hasattr(self, '_related'): return self._related
+        if self.allowed_child_type is None: return []
+        _ = self.children
+        return self._related
+        
 
     @property
     def audio_key(self):
@@ -336,21 +349,48 @@ class Segment:
         return names
 
     @property
+    def get_overlap(self):
+        if hasattr(self, 'overlap'): return self.overlap
+        return self.overlap_items != []
+
+    @property
+    def overlap_items(self):
+        if hasattr(self, '_overlap_items'): return self._overlap_items
+        if self.object_type == 'Phrase': 
+            if not self.audio: return []
+            items = self.audio.phrases
+        else:
+            items =  self.parent.related
+        if items is None: return []
+        overlapping = []
+        self.overlap = False
+        for item in items:
+            if item == self: continue
+            if item.start > self.end: break
+            if item.end < self.start: continue
+            if utils.overlap(self, item):
+                overlapping.append(item)
+                item.overlap = True
+                self.overlap = True
+        self._overlap_items = overlapping
+        return self._overlap_items
+
+    @property
     def siblings(self):
-        if parent is None: return
+        if self.object_type == 'Phrase': 
+            return self.audio.phrases
+        if self.parent is None: return
         return self.parent.children
 
     @property
     def next_sibling(self):
         """Return the next segment at the same level (same parent)."""
-        if self.parent is None:
-            return None
         siblings = self.siblings
+        if siblings is None: return None
         try:
             idx = siblings.index(self)
         except ValueError:
             return None
-
         if idx + 1 < len(siblings):
             return siblings[idx + 1]
         return None
@@ -358,10 +398,8 @@ class Segment:
     @property
     def prev_sibling(self):
         """Return the previous segment at the same level."""
-        if self.parent is None:
-            return None
-
         siblings = self.siblings
+        if siblings is None: return None
         try:
             idx = siblings.index(self)
         except ValueError:
@@ -393,6 +431,17 @@ class Segment:
             if isinstance(parent, cls):
                 yield parent
             parent = parent.parent
+
+    @property
+    def descendant_keys(self):
+        return cache.DB.instance_to_descendant_keys(self)
+
+    @property
+    def descendants(self):
+        #if hasattr(self, '_descendants'): return self._descendants
+        keys = self.descendant_keys
+        return cache.load_many(keys, with_links=False)
+
 
     def iter_descendants(self):
         for child in self.children:
@@ -658,7 +707,9 @@ class Audio:
     @property
     def speakers(self):
         if hasattr(self, '_speakers'): return self._speakers
-        self._speakers= cache.load_many(self.speaker_keys, with_links=False)
+        speakers = [x.speaker for x in self.phrases]
+        unique_speakers = set(speakers)
+        self._speakers = list(unique_speakers)
         return self._speakers
 
     @property
