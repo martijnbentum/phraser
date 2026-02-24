@@ -30,6 +30,7 @@ class Segment:
     Base time-aligned segment with a unique ID and parent/child links.
     '''
     allowed_child_type = []# subclasses override
+    overlap_code = 9
 
     @classmethod
     def get_default_cache(cls):
@@ -349,9 +350,13 @@ class Segment:
         return names
 
     @property
-    def get_overlap(self):
-        if hasattr(self, 'overlap'): return self.overlap
+    def overlap(self):
+        if hasattr(self, 'overlap_code'):
+            overlap = utils.reverse_overlap_dict[self.overlap_code]
+            if overlap is None: return self.overlap_items != []
+            return overlap
         return self.overlap_items != []
+        
 
     @property
     def overlap_items(self):
@@ -363,15 +368,12 @@ class Segment:
             items =  self.parent.related
         if items is None: return []
         overlapping = []
-        self.overlap = False
         for item in items:
             if item == self: continue
             if item.start > self.end: break
             if item.end < self.start: continue
             if utils.overlap(self, item):
                 overlapping.append(item)
-                item.overlap = True
-                self.overlap = True
         self._overlap_items = overlapping
         return self._overlap_items
 
@@ -786,7 +788,7 @@ class Speaker:
         'channel'}
     FIELDS = DB_FIELDS.union(METADATA_FIELDS)
 
-    gender = 'unknown'
+    gender_code = 9
     age = 0
     dataset = ''
     dialect = ''
@@ -860,9 +862,11 @@ class Speaker:
             return True
         return False
 
-    @property
-    def gender_code(self):
-        return utils.gender_dict[self.gender]
+    def gender(self):
+        return utils.reverse_gender_dict[self.gender_code]
+
+    def overlap(self):
+        return utils.reverse_overlap_dict[self.overlap_code]
 
     @property
     def audios(self):
