@@ -41,12 +41,21 @@ def reverse_dict(d):
     return {v: k for k, v in d.items()}
 
 def make_gender_dict(reverse=False):
-    d = {name:code for name,code in zip(['unknown','female','male'], range(3))}
+    d = {name:code for name,code in zip(['unknown','female','male'], [9,1,2])}
+    if reverse: return reverse_dict(d)
+    return d
+
+def make_overlap_dict(reverse=False):
+    d = {n:c for n,c in zip([None,False,True],[9,0,1])}
     if reverse: return reverse_dict(d)
     return d
 
 gender_dict = make_gender_dict()
 reverse_gender_dict = make_gender_dict(reverse=True)
+
+overlap_dict = make_overlap_dict()
+reverse_overlap_dict = make_overlap_dict(reverse=True)
+
 
 def seconds_to_miliseconds(seconds):
     return int(seconds * 1000)
