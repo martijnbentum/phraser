@@ -44,7 +44,7 @@ class Cache:
         return m
 
     def __str__(self):
-        d = self.object_type_to_keys_dict()
+        d = self.rank_to_keys_dict()
         m = self.__repr__() + '\n'
         m += f'{G}cached objects per class:{RE}\n'
         for class_name, count in self.load_counter.items():
@@ -219,14 +219,14 @@ class Cache:
         self.save(obj, overwrite=True)
         if old_key in self._cache: del self._cache[old_key]
             
-    def object_type_to_keys_dict(self, update = False):
+    def rank_to_keys_dict(self, update = False):
         '''return a dict mapping object_type (class name) to list of keys'''
         if not update:
-            if hasattr(self, '_object_type_to_keys_dict'):
-                return self._object_type_to_keys_dict
-        d = self.DB.object_type_to_keys_dict()
-        self._object_type_to_keys_dict = d
-        return self._object_type_to_keys_dict
+            if hasattr(self, '_rank_to_keys_dict'):
+                return self._rank_to_keys_dict
+        d = self.DB.rank_to_keys_dict()
+        self._rank_to_keys_dict = d
+        return self._rank_to_keys_dict
 
     def all_keys(self):
         return self.DB.all_keys()
@@ -239,10 +239,11 @@ class Cache:
             raise ValueError('Either cls or class_name must be provided.')
         if cls is None:
             cls = self.CLASS_MAP[class_name]
+        rank = lmdb_key.CLASS_RANK_MAP[class_name]
         start = time.time()
         class_name = cls.__name__
         if class_name in self._classes_loaded: return
-        keys = self.object_type_to_keys_dict().get(class_name, [])
+        keys = self.rank_to_keys_dict().get(rank, [])
         self.load_many(keys)
         duration = time.time() - start
         m = f'Loaded all objects of class: {cls.__name__}'
@@ -366,7 +367,9 @@ def load_hierarchy_from_phrases(cache, phrases):
 
 def sample_instances_from_class(cache, class_name = 'Phrase', fraction = 0.1):
     '''randomly sample a fraction of all objects of the given class'''
-    keys = cache.object_type_to_keys_dict(update=False).get(class_name, [])
+    rank = lmdb_key.CLASS_RANK_MAP[class_name]
+    try: keys = cache.rank_to_keys_dict[rank]
+    except KeyError: keys = []
     n_sample = max(1, int(len(keys) * fraction))
     sampled_keys = random.sample(keys, n_sample)
     sampled_objects = cache.load_many(sampled_keys)
