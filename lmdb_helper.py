@@ -130,6 +130,21 @@ class DB:
                     break
                 yield k  # or (k, v)
 
+    def label_to_segment_keys(self, label, object_type):
+        db = self.db['label_segment']
+        prefix = key_helper.label_to_label_index_prefix(label, object_type)
+        with self.env.begin() as txn:
+            cur = txn.cursor(db = db)
+            if not cur.set_range(prefix):
+                return
+            for k in cur.iternext(keys=True, values=False):
+                if not k.startswith(prefix):
+                    break
+                yield key_helper.label_index_key_to_instance_key(k)  # or (k, v)
+
+
+
+
 
     def instance_to_child_keys(self, instance, child_class = None):
         '''Yield keys for child objects of instance, ordered by start time.
