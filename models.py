@@ -1,7 +1,7 @@
 import uuid
 import cache as cache_module
 import lmdb_helper 
-import lmdb_key
+import key_helper
 import model_helper
 from model_helper import EMPTY_ID
 import query
@@ -67,7 +67,7 @@ class Segment:
         self.label = label
         self.start = int(start)
         self.end = int(end)
-        self.identifier = lmdb_key.make_identifier()
+        self.identifier = key_helper.make_identifier()
 
         self.parent_id= parent_id
         self.parent_start = parent_start
@@ -153,15 +153,15 @@ class Segment:
     def key(self):
         """Return the LMDB key for this segment."""
         if hasattr(self, '_key'): return self._key
-        return lmdb_key.instance_to_key(self)
+        return key_helper.instance_to_key(self)
 
     @property
     def key_info(self):
-        return lmdb_key.key_to_info(self.key)
+        return key_helper.key_to_info(self.key)
 
     @property
     def label_index_key(self):
-        return lmdb_key.instance_to_label_index_key(self)
+        return key_helper.instance_to_label_index_key(self)
 
 
     @property
@@ -174,7 +174,7 @@ class Segment:
         if self.object_type == "Phrase": return None
         if self.parent_id == EMPTY_ID: return None
         audio_id = self.audio_id
-        return lmdb_key.audio_id_segment_id_class_to_key(self.audio_id, 
+        return key_helper.audio_id_segment_id_class_to_key(self.audio_id, 
             self.parent_id, self.parent_class_name, self.parent_start)
             
             
@@ -183,7 +183,7 @@ class Segment:
         if self.object_type == "Phrase": return self.key
         if self.object_type == 'Word': return self.parent_key
         if self.phrase_id == EMPTY_ID: return None
-        return lmdb_key.audio_id_segment_id_class_to_key(self.audio_id, 
+        return key_helper.audio_id_segment_id_class_to_key(self.audio_id, 
             self.phrase_id, 'Phrase', self.phrase_start)
             
 
@@ -230,7 +230,7 @@ class Segment:
     @property
     def audio_key(self):
         if self.audio_id == EMPTY_ID: return None
-        return lmdb_key.audio_id_to_key(self.audio_id)
+        return key_helper.audio_id_to_key(self.audio_id)
 
     @property
     def audio(self):
@@ -244,7 +244,7 @@ class Segment:
     @property
     def speaker_key(self):
         if self.speaker_id == EMPTY_ID: return None
-        return lmdb_key.speaker_id_to_key(self.speaker_id)
+        return key_helper.speaker_id_to_key(self.speaker_id)
 
     @property
     def speaker(self):
@@ -671,7 +671,7 @@ class Audio:
     def __init__(self, filename = None,  save=True, overwrite=False, **kwargs):
         self.object_type = self.__class__.__name__
         self.filename = filename
-        self.identifier = lmdb_key.make_identifier()
+        self.identifier = key_helper.make_identifier()
         self.overwrite = overwrite
 
         self._set_kwargs(**kwargs)
@@ -779,7 +779,7 @@ class Audio:
     @property
     def key(self):
         """Return the LMDB key for this segment."""
-        return lmdb_key.instance_to_key(self)
+        return key_helper.instance_to_key(self)
 
     def save(self, overwrite=None, fail_gracefully=False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
@@ -817,7 +817,7 @@ class Speaker:
         self.object_type = self.__class__.__name__
         self.name = name
         self.dataset = dataset
-        self.identifier = lmdb_key.make_identifier()
+        self.identifier = key_helper.make_identifier()
         self.overwrite = overwrite
 
         # Extra metadata
@@ -934,7 +934,7 @@ class Speaker:
     @property
     def key(self):
         """Return the LMDB key for this segment."""
-        return lmdb_key.instance_to_key(self)
+        return key_helper.instance_to_key(self)
             
     def save(self, overwrite=None, fail_gracefully=False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)

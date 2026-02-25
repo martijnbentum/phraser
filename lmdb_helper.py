@@ -1,8 +1,7 @@
 import lmdb
-import lmdb_key
 import locations
 import pickle
-import struct_key
+import key_helper
 from pathlib import Path
 from progressbar import progressbar
 
@@ -121,7 +120,7 @@ class DB:
 
     def audio_id_to_child_keys(self, audio_id, child_class = 'Phrase'):
         db = self.db['main']
-        prefix = lmdb_key.audio_id_to_scan_prefix(audio_id, child_class)
+        prefix = key_helper.pack_audio_scan_prefix(audio_id, child_class)
         with self.env.begin() as txn:
             cur = txn.cursor(db = db)
             if not cur.set_range(prefix):
@@ -140,7 +139,7 @@ class DB:
                        If None, uses instance.child_class_name.
         '''
         db = self.db['main']
-        f = lmdb_key.instance_to_child_time_scan_keys
+        f = key_helper.instance_to_child_time_scan_keys
         start_prefix, end_prefix = f(instance, child_class)
         with self.env.begin() as txn:
             cur = txn.cursor(db = db)
@@ -167,18 +166,17 @@ class DB:
 
     def object_type_to_keys_dict(self):
         db = self.db['main']
-        d = {k:[] for k in lmdb_key.RANK_CLASS_MAP.values()}
+        d = {k:[] for k in key_helper.RANK_CLASS_MAP.values()}
         with self.env.begin() as txn:
             cursor = txn.cursor(db = db)
             for key, _ in cursor:
-                # object_type = lmdb_key.key_to_object_type(key)
-                object_type = lmdb_key.RANK_CLASS_MAP[key[9]]
+                object_type = key_helper.RANK_CLASS_MAP[key[9]]
                 d[object_type].append(key)
         return d
 
     def rank_to_keys_dict(self):
         db = self.db['main']
-        d = {k:[] for k in lmdb_key.RANK_CLASS_MAP.keys()}
+        d = {k:[] for k in key_helper.RANK_CLASS_MAP.keys()}
         with self.env.begin() as txn:
             cursor = txn.cursor(db = db)
             for key in cursor.iternext(keys=True, values=False):
@@ -260,7 +258,7 @@ class DB:
         self.delete_all_label_segment()
 
     def write_speaker_audio_link(self, speaker, audio):
-        link= lmdb_key.speaker_audio_link(speaker, audio)
+        link= key_helper.speaker_audio_link(speaker, audio)
         self.write(link, b'', db_name = 'speaker_audio', overwrite = True)
 
     def write_label_index_link(self, link):
@@ -272,12 +270,13 @@ class DB:
             overwrite = True)
 
     def delete_speaker_audio_link(self, speaker, audio):
-        link = lmdb_key.speaker_audio_link(speaker, audio)
+        link = key_helper.speaker_audio_link(speaker, audio)
         self.delete(link, db_name = 'speaker_audio')
 
     def _speaker_audio_links(self, speaker):
         db = self.db['speaker_audio']
-        prefix = lmdb_key.speaker_id_to_scan_prefix(speaker.identifier)
+
+        prefix = key_helper.make_speaker_scan_prefix(speaker.identifier)
         with self.env.begin() as txn:
             cur = txn.cursor(db = db)
             if not cur.set_range(prefix):

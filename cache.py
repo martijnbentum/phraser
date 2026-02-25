@@ -1,10 +1,8 @@
 import gc
 import lmdb_helper
-import lmdb_key
 import locations
 import pickle
 import random
-import struct_key
 import struct_value
 import time
 import utils
@@ -83,7 +81,7 @@ class Cache:
                           exists in database
         '''
         if not self.db_saving_allowed: return
-        key = lmdb_key.instance_to_key(obj)
+        key = key_helper.instance_to_key(obj)
         value = struct_value.pack_instance(obj)
         fail_message = f"Object with key {key} already exists. "
         fail_message += "Skipping save."
@@ -102,7 +100,7 @@ class Cache:
     def save_many(self, objs, overwrite = False, fail_gracefully = False):
         if not self.db_saving_allowed: return
         start = time.time()
-        itk = lmdb_key.instance_to_key
+        itk = key_helper.instance_to_key
         pi = struct_value.pack_instance
         cache_update = {itk(obj): pi(obj) for obj in objs}
         # print('update dict done', time.time() - start)
@@ -239,7 +237,7 @@ class Cache:
             raise ValueError('Either cls or class_name must be provided.')
         if cls is None:
             cls = self.CLASS_MAP[class_name]
-        rank = lmdb_key.CLASS_RANK_MAP[class_name]
+        rank = key_helper.CLASS_RANK_MAP[class_name]
         start = time.time()
         class_name = cls.__name__
         if class_name in self._classes_loaded: return
@@ -282,7 +280,7 @@ def value_key_to_instance(cache, value, key):
     this speeds up loading by avoiding __init__ calls
     '''
 
-    info = lmdb_key.key_to_info(key)
+    info = key_helper.key_to_info(key)
     object_type = info['object_type']
     cls = cache.CLASS_MAP[object_type]
     obj = cls.__new__(cls)
@@ -367,7 +365,7 @@ def load_hierarchy_from_phrases(cache, phrases):
 
 def sample_instances_from_class(cache, class_name = 'Phrase', fraction = 0.1):
     '''randomly sample a fraction of all objects of the given class'''
-    rank = lmdb_key.CLASS_RANK_MAP[class_name]
+    rank = key_helper.CLASS_RANK_MAP[class_name]
     try: keys = cache.rank_to_keys_dict[rank]
     except KeyError: keys = []
     n_sample = max(1, int(len(keys) * fraction))
