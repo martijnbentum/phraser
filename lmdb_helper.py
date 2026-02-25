@@ -165,27 +165,24 @@ class DB:
         return keys
                 
 
-    def object_type_to_keys_dict_old(self):
+    def object_type_to_keys_dict(self):
         db = self.db['main']
         d = {}
         with self.env.begin() as txn:
             cursor = txn.cursor(db = db)
             for key, _ in cursor:
                 object_type = lmdb_key.key_to_object_type(key)
-                key = struct_key.label_index_key_to_segment_key(key)
                 d.setdefault(object_type, []).append(key)
         return d
 
-    def object_type_to_keys_dict(self):
-        db = self.db['label_segment']
-        d = {}
+    def rank_to_keys_dict(self):
+        db = self.db['main']
+        d = {k:[] for k in lmdb_key.RANK_CLASS_MAP.values()}
         with self.env.begin() as txn:
             cursor = txn.cursor(db = db)
             for key in cursor.iternext(keys=True, values=False):
-                rank = key[0]
-                object_type = lmdb_key.RANK_CLASS_MAP[rank]
-                key = struct_key.label_index_key_to_instance_key(key)
-                d.setdefault(object_type, []).append(key)
+                rank = key[9]
+                d[rank].append(segment_key)
         return d
 
     def all_object_type_keys(self, object_type, d = None):
