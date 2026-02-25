@@ -17,7 +17,7 @@ def queryset_from_items(items, cache = None):
     Create a QuerySet for items.
 
     Example:
-        qs = queryset_from_items(cache, some_words)
+        qs = queryset_from_items(some_words, cache)
         qs.filter(label="t").order_by("start")
     """
     # Materialize once (supports generators)
@@ -57,16 +57,14 @@ class Data:
         self.cls = cls
         self.cache = cache
         self.object_type = cls.__name__
+        self.rank = lmdb_key.CLASS_RANK_MAP[self.object_type]
         self._get_keys(update = False)
 
     def _get_keys(self, update = False):
-        d = self.cache.object_type_to_keys_dict(update = update)
+        d = self.cache.rank_to_keys_dict(update = update)
         m = f'No keys found for object type: {B}{self.object_type}{RE}'
-        if self.object_type not in d:
-            print(f'{R}WARNING:{RE} {m}')
-            self.keys = []
-        else:
-            self.keys = d[self.object_type]
+        try: self.keys = d[self.rank]
+        except KeyError: self.keys = []
 
     def load(self, keys = None):
         if keys is None: keys = self.keys
@@ -258,8 +256,7 @@ def objects_to_keys(objs):
     '''converts a list of objects to their corresponding LMDB keys'''
     keys = []
     for obj in objs:
-        key = lmdb_key.item_to_key(obj)
-        keys.append(key)
+        keys.append(obj.key)
     return keys
 
 
