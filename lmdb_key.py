@@ -50,8 +50,7 @@ def instance_to_rank(instance):
 def key_to_object_type(key):
     '''Get object type string from LMDB key.
     '''
-    if len(key) == struct_key.SPEAKER_LEN: return 'Speaker'
-    rank = key[9]
+    rank = key_to_rank(key)
     return RANK_CLASS_MAP[rank]
 
 def key_to_identifier(key):
@@ -68,7 +67,6 @@ def key_to_audio_identifier(key):
 def key_to_rank(key):
     '''Get rank (single-letter code) from LMDB key.
     '''
-    if len(key) == struct_key.SPEAKER_LEN: return 5
     return key[9]
 
 def audio_id_to_scan_prefix(audio_id, child_class = 'Phrase'):
