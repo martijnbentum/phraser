@@ -39,7 +39,7 @@ def make_key_fields_for_class(class_name):
         return ['class_id', 'uuid', 'class_id']
 
     if class_name == 'speaker':
-        return ['class_id', 'uuid']
+        return ['class_id', 'uuid', 'class_id', 'class_id']
 
     if class_name == 'speaker_audio':
         return ['uuid', 'uuid']
