@@ -238,6 +238,10 @@ def instance_to_label_index_key(instance):
     rank = CLASS_RANK_MAP[instance.object_type]
     return bytes([rank]) + hash_label(instance.label) + key
 
+def label_to_label_index_prefix(label, object_type):
+    rank = CLASS_RANK_MAP[object_type]
+    return bytes([rank]) + hash_label(label)
+
 def label_index_key_to_instance_key(key):
     return key[1+LABEL_HASH_LEN:]
     
