@@ -2,6 +2,7 @@ import lmdb
 import lmdb_key
 import locations
 import pickle
+import struct_key
 from pathlib import Path
 from progressbar import progressbar
 
@@ -35,6 +36,9 @@ class DB:
         return keys
 
     def all_links(self, db_name = 'speaker_audio'):
+        return self.all_keys(db_name = db_name)
+
+    def all_label_index_keys(self, db_name = 'label_segment'):
         return self.all_keys(db_name = db_name)
 
     def key_exists(self, key, db_name = 'main'):
@@ -161,13 +165,26 @@ class DB:
         return keys
                 
 
-    def object_type_to_keys_dict(self):
+    def object_type_to_keys_dict_old(self):
         db = self.db['main']
         d = {}
         with self.env.begin() as txn:
             cursor = txn.cursor(db = db)
             for key, _ in cursor:
                 object_type = lmdb_key.key_to_object_type(key)
+                key = struct_key.label_index_key_to_segment_key(key)
+                d.setdefault(object_type, []).append(key)
+        return d
+
+    def object_type_to_keys_dict(self):
+        db = self.db['label_segment']
+        d = {}
+        with self.env.begin() as txn:
+            cursor = txn.cursor(db = db)
+            for key in cursor.iternext(keys=True, values=False):
+                rank = key[0]
+                object_type = lmdb_key.RANK_CLASS_MAP[rank]
+                key = struct_key.label_index_key_to_instance_key(key)
                 d.setdefault(object_type, []).append(key)
         return d
 
@@ -233,14 +250,28 @@ class DB:
         print(f"Deleting all {len(keys_to_delete)} keys in db speaker_audio.")
         self.delete_many(keys_to_delete, db_name = 'speaker_audio')
 
+    def delete_all_label_segment(self):
+        keys_to_delete = self.all_label_index_keys()
+        print(f"Deleting all {len(keys_to_delete)} keys in db label_segment.")
+        self.delete_many(keys_to_delete, db_name = 'label_segment')
+
     def delete_all(self) :
         """Delete all keys in the LMDB store."""
         self.delete_main()
         self.delete_all_speaker_audio()
+        self.delete_all_label_segment()
 
     def write_speaker_audio_link(self, speaker, audio):
         link= lmdb_key.speaker_audio_link(speaker, audio)
         self.write(link, b'', db_name = 'speaker_audio', overwrite = True)
+
+    def write_label_index_link(self, link):
+        self.write(link, b'', db_name = 'label_segment', overwrite = True)
+
+    def write_many_label_index_links(self, links):
+        values = [b''] * len(links)
+        self.write_many(links, values, db_name = 'label_segment', 
+            overwrite = True)
 
     def delete_speaker_audio_link(self, speaker, audio):
         link = lmdb_key.speaker_audio_link(speaker, audio)
