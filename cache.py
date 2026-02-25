@@ -201,6 +201,11 @@ class Cache:
         if self.verbose: print('gc enabled', time.time() - start)
         return objs
 
+    def label_to_instances(self, label, object_type):
+        keys = list(self.DB.label_to_segment_keys(label, object_type))
+        instances = self.load_many(keys)
+        return instances
+
     def delete(self, key):
         '''delete an object from LMDB by key'''
         self.DB.delete(key = key)
