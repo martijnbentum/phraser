@@ -91,3 +91,9 @@ def speaker_id_to_scan_prefix(speaker_id):
     '''
     return struct_key.make_speaker_scan_prefix(speaker_id)
 
+def instance_to_label_index_key(instance):
+    return struct_key.instance_to_label_index_key(instance)
+
+def label_index_key_to_instance_key(key):
+    return struct_key.label_index_key_to_instance_key(key)
+
