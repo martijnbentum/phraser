@@ -97,6 +97,7 @@ class Cache:
         if key not in self.save_key_counter:
             self.save_key_counter[key] = 1
         else: self.save_key_counter[key] += 1
+        self._handle_label_links([obj])
 
     def save_many(self, objs, overwrite = False, fail_gracefully = False):
         if not self.db_saving_allowed: return
@@ -124,6 +125,14 @@ class Cache:
                 self.save_key_counter[key] = 1
             else: self.save_key_counter[key] += 1
         # print('done', time.time() - start)
+        self._handle_label_links(objs)
+
+    def _handle_label_links(self, objs):
+        '''after saving objects, write label index links for all objects with
+        label_index_key attributes (e.g., Phrase, Word)'''
+        label_index_keys = items_to_label_index_keys(objs)
+        if label_index_keys:
+            self.DB.write_many_label_index_links(label_index_keys)
 
     def load(self, key, with_links = False):
         '''load an object from LMDB by key.
@@ -369,4 +378,11 @@ def sample_instances_from_class(cache, class_name = 'Phrase', fraction = 0.1):
     sampled_keys = random.sample(keys, n_sample)
     sampled_objects = cache.load_many(sampled_keys)
     return {'keys': sampled_keys, 'instances': sampled_objects} 
+
+def items_to_label_index_keys(items):
+    label_index_keys = []
+    for item in items:
+        try: label_index_keys.append(item.label_index_key)
+        except AttributeError: pass
+    return label_index_keys
 
