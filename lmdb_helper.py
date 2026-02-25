@@ -167,22 +167,23 @@ class DB:
 
     def object_type_to_keys_dict(self):
         db = self.db['main']
-        d = {}
+        d = {k:[] for k in lmdb_key.RANK_CLASS_MAP.values()}
         with self.env.begin() as txn:
             cursor = txn.cursor(db = db)
             for key, _ in cursor:
-                object_type = lmdb_key.key_to_object_type(key)
-                d.setdefault(object_type, []).append(key)
+                # object_type = lmdb_key.key_to_object_type(key)
+                object_type = lmdb_key.RANK_CLASS_MAP[key[9]]
+                d[object_type].append(key)
         return d
 
     def rank_to_keys_dict(self):
         db = self.db['main']
-        d = {k:[] for k in lmdb_key.RANK_CLASS_MAP.values()}
+        d = {k:[] for k in lmdb_key.RANK_CLASS_MAP.keys()}
         with self.env.begin() as txn:
             cursor = txn.cursor(db = db)
             for key in cursor.iternext(keys=True, values=False):
                 rank = key[9]
-                d[rank].append(segment_key)
+                d[rank].append(key)
         return d
 
     def all_object_type_keys(self, object_type, d = None):
