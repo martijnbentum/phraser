@@ -158,6 +158,10 @@ class Segment:
     def key_info(self):
         return lmdb_key.key_to_info(self.key)
 
+    @property
+    def label_index_key(self):
+        return lmdb_key.instance_to_label_index_key(self)
+
 
     @property
     def parent_class_name(self):
