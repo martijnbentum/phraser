@@ -134,29 +134,21 @@ class Cache:
         if label_index_keys:
             self.DB.write_many_label_index_links(label_index_keys)
 
-    def load(self, key, with_links = False):
+    def load(self, key):
         '''load an object from LMDB by key.
         key: to load the object from the database.
-        with_links: if True, load linked objects (e.g.children, audio, speaker)
-                    rarely used because it requires multiple LMDB hits.
         '''
-            
-        if self.verbose: print(f"Loading key: {key}")
-        if key in self._cache:
-            if self.verbose: print(' Found in cache.')
-            return self._cache[key]
-        if self.verbose: print(' Not in cache. Loading from LMDB...')
-        
+        try: return self._cache[key]
+        except KeyError: pass
         value = self.DB.load(key = key) 
         obj = value_key_to_instance(self, value, key)
         self._cache[key] = obj
         self.load_counter[obj.object_type] += 1
         return obj
 
-    def load_many(self, keys, with_links = False):
+    def load_many(self, keys):
         '''load many objects from LMDB by keys in bulk.
         keys: list of str or bytes to load the objects from the database.
-        with_links: should be removed because it is not used in bulk loading.
         
         bulk loading is much faster than loading one by one because it
         minimizes LMDB hits.
@@ -164,7 +156,7 @@ class Cache:
         to speed up loading further
         '''
         if len(keys) == 0: return []
-        if len(keys) == 1: return [self.load(keys[0], with_links)]
+        if len(keys) == 1: return [self.load(keys[0])]
         # preparation phase to return objects in same order as keys
         start = time.time()
         objs = [ [] for _ in range(len(keys)) ]
@@ -186,7 +178,7 @@ class Cache:
         if len(not_found_in_cache) == 0: return objs
         if len(not_found_in_cache) == 1: 
             index = key_to_index[not_found_in_cache[0]]
-            objs[index] = self.load(not_found_in_cache[0], with_links)
+            objs[index] = self.load(not_found_in_cache[0])
             return objs
 
         # lmdb loading phase to bulk load all objects not found in cache
@@ -295,6 +287,7 @@ def value_key_to_instance(cache, value, key):
     obj = cls.__new__(cls)
     data = struct_value.unpack_instance(object_type, value)
     data.update(info)
+    data['_key'] = key
     obj.__dict__.update(data)
     return obj
 
