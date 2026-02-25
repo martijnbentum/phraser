@@ -152,6 +152,7 @@ class Segment:
     @property
     def key(self):
         """Return the LMDB key for this segment."""
+        if hasattr(self, '_key'): return self._key
         return lmdb_key.instance_to_key(self)
 
     @property
@@ -192,7 +193,7 @@ class Segment:
         if self.object_type == "Phrase": return None
         if hasattr(self, '_parent'): return self._parent
         if self.parent_id == EMPTY_ID: return 
-        self._parent = cache.load(self.parent_key, with_links=False)
+        self._parent = cache.load(self.parent_key)
         return self._parent
 
     @property
@@ -208,8 +209,8 @@ class Segment:
         if hasattr(self, '_children'): return self._children
         self._children, self._related = [], []
         if self.child_keys: 
-            children = cache.load_many(self.child_keys, 
-                with_links=False)
+            children = cache.load_many(self.child_keys) 
+                
         else:
             children = []
         sid = self.speaker_id
@@ -237,7 +238,7 @@ class Segment:
         if self.audio_key is None: return None
         if hasattr(self, '_audio') and self._audio is not None: 
             return self._audio
-        self._audio = cache.load(self.audio_key, with_links=False)
+        self._audio = cache.load(self.audio_key) 
         return self._audio
         
     @property
@@ -250,7 +251,7 @@ class Segment:
         """Return the associated Speaker object."""
         if self.speaker_key is None: return None 
         if hasattr(self, '_speaker'): return self._speaker
-        self._speaker = cache.load(self.speaker_key, with_links=False)
+        self._speaker = cache.load(self.speaker_key)
         return self._speaker
 
     @property
@@ -259,7 +260,7 @@ class Segment:
         if self.object_type == 'Word': return self.parent
         if hasattr(self, '_phrase'): return self._phrase
         if self.phrase_key is None: return None
-        self._phrase = cache.load(self.phrase_key, with_links=False)
+        self._phrase = cache.load(self.phrase_key)
         return self._phrase
 
 
@@ -446,7 +447,7 @@ class Segment:
     def descendants(self):
         #if hasattr(self, '_descendants'): return self._descendants
         keys = self.descendant_keys
-        return cache.load_many(keys, with_links=False)
+        return cache.load_many(keys)
 
 
     def iter_descendants(self):
@@ -728,7 +729,7 @@ class Audio:
     @property
     def phrases(self):
         if hasattr(self, '_phrases'): return self._phrases
-        self._phrases= cache.load_many(self.phrase_keys, with_links=False)
+        self._phrases= cache.load_many(self.phrase_keys)
         return self._phrases
 
     @property
@@ -876,14 +877,14 @@ class Speaker:
     def audios(self):
         if hasattr(self, '_audios'): return self._audios 
         audio_keys = cache.DB.speaker_to_audio_keys(self)
-        self._audios = cache.load_many(audio_keys, with_links=False)
+        self._audios = cache.load_many(audio_keys)
         return self._audios
 
     @property
     def phrases(self):
         """Return all phrases across all audios for this speaker."""
         if hasattr(self, '_phrases'): return self._phrases 
-        self._phrases = cache.load_many(self.phrase_keys, with_links=False)
+        self._phrases = cache.load_many(self.phrase_keys)
         return self._phrases
 
     @property
