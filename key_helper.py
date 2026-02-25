@@ -37,17 +37,17 @@ def key_to_object_type(key):
     return RANK_CLASS_MAP[rank]
 
 def key_to_info(key):
-    return struct_key.unpack_key(key)
+    return unpack_key(key)
 
 def key_to_identifier(key):
     '''Get identifier (UUID) from LMDB key.
     '''
-    if len(key) == struct_key.AUDIO_LEN: key[1:]
-    if len(key) == struct_key.SPEAKER_LEN: return None
+    if len(key) == AUDIO_LEN: key[1:]
+    if len(key) == SPEAKER_LEN: return None
     return key[-8:]
     
 def key_to_audio_identifier(key):
-    if len(key) == struct_key.SPEAKER_LEN: return None
+    if len(key) == SPEAKER_LEN: return None
     return key[1:9]
 
 def key_to_rank(key):
@@ -100,7 +100,7 @@ def speaker_id_to_key(speaker_id):
     '''Make LMDB key for a speaker.
     speaker_id:  speaker UUID
     '''
-    return struct_key.pack_speaker_key(speaker_id)
+    return pack_speaker_key(speaker_id)
 
 def pack_speaker_key(speaker_uuid):
     rank = CLASS_RANK_MAP['Speaker']
@@ -116,7 +116,7 @@ def audio_id_to_key(audio_id):
     '''Make LMDB key for an audio.
     audio_id:  audio UUID
     '''
-    return struct_key.pack_audio_key(audio_id)
+    return pack_audio_key(audio_id)
 
 def pack_audio_key(audio_uuid):
     rank = CLASS_RANK_MAP['Audio']
@@ -137,7 +137,7 @@ def audio_id_segment_id_class_to_key(audio_id, segment_id, object_type,
     offset: integer offset in milliseconds
     '''
     rank = CLASS_RANK_MAP[object_type]
-    return struct_key.pack_segment_key(audio_id, rank, offset_ms, segment_id)
+    return pack_segment_key(audio_id, rank, offset_ms, segment_id)
 
 def pack_segment_key(audio_uuid, class_rank, offset, segment_uuid):
     if not (0 <= offset <= 0xFFFFFFFF):

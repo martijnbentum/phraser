@@ -1,4 +1,5 @@
 import gc
+import key_helper
 import lmdb_helper
 import locations
 import pickle
