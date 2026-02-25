@@ -1,5 +1,5 @@
 from comparison import OPS
-import lmdb_key
+import key_helper
 
 class DoesNotExist(Exception):
     pass
@@ -57,7 +57,7 @@ class Data:
         self.cls = cls
         self.cache = cache
         self.object_type = cls.__name__
-        self.rank = lmdb_key.CLASS_RANK_MAP[self.object_type]
+        self.rank = key_helper.CLASS_RANK_MAP[self.object_type]
         self._get_keys(update = False)
 
     def _get_keys(self, update = False):
