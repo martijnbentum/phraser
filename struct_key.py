@@ -3,7 +3,7 @@ import struct
 import struct_helper
 from struct_helper import CLASS_RANK_MAP, RANK_CLASS_MAP
 
-SPEAKER_FMT = struct_helper.make_key_fmt_for_class('speaker')  # '>B8s'
+SPEAKER_FMT = struct_helper.make_key_fmt_for_class('speaker')  # '>B8sBB'
 AUDIO_FMT   = struct_helper.make_key_fmt_for_class('audio')    # '>B8sB'
 SEGMENT_FMT = struct_helper.make_key_fmt_for_class('segment')  # '>B8sBI8s'
 TIME_SCAN_FMT = struct_helper.make_key_fmt_for_time_scan()     # '>B8sBI'
@@ -14,7 +14,7 @@ LABEL_HASH_LEN = 16
 
 LABEL_INDEX_LEN =  39
 
-SPEAKER_LEN = struct.calcsize(SPEAKER_FMT)  # 9
+SPEAKER_LEN = struct.calcsize(SPEAKER_FMT)  # 11
 AUDIO_LEN   = struct.calcsize(AUDIO_FMT)    # 10
 SPEAKER_AUDIO_LEN = struct.calcsize(SPEAKER_AUDIO_FMT)  # 16
 SEGMENT_LEN = struct.calcsize(SEGMENT_FMT)  # 22
@@ -60,8 +60,8 @@ def make_speaker_scan_prefix(speaker_uuid):
 
 
 def pack_speaker_key(speaker_uuid):
-    speaker_rank = CLASS_RANK_MAP['Speaker']
-    return struct.pack(SPEAKER_FMT, speaker_rank, speaker_uuid)
+    rank = CLASS_RANK_MAP['Speaker']
+    return struct.pack(SPEAKER_FMT, rank, speaker_uuid, rank, rank)
 
 def pack_speaker_audio_key(speaker_uuid, audio_uuid):
     return struct.pack(SPEAKER_AUDIO_FMT, speaker_uuid, audio_uuid)
@@ -123,7 +123,7 @@ def unpack_key(key_bytes):
         }
 
     if n == SPEAKER_LEN:
-        speaker_rank, speaker_uuid = struct.unpack(SPEAKER_FMT, key_bytes)
+        speaker_rank, speaker_uuid,_,_ = struct.unpack(SPEAKER_FMT, key_bytes)
         if speaker_rank != SPEAKER_RANK:
             m = f'Invalid speaker key (rank must be {struct_helper.SPEAKER_RANK})'
             raise ValueError(m)
