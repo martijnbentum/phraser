@@ -1,12 +1,14 @@
-import audio
-from dutch_text_clean import clean
 import glob
 import json
 from pathlib import Path
+
+from dutch_text_clean import clean
 from progressbar import progressbar
 from textgrid import TextGrid
-import locations
-import utils
+
+from phraser import audio
+from phraser import locations
+from phraser import utils
 
 def ort_textgrid_filenames(cgn_ort_directory = None):
     if cgn_ort_directory is None:

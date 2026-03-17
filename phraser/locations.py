@@ -1,6 +1,7 @@
 from pathlib import Path
 
-data = Path('../data')
+ROOT = Path(__file__).resolve().parents[1]
+data = ROOT / 'data'
 data.mkdir(parents=True, exist_ok=True)
 default_lmdb = data / 'default_lmdb'
 cgn_lmdb = data / 'cgn_lmdb'

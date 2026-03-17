@@ -1,9 +1,11 @@
-import lmdb
-import locations
-import pickle
-import key_helper
 from pathlib import Path
+import pickle
+
+import lmdb
 from progressbar import progressbar
+
+from . import key_helper
+from . import locations
 
 default_db_name = 'main'
 

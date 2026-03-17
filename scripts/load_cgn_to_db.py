@@ -1,10 +1,12 @@
 from collections import Counter
-import process_cgn 
-import load_to_db
-import models
 from pathlib import Path
 from progressbar import progressbar
-from utils import seconds_to_miliseconds
+
+from phraser import models
+from phraser.utils import seconds_to_miliseconds
+
+from . import load_to_db
+from . import process_cgn
 
 def get_filenames_of_audios_in_db(reconnect_db = True):
     if reconnect_db: models.reconnect_db()

@@ -1,6 +1,7 @@
-import models
 import random
 from progressbar import progressbar
+
+from phraser import models
 
 
 

@@ -1,8 +1,9 @@
 import hashlib
 import os
-import struct_helper
-from struct_helper import CLASS_RANK_MAP, RANK_CLASS_MAP
 import struct
+
+from . import struct_helper
+from .struct_helper import CLASS_RANK_MAP, RANK_CLASS_MAP
 
 SPEAKER_FMT = struct_helper.make_key_fmt_for_class('speaker')  # '>B8sBB'
 AUDIO_FMT   = struct_helper.make_key_fmt_for_class('audio')    # '>B8sB'
@@ -247,4 +248,3 @@ def label_index_key_to_instance_key(key):
     
 def label_index_key_to_rank(key):
     return key[0]
-

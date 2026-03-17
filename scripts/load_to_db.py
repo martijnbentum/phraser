@@ -1,10 +1,11 @@
-import audio
-import force_align
-import locations
-import models
 from progressbar import progressbar
 from textgrid import TextGrid
-import utils
+
+from phraser import audio
+from phraser import force_align
+from phraser import locations
+from phraser import models
+from phraser import utils
 
 db_save_state = models.cache.is_db_saving_allowed
 

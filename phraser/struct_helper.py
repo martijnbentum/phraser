@@ -1,5 +1,6 @@
 import struct
-import utils
+
+from . import utils
 
 CLASS_RANK_MAP = {
     "Audio":    0,

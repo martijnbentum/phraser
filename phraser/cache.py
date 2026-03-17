@@ -1,12 +1,13 @@
 import gc
-import key_helper
-import lmdb_helper
-import locations
 import pickle
 import random
-import struct_value
 import time
-import utils
+
+from . import key_helper
+from . import lmdb_helper
+from . import locations
+from . import struct_value
+from . import utils
 
 R= "\033[91m"
 G= "\033[92m"
