@@ -889,6 +889,14 @@ class Speaker:
         return self._audios
 
     @property
+    def phrase_keys(self):
+        if hasattr(self, '_phrase_keys'): return self._phrase_keys 
+        self._phrase_keys = []
+        for audio in self.audios:
+            self._phrase_keys += audio.phrase_keys
+        return self._phrase_keys
+
+    @property
     def phrases(self):
         """Return all phrases across all audios for this speaker."""
         if hasattr(self, '_phrases'): return self._phrases 
