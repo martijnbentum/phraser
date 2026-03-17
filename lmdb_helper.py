@@ -91,7 +91,7 @@ class DB:
         if not overwrite:
             exists= self.key_exists(key, db_name = db_name)
             if exists:
-                m = f'Key {key} already exists in LMDB store at {path}. '
+                m = f'Key {key} already exists in LMDB store at {db_name}. '
                 m += f'Use overwrite=True to overwrite.'
                 raise KeyError(m)
         db = self.db[db_name]
@@ -108,7 +108,7 @@ class DB:
         '''
         #fail early if any key exists and overwrite is False
         if self.check_any_key_exist(keys, db_name) and not overwrite:
-            m = f'At least one key already exists in LMDB store at {path}. '
+            m = f'At least one key already exists in LMDB store at {db_name}. '
             m += f'Use overwrite=True to overwrite.'
             m += f'written nothing.'
             raise KeyError(m)
