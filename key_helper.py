@@ -42,7 +42,7 @@ def key_to_info(key):
 def key_to_identifier(key):
     '''Get identifier (UUID) from LMDB key.
     '''
-    if len(key) == AUDIO_LEN: return key[1:]
+    if len(key) == AUDIO_LEN: return key[1:9]
     if len(key) == SPEAKER_LEN: return None
     return key[-8:]
     
