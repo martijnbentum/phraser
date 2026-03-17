@@ -2,10 +2,10 @@ import audio
 from dutch_text_clean import clean
 import glob
 import json
-import locations
 from pathlib import Path
 from progressbar import progressbar
 from textgrid import TextGrid
+import locations
 import utils
 
 def ort_textgrid_filenames(cgn_ort_directory = None):
