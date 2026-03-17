@@ -271,11 +271,15 @@ class Segment:
     def save(self, overwrite = None, fail_gracefully = False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
 
-    def add_audio(self, audio, update_database = True, propagate = True):
+    def add_audio(self, audio = None, audio_id = None, update_database = True, 
+        propagate = True):
         ''' Link this segment (and by default its family) to an Audio object.
         '''
-        audio_id= audio.identifier
-        self._audio = audio
+        if audio_id is None and audio is None:
+            print("Warning: No audio or audio_id provided to add_audio.")
+        if audio is not None: 
+            audio_id = audio.identifier
+            self._audio = audio
         all_segments = [self]
         # family starts with self
         if propagate: all_segments += list(self.iter_family())[1:]
@@ -294,9 +298,13 @@ class Segment:
             self._save_status = 'update'
         self._old_key = old_key
 
-    def add_speaker(self, speaker, update_database = True, propagate = True):
-        speaker_id = speaker.identifier
-        self._speaker = speaker
+    def add_speaker(self, speaker = None, speaker_id = None,
+        update_database = True, propagate = True):
+        if speaker_id is None and speaker is None:
+            print("Warning: No speaker or speaker_id provided to add_speaker.")
+        if speaker is not None: 
+            speaker_id = speaker.identifier
+            self._speaker = speaker
         all_segments = [self]
         if propagate:
             all_segments += list(self.iter_family())[1:]
