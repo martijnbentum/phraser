@@ -244,6 +244,7 @@ class Cache:
             raise ValueError('Either cls or class_name must be provided.')
         if cls is None:
             cls = self.CLASS_MAP[class_name]
+        class_name = cls.__name__
         rank = key_helper.CLASS_RANK_MAP[class_name]
         start = time.time()
         class_name = cls.__name__
