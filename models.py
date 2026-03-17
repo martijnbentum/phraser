@@ -119,7 +119,7 @@ class Segment:
     def play(self, collar = None, wait = False):
         if collar is not None:
             if collar < 0: raise ValueError("collar must be non-negative.")
-            if collor > self.audio.duration / 2:
+            if collar > self.audio.duration / 2:
                 print('Warning: collar is larger than half the audio duration.')
             start = self.start - collar
             if start < 0: start = 0
@@ -832,7 +832,7 @@ class Speaker:
         extra = {}
         if 'extra' in kwargs:
             e = kwargs.pop('extra')
-            if not isinstance(v, dict):
+            if not isinstance(e, dict):
                 raise ValueError("extra must be a dict")
             extra.update( e )
         for k, v in kwargs.items():
