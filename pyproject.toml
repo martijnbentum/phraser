@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phraser"
+version = "0.1.0"
+description = "LMDB-backed phrase and segment tooling"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "scipy",
+  "scikit-learn",
+  "librosa",
+  "soundfile",
+  "soxr",
+  "numba",
+  "lmdb",
+  "msgpack",
+  "requests",
+  "python-decouple",
+  "progressbar2",
+  "textgrid",
+  "matplotlib",
+]
+
+[tool.setuptools]
+packages = ["phraser", "scripts"]
