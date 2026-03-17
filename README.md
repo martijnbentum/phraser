@@ -21,13 +21,13 @@ package.
 ### Install with `pip`
 
 ```bash
-pip install .
+pip install git+ssh://git@github.com/martijnbentum/phraser.git
 ```
 
 ### Install with `uv pip`
 
 ```bash
-uv pip install .
+uv pip install git+ssh://git@github.com/martijnbentum/phraser.git
 ```
 
 ### Editable install
@@ -35,12 +35,16 @@ uv pip install .
 With `pip`:
 
 ```bash
+git clone git@github.com:martijnbentum/phraser.git
+cd phraser
 pip install -e .
 ```
 
 With `uv pip`:
 
 ```bash
+git clone git@github.com:martijnbentum/phraser.git
+cd phraser
 uv pip install -e .
 ```
 
