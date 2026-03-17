@@ -18,6 +18,9 @@ The package is aimed at workflows where you want to:
 The project now uses `pyproject.toml` and can be installed as a normal Python
 package.
 
+Create a local `.env` file before using the package. A starter template is
+provided in [`example_env`](./example_env).
+
 ### Install with `pip`
 
 ```bash
@@ -62,6 +65,36 @@ configuration uses `git+ssh` URLs, so installation requires:
 - Git to be installed
 - SSH access to GitHub to be configured
 - permission to access the referenced repositories
+
+## Configuration
+
+Copy [`example_env`](./example_env) to `.env` and update the paths for your
+machine.
+
+```bash
+cp example_env .env
+```
+
+Supported variables:
+
+- `PHRASER_DATA_DIR`: base data directory used by the package
+- `PHRASER_DEFAULT_LMDB`: LMDB path for the default database
+- `PHRASER_CGN_LMDB`: LMDB path for the CGN database
+
+Example:
+
+```dotenv
+PHRASER_DATA_DIR=/path/to/phraser-data
+PHRASER_DEFAULT_LMDB=/path/to/phraser-data/default_lmdb
+PHRASER_CGN_LMDB=/path/to/phraser-data/cgn_lmdb
+```
+
+### `ssh_audio_play` and the same `.env`
+
+Yes, the same `.env` can also be used for `ssh_audio_play` configuration if
+that dependency reads settings from process environment variables. `phraser`
+forwards any `.env` keys starting with `SSH_AUDIO_PLAY_` into `os.environ`
+when the package configuration is loaded.
 
 ## Example
 

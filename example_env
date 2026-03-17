@@ -1,0 +1,17 @@
+# Copy this file to `.env` and adjust the values for your machine.
+
+# Base directory used by phraser for generated data and local files.
+PHRASER_DATA_DIR=./data
+
+# Default LMDB path used by the package.
+PHRASER_DEFAULT_LMDB=./data/default_lmdb
+
+# Optional dedicated LMDB path for CGN data.
+PHRASER_CGN_LMDB=./data/cgn_lmdb
+
+# Optional variables for ssh_audio_play.
+# phraser forwards any SSH_AUDIO_PLAY_* keys from `.env` into os.environ
+# before ssh_audio_play is imported.
+# SSH_AUDIO_PLAY_HOST=your-host
+# SSH_AUDIO_PLAY_PORT=22
+# SSH_AUDIO_PLAY_REMOTE_COMMAND=ffplay
