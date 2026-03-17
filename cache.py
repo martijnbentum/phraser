@@ -254,7 +254,7 @@ class Cache:
         m = f'Loaded all objects of class: {cls.__name__}'
         m += f', in {duration:.2f} seconds.'
         if self.verbose: print(m) 
-        self._classes_loaded[name] = True
+        self._classes_loaded[class_name] = True
 
     def _preload_sampled_fraction(self, fraction):
         '''preload a fraction of all objects per class'''
