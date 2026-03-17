@@ -27,7 +27,6 @@ def ensure_consistent_link(a, b, attr, add_method_name, update_database=True):
         if not hasattr(b, add_method_name): return
         getattr(b, add_method_name)(
             **{attr: a_val},
-            reverse_link=False,
             update_database=update_database,
             propagate=True,
         )
@@ -38,7 +37,6 @@ def ensure_consistent_link(a, b, attr, add_method_name, update_database=True):
         if not hasattr(a, add_method_name): return
         getattr(a, add_method_name)(
             **{attr: b_val},
-            reverse_link=False,
             update_database=update_database,
             propagate=True,
         )
