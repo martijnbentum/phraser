@@ -103,9 +103,10 @@ class Cache:
         start = time.time()
         itk = key_helper.instance_to_key
         pi = struct_value.pack_instance
-        cache_update = {itk(obj): pi(obj) for obj in objs}
+        keys = [itk(obj) for obj in objs]
+        values = [pi(obj) for obj in objs]
         # print('update dict done', time.time() - start)
-        try: self.DB.write_many(cache_update.keys(), cache_update.values(),
+        try: self.DB.write_many(keys, values,
             overwrite = overwrite)
 
         except KeyError as e:
@@ -117,7 +118,7 @@ class Cache:
             else: raise e
 
         # print('succes', time.time() - start)
-
+        cache_update = {key: obj for key, obj in zip(keys, objs)}
         self._cache.update(cache_update)
         for key in cache_update.keys():
             if key not in self.save_key_counter:
