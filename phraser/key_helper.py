@@ -248,5 +248,3 @@ def label_index_key_to_instance_key(key):
 def label_index_key_to_rank(key):
     return key[0]
 
-
-

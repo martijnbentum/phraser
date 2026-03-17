@@ -387,4 +387,3 @@ def items_to_label_index_keys(items):
         try: label_index_keys.append(item.label_index_key)
         except AttributeError: pass
     return label_index_keys
-

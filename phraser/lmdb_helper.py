@@ -330,4 +330,3 @@ def open_lmdb(path=locations.cgn_lmdb, map_size=1024**4,
         for name in db_names:
             db[name] = env.open_db(name.encode(), txn=txn)
     return env, db
-

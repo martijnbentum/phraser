@@ -350,5 +350,3 @@ def queryset_summary(qs):
 
     joined = ", ".join(parts)
     return f"<{R}QuerySet:{RE} {joined}>"
-
-
