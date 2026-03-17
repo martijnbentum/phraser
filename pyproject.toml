@@ -23,6 +23,9 @@ dependencies = [
   "progressbar2",
   "textgrid",
   "matplotlib",
+  "ssh-audio-play @ git+ssh://git@github.com/martijnbentum/ssh-audio-play.git",
+  "webmaus @ git+ssh://git@github.com/martijnbentum/webmaus.git",
+  "frame @ git+ssh://git@github.com/martijnbentum/frame.git",
 ]
 
 [tool.setuptools]
