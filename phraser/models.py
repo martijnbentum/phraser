@@ -268,6 +268,17 @@ class Segment:
     @property
     def duration(self):
         return self.end - self.start
+
+    @property
+    def start_seconds(self):
+        return utils.miliseconds_to_seconds(self.start)
+
+    @property
+    def end_seconds(self):
+        return utils.miliseconds_to_seconds(self.end)
+
+    def duration_seconds(self):
+        return utils.miliseconds_to_seconds(self.duration)
             
     def save(self, overwrite = None, fail_gracefully = False):
         cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)

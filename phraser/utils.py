@@ -63,9 +63,12 @@ def seconds_to_miliseconds(seconds):
 def miliseconds_to_seconds(milliseconds):
     return milliseconds / 1000
 
+def middle_point(start, end):
+    '''Return the middle point of an interval defined by start and end.'''
+    return (start + end) / 2
+
 def overlap(object1, object2):
     '''Return True if intervals overlap (partial or full), else False.
     Assumes integer start and end, and start < end.
     '''
     return object1.start < object2.end and object2.start < object1.end
-
