@@ -31,7 +31,7 @@ _export_prefixed_env("SSH_AUDIO_PLAY_")
 
 data = _path_config("PHRASER_DATA_DIR", ROOT / "data")
 data.mkdir(parents=True, exist_ok=True)
-default_lmdb = _path_config("PHRASER_DEFAULT_LMDB", data / "default_lmdb")
+default_lmdb = _path_config("PHRASER_DEFAULT_LMDB", data / "cgn_lmdb")
 cgn_lmdb = _path_config("PHRASER_CGN_LMDB", data / "cgn_lmdb")
 
 audio_filenames = data / 'audio_filenames.txt'
