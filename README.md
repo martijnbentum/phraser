@@ -24,13 +24,13 @@ provided in [`example_env`](./example_env).
 ### Install with `pip`
 
 ```bash
-pip install git+ssh://git@github.com/martijnbentum/phraser.git
+pip install git+https://git@github.com/martijnbentum/phraser.git
 ```
 
 ### Install with `uv pip`
 
 ```bash
-uv pip install git+ssh://git@github.com/martijnbentum/phraser.git
+uv pip install git+https://git@github.com/martijnbentum/phraser.git
 ```
 
 ### Editable install

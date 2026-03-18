@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+python3 <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path("pyproject.toml")
+text = path.read_text()
+
+match = re.search(r'^version = "(\d+(?:\.\d+)*)"$', text, flags=re.MULTILINE)
+if not match:
+    sys.exit("pre-commit: could not find a version field in pyproject.toml")
+
+current = match.group(1)
+parts = current.split(".")
+parts[-1] = str(int(parts[-1]) + 1)
+updated = ".".join(parts)
+
+path.write_text(text[: match.start(1)] + updated + text[match.end(1) :])
+print(f"pre-commit: bumped version {current} -> {updated}")
+PY
+
+git add pyproject.toml
