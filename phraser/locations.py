@@ -4,7 +4,8 @@ from pathlib import Path
 from decouple import AutoConfig
 
 ROOT = Path(__file__).resolve().parents[1]
-config = AutoConfig(search_path=ROOT)
+ENV_ROOT = Path.cwd().resolve()
+config = AutoConfig(search_path=ENV_ROOT)
 
 
 def _path_config(name, default):
@@ -13,7 +14,7 @@ def _path_config(name, default):
 
 
 def _export_prefixed_env(prefix):
-    env_file = ROOT / ".env"
+    env_file = ENV_ROOT / '.env'
     if not env_file.exists():
         return
     for raw_line in env_file.read_text(encoding="utf-8").splitlines():
