@@ -1,12 +1,12 @@
 '''Lazy hidden-state retrieval for phraser segments.
 
-This module intentionally stays isolated from the rest of the package. It
-bridges `phraser` segment objects with `echoframe` storage and `to-vector`
+This module intentionally stays isolated from the rest of the package.
+It bridges phraser segment objects with echoframe storage and to-vector
 feature extraction without changing the current public API.
 '''
 
-from dataclasses import dataclass
 from pathlib import Path
+import numpy as np
 
 
 _MODEL_NAME_ALIASES = {
@@ -15,79 +15,97 @@ _MODEL_NAME_ALIASES = {
     'wavlm': 'microsoft/wavlm-base-plus',
 }
 
-
-@dataclass
-class HiddenStateResult:
-    '''Resolved hidden-state request for one segment.'''
-    payload: object
-    metadata: object
-    created: bool
-    phraser_key: str
-    audio_filename: str
-    start_ms: int
-    end_ms: int
-    collar: int
-    layer: int
-    model_name: str
+_VALID_AGGREGATIONS = (None, 'mean', 'centroid')
 
 
-def get_or_compute_hidden_state(segment, layer, collar=500,
-    model_name='wav2vec2', model=None, store=None, store_root='echoframe',
-    gpu=False, match='exact', tags=None, add_tags_on_hit=False):
-    '''Return one hidden-state payload for a segment.
+# ── Public API ───────────────────────────────────────────────────────────────
 
-    segment:             phraser segment-like object
-    layer:               hidden-state layer index
-    collar:              extra context in milliseconds on both sides
-    model_name:          stable storage label used by echoframe
-    model:               optional to-vector model instance or model path
-    store:               optional echoframe.Store instance
-    store_root:          store root used when `store` is not provided
-    gpu:                 request CUDA in to-vector
-    match:               echoframe collar matching mode
-    tags:                optional echoframe tags
-    add_tags_on_hit:     update tags on an existing matching record
+def get_embeddings(segment, layers, collar=500, model_name='wav2vec2',
+                   aggregation=None, model=None, store=None,
+                   store_root='echoframe', gpu=False, tags=None):
+    '''Return embeddings for a single segment.
+
+    segment:      phraser segment-like object with .key, .start,
+                  .end, and .audio
+    layers:       int or list of int — hidden-state layer indices
+    collar:       extra context in milliseconds added on both sides
+    model_name:   stable storage label; resolved via built-in aliases
+    aggregation:  None (all frames), 'mean', or 'centroid'
+    model:        optional pre-loaded model or path (overrides alias)
+    store:        optional echoframe.Store instance
+    store_root:   store root used when store is not provided
+    gpu:          pass True to request CUDA in to-vector
+    tags:         optional list of echoframe tags
     '''
-    _validate_request(segment, layer, collar, model_name)
-    audio_filename, start_ms, end_ms = _segment_window(segment, collar)
-    phraser_key = segment_to_echoframe_key(segment)
-    compute_model = _resolve_compute_model(model_name, model)
+    layers_list, single_layer = _normalise_layers(layers)
+    _validate_aggregation(aggregation)
     store = _resolve_store(store, store_root)
-    payload_box = {}
+    compute_model = _resolve_compute_model(model_name, model)
+    phraser_key = segment_to_echoframe_key(segment)
 
-    def compute():
-        payload = _compute_hidden_state(audio_filename, start_ms, end_ms,
-            layer, compute_model, gpu)
-        payload_box['payload'] = payload
-        return payload
+    audio_filename, col_start_ms, col_end_ms, orig_start_ms, orig_end_ms = \
+        _segment_window(segment, collar)
 
-    metadata, created = store.find_or_compute(
-        phraser_key=phraser_key,
-        collar=collar,
-        model_name=model_name,
-        output_type='hidden_state',
-        layer=layer,
-        compute=compute,
-        match=match,
-        tags=tags,
-        add_tags_on_hit=add_tags_on_hit,
-    )
-    if created:
-        payload = payload_box['payload']
-    else:
-        payload = metadata.load_payload()
-    return HiddenStateResult(
-        payload=payload,
-        metadata=metadata,
-        created=created,
-        phraser_key=phraser_key,
-        audio_filename=audio_filename,
-        start_ms=start_ms,
-        end_ms=end_ms,
-        collar=collar,
-        layer=layer,
-        model_name=model_name,
-    )
+    missing = [
+        l for l in layers_list
+        if not store.exists(phraser_key, collar, model_name,
+                            'hidden_state', l)
+    ]
+    if missing:
+        _compute_and_store(
+            audio_filename, col_start_ms, col_end_ms,
+            orig_start_ms, orig_end_ms, collar, missing,
+            model_name, compute_model, phraser_key, store, gpu, tags)
+
+    arrays = [
+        store.load(phraser_key, collar, model_name, 'hidden_state', l)
+        for l in layers_list
+    ]
+    return _build_embeddings(arrays, layers_list, single_layer, aggregation)
+
+
+def get_embeddings_batch(segments, layers, collar=500, model_name='wav2vec2',
+                         aggregation=None, model=None, store=None,
+                         store_root='echoframe', gpu=False, tags=None):
+    '''Return embeddings for a list of segments.
+
+    Checks echoframe for each (segment, layer) pair first; only missing
+    entries are computed. One model forward pass per segment with missing
+    layers — all needed layers extracted at once. Already-stored entries
+    are skipped, making repeated calls restartable.
+
+    Returns a dict mapping each segment to an Embeddings instance.
+    '''
+    layers_list, single_layer = _normalise_layers(layers)
+    _validate_aggregation(aggregation)
+    store = _resolve_store(store, store_root)
+    compute_model = _resolve_compute_model(model_name, model)
+
+    results = {}
+    for segment in segments:
+        phraser_key = segment_to_echoframe_key(segment)
+        audio_filename, col_start_ms, col_end_ms, orig_start_ms, orig_end_ms = \
+            _segment_window(segment, collar)
+
+        missing = [
+            l for l in layers_list
+            if not store.exists(phraser_key, collar, model_name,
+                                'hidden_state', l)
+        ]
+        if missing:
+            _compute_and_store(
+                audio_filename, col_start_ms, col_end_ms,
+                orig_start_ms, orig_end_ms, collar, missing,
+                model_name, compute_model, phraser_key, store, gpu, tags)
+
+        arrays = [
+            store.load(phraser_key, collar, model_name, 'hidden_state', l)
+            for l in layers_list
+        ]
+        results[segment] = _build_embeddings(
+            arrays, layers_list, single_layer, aggregation)
+
+    return results
 
 
 def segment_to_echoframe_key(segment):
@@ -102,6 +120,147 @@ def segment_to_echoframe_key(segment):
     raise TypeError('segment.key must be bytes or str')
 
 
+# ── Layers and validation ────────────────────────────────────────────────────
+
+def _normalise_layers(layers):
+    '''Return (list_of_layer_ints, single_int_flag).'''
+    if isinstance(layers, int):
+        return [layers], True
+    layers = list(layers)
+    if not layers:
+        raise ValueError('layers must not be empty')
+    return layers, False
+
+
+def _validate_aggregation(aggregation):
+    if aggregation not in _VALID_AGGREGATIONS:
+        raise ValueError(
+            f'aggregation must be one of {_VALID_AGGREGATIONS}, '
+            f'got {aggregation!r}')
+
+
+# ── Segment window ───────────────────────────────────────────────────────────
+
+def _segment_window(segment, collar):
+    '''Resolve audio filename and time boundaries for a segment.
+
+    Returns (audio_filename, col_start_ms, col_end_ms,
+             orig_start_ms, orig_end_ms).
+    col_* are the collared boundaries used as model input.
+    orig_* are the original segment boundaries used for frame selection.
+    '''
+    audio = getattr(segment, 'audio', None)
+    if audio is None:
+        raise ValueError('segment must be linked to an audio object')
+    audio_filename = getattr(audio, 'filename', None)
+    if not audio_filename:
+        raise ValueError('segment.audio must expose a filename')
+    start_ms = getattr(segment, 'start', None)
+    end_ms = getattr(segment, 'end', None)
+    if start_ms is None or end_ms is None:
+        raise ValueError(
+            'segment must expose start and end in milliseconds')
+    orig_start_ms = int(start_ms)
+    orig_end_ms = int(end_ms)
+    col_start_ms = max(0, orig_start_ms - collar)
+    col_end_ms = orig_end_ms + collar
+    duration = getattr(audio, 'duration', None)
+    if duration is not None:
+        col_end_ms = min(col_end_ms, int(duration))
+    if col_end_ms <= col_start_ms:
+        raise ValueError('resolved segment window is invalid')
+    return (str(Path(audio_filename).resolve()),
+            col_start_ms, col_end_ms, orig_start_ms, orig_end_ms)
+
+
+# ── Compute and store ────────────────────────────────────────────────────────
+
+def _compute_and_store(audio_filename, col_start_ms, col_end_ms,
+                       orig_start_ms, orig_end_ms, collar, layers,
+                       model_name, compute_model, phraser_key,
+                       store, gpu, tags):
+    '''Run one forward pass and store selected frames for each layer.
+
+    The model runs on the full collared window. Only frames that are
+    fully within [orig_start_ms, orig_end_ms] (100% overlap) are stored.
+    All layers are extracted from the single forward pass.
+    '''
+    to_vector = _import_to_vector()
+    frame_module = _import_frame()
+
+    outputs = to_vector.filename_to_vector(
+        audio_filename,
+        start=_ms_to_s(col_start_ms),
+        end=_ms_to_s(col_end_ms),
+        model=compute_model,
+        gpu=gpu,
+        numpify_output=True,
+    )
+
+    hidden_states = getattr(outputs, 'hidden_states', None)
+    if hidden_states is None:
+        raise ValueError(
+            'to-vector outputs did not contain hidden_states')
+
+    frames = frame_module.make_frames_from_outputs(
+        outputs, start_time=_ms_to_s(col_start_ms))
+
+    selected = frames.select_frames(
+        _ms_to_s(orig_start_ms), _ms_to_s(orig_end_ms),
+        percentage_overlap=100)
+
+    if not selected:
+        raise ValueError(
+            f'no frames fully within [{orig_start_ms}, {orig_end_ms}] ms')
+
+    indices = [f.index for f in selected]
+
+    for layer in layers:
+        if layer >= len(hidden_states):
+            raise ValueError(
+                f'layer {layer} out of range '
+                f'(model has {len(hidden_states)} layers)')
+        hs = hidden_states[layer]
+        data = hs[0, indices, :] if hs.ndim == 3 else hs[indices, :]
+        store.put(phraser_key, collar, model_name, 'hidden_state',
+                  layer, data, tags=tags)
+
+
+# ── Build return value ───────────────────────────────────────────────────────
+
+def _build_embeddings(arrays, layers_list, single_layer, aggregation):
+    '''Assemble an Embeddings instance from per-layer arrays.'''
+    Embeddings = _import_embeddings()
+    processed = [_apply_aggregation(arr, aggregation) for arr in arrays]
+
+    if single_layer:
+        data = processed[0]
+        dims = ('embed_dim',) if aggregation else ('frames', 'embed_dim')
+        return Embeddings(data=data, dims=dims, layers=None)
+
+    data = np.stack(processed, axis=0)
+    dims = ('layers', 'embed_dim') if aggregation else \
+        ('layers', 'frames', 'embed_dim')
+    return Embeddings(data=data, dims=dims, layers=tuple(layers_list))
+
+
+def _apply_aggregation(data, aggregation):
+    '''Aggregate frame data of shape (n_frames, embed_dim).'''
+    if aggregation is None:
+        return data
+    if aggregation == 'mean':
+        return np.mean(data, axis=0)
+    if aggregation == 'centroid':
+        return data[len(data) // 2]
+    raise ValueError(f'unknown aggregation: {aggregation!r}')
+
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+
+def _ms_to_s(value):
+    return int(value) / 1000.0
+
+
 def _resolve_store(store, store_root):
     if store is not None:
         return store
@@ -113,63 +272,6 @@ def _resolve_compute_model(model_name, model):
     if model is not None:
         return model
     return _MODEL_NAME_ALIASES.get(model_name, model_name)
-
-
-def _compute_hidden_state(audio_filename, start_ms, end_ms, layer, model,
-    gpu):
-    to_vector = _import_to_vector()
-    outputs = to_vector.filename_to_vector(
-        audio_filename,
-        start=_ms_to_seconds(start_ms),
-        end=_ms_to_seconds(end_ms),
-        model=model,
-        gpu=gpu,
-        numpify_output=True,
-    )
-    hidden_states = getattr(outputs, 'hidden_states', None)
-    if hidden_states is None:
-        raise ValueError('to-vector outputs did not contain hidden_states')
-    if layer >= len(hidden_states):
-        m = f'layer {layer} is out of range for {len(hidden_states)} '
-        m += 'available hidden states'
-        raise ValueError(m)
-    return hidden_states[layer]
-
-
-def _segment_window(segment, collar):
-    audio = getattr(segment, 'audio', None)
-    if audio is None:
-        raise ValueError('segment must be linked to an audio object')
-    audio_filename = getattr(audio, 'filename', None)
-    if not audio_filename:
-        raise ValueError('segment.audio must expose a filename')
-    start_ms = getattr(segment, 'start', None)
-    end_ms = getattr(segment, 'end', None)
-    if start_ms is None or end_ms is None:
-        raise ValueError('segment must expose start and end in milliseconds')
-    start_ms = max(0, int(start_ms) - collar)
-    end_ms = int(end_ms) + collar
-    duration = getattr(audio, 'duration', None)
-    if duration is not None:
-        end_ms = min(end_ms, int(duration))
-    if end_ms < start_ms:
-        raise ValueError('resolved segment window is invalid')
-    return str(Path(audio_filename).resolve()), start_ms, end_ms
-
-
-def _validate_request(segment, layer, collar, model_name):
-    if segment is None:
-        raise ValueError('segment must not be None')
-    if not isinstance(layer, int) or layer < 0:
-        raise ValueError('layer must be a non-negative integer')
-    if not isinstance(collar, int) or collar < 0:
-        raise ValueError('collar must be a non-negative integer')
-    if not isinstance(model_name, str) or not model_name.strip():
-        raise ValueError('model_name must be a non-empty string')
-
-
-def _ms_to_seconds(value):
-    return int(value) / 1000.0
 
 
 def _import_echoframe():
@@ -190,3 +292,24 @@ def _import_to_vector():
             'to-vector is required to compute hidden states'
         ) from exc
     return to_vector
+
+
+def _import_frame():
+    try:
+        import frame
+    except ImportError as exc:
+        raise ImportError(
+            'frame is required for frame selection'
+        ) from exc
+    return frame
+
+
+def _import_embeddings():
+    try:
+        from echoframe import Embeddings
+    except ImportError as exc:
+        raise ImportError(
+            'echoframe.Embeddings is required; '
+            'ensure echoframe F1 is implemented'
+        ) from exc
+    return Embeddings
