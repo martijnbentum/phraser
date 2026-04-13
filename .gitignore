@@ -25,6 +25,7 @@ ENV/
 htmlcov/
 
 build/
+.build/
 dist/
 site/
 .eggs/

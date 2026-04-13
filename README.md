@@ -24,13 +24,13 @@ provided in [`example_env`](./example_env).
 ### Install with `pip`
 
 ```bash
-pip install git+https://git@github.com/martijnbentum/phraser.git
+pip install git+https://github.com/martijnbentum/phraser.git
 ```
 
 ### Install with `uv pip`
 
 ```bash
-uv pip install git+https://git@github.com/martijnbentum/phraser.git
+uv pip install git+https://github.com/martijnbentum/phraser.git
 ```
 
 ### Editable install
@@ -40,6 +40,7 @@ With `pip`:
 ```bash
 git clone git@github.com:martijnbentum/phraser.git
 cd phraser
+mkdir -p .build
 pip install -e .
 ```
 
@@ -48,8 +49,12 @@ With `uv pip`:
 ```bash
 git clone git@github.com:martijnbentum/phraser.git
 cd phraser
+mkdir -p .build
 uv pip install -e .
 ```
+
+Editable-install metadata is stored in `.build/` instead of creating
+`*.egg-info` at the repository root.
 
 ## Git-based dependencies
 
@@ -60,11 +65,11 @@ This project has required Git-based runtime dependencies:
 - `frame`
 
 They are declared in [`pyproject.toml`](./pyproject.toml). The current package
-configuration uses `git+ssh` URLs, so installation requires:
+configuration uses `git+https` URLs, so installation requires:
 
 - Git to be installed
-- SSH access to GitHub to be configured
-- permission to access the referenced repositories
+- network access to GitHub
+- permission to access the referenced repositories when they are private
 
 ## Configuration
 

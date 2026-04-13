@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phraser"
-version = "0.1.6"
+version = "0.1.7"
 description = "LMDB-backed phrase and segment tooling"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,9 +23,9 @@ dependencies = [
   "progressbar2",
   "textgrid",
   "matplotlib",
-  "ssh-audio-play @ git+https://git@github.com/martijnbentum/ssh-audio-play.git",
-  "webmaus @ git+https://git@github.com/martijnbentum/webmaus.git",
-  "frame @ git+https://git@github.com/martijnbentum/frame.git",
+  "ssh-audio-play @ git+https://github.com/martijnbentum/ssh-audio-play.git",
+  "webmaus @ git+https://github.com/martijnbentum/webmaus.git",
+  "frame @ git+https://github.com/martijnbentum/frame.git",
 ]
 
 [tool.setuptools]
