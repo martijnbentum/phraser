@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phraser"
-version = "0.1.14"
+version = "0.1.15"
 description = "LMDB-backed phrase and segment tooling"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -32,3 +32,8 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["phraser", "scripts"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
