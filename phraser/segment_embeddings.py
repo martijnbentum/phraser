@@ -1,4 +1,4 @@
-'''Lazy hidden-state retrieval for phraser segments.
+'''Hidden-state retrieval for phraser segments.
 
 This module intentionally stays isolated from the rest of the package.
 It bridges phraser segment objects with echoframe storage and to-vector
@@ -6,7 +6,14 @@ feature extraction without changing the current public API.
 '''
 
 from pathlib import Path
+import sys
+
+import echoframe
+import frame
 import numpy as np
+import to_vector
+from echoframe import Embeddings, TokenEmbeddings
+from echoframe.metadata import EchoframeMetadata
 
 
 _MODEL_NAME_ALIASES = {
@@ -61,9 +68,15 @@ def get_embeddings(
     ) = _segment_window(segment, collar)
 
     missing = [
-        l for l in layers_list
-        if not store.exists(phraser_key, collar, model_name,
-                            'hidden_state', l)
+        layer
+        for layer in layers_list
+        if not store.exists(
+            phraser_key,
+            collar,
+            model_name,
+            'hidden_state',
+            layer,
+        )
     ]
     if missing:
         _compute_and_store(
@@ -83,20 +96,36 @@ def get_embeddings(
         )
 
     arrays = [
-        store.load(phraser_key, collar, model_name, 'hidden_state', l)
-        for l in layers_list
+        store.load(
+            phraser_key,
+            collar,
+            model_name,
+            'hidden_state',
+            layer,
+        )
+        for layer in layers_list
     ]
     if single_layer:
-        echoframe_keys = (_make_echoframe_key(
-            phraser_key, collar, model_name, layers_list[0]),)
+        echoframe_keys = (
+            _make_echoframe_key(
+                phraser_key,
+                collar,
+                model_name,
+                layers_list[0],
+            ),
+        )
     else:
         echoframe_keys = tuple(
-            _make_echoframe_key(phraser_key, collar, model_name, l)
-            for l in layers_list
+            _make_echoframe_key(phraser_key, collar, model_name, layer)
+            for layer in layers_list
         )
-    return _build_embeddings(arrays, layers_list, single_layer,
-                             frame_aggregation=frame_aggregation,
-                             echoframe_keys=echoframe_keys)
+    return _build_embeddings(
+        arrays,
+        layers_list,
+        single_layer,
+        frame_aggregation=frame_aggregation,
+        echoframe_keys=echoframe_keys,
+    )
 
 
 def get_embeddings_batch(
@@ -137,9 +166,15 @@ def get_embeddings_batch(
         ) = _segment_window(segment, collar)
 
         missing = [
-            l for l in layers_list
-            if not store.exists(phraser_key, collar, model_name,
-                                'hidden_state', l)
+            layer
+            for layer in layers_list
+            if not store.exists(
+                phraser_key,
+                collar,
+                model_name,
+                'hidden_state',
+                layer,
+            )
         ]
         if missing:
             _compute_and_store(
@@ -159,23 +194,39 @@ def get_embeddings_batch(
             )
 
         arrays = [
-            store.load(phraser_key, collar, model_name, 'hidden_state', l)
-            for l in layers_list
+            store.load(
+                phraser_key,
+                collar,
+                model_name,
+                'hidden_state',
+                layer,
+            )
+            for layer in layers_list
         ]
         if single_layer:
-            echoframe_keys = (_make_echoframe_key(
-                phraser_key, collar, model_name, layers_list[0]),)
+            echoframe_keys = (
+                _make_echoframe_key(
+                    phraser_key,
+                    collar,
+                    model_name,
+                    layers_list[0],
+                ),
+            )
         else:
             echoframe_keys = tuple(
-                _make_echoframe_key(phraser_key, collar, model_name, l)
-                for l in layers_list
+                _make_echoframe_key(phraser_key, collar, model_name, layer)
+                for layer in layers_list
             )
-        token_list.append(_build_embeddings(
-            arrays, layers_list, single_layer,
-            frame_aggregation=frame_aggregation,
-            echoframe_keys=echoframe_keys))
+        token_list.append(
+            _build_embeddings(
+                arrays,
+                layers_list,
+                single_layer,
+                frame_aggregation=frame_aggregation,
+                echoframe_keys=echoframe_keys,
+            )
+        )
 
-    TokenEmbeddings = _import_token_embeddings()
     return TokenEmbeddings(tokens=token_list)
 
 
@@ -207,7 +258,8 @@ def _validate_aggregation(frame_aggregation):
     if frame_aggregation not in _VALID_AGGREGATIONS:
         raise ValueError(
             f'frame_aggregation must be one of {_VALID_AGGREGATIONS}, '
-            f'got {frame_aggregation!r}')
+            f'got {frame_aggregation!r}'
+        )
 
 
 # ── Segment window ───────────────────────────────────────────────────────────
@@ -229,8 +281,7 @@ def _segment_window(segment, collar):
     start_ms = getattr(segment, 'start', None)
     end_ms = getattr(segment, 'end', None)
     if start_ms is None or end_ms is None:
-        raise ValueError(
-            'segment must expose start and end in milliseconds')
+        raise ValueError('segment must expose start and end in milliseconds')
     orig_start_ms = int(start_ms)
     orig_end_ms = int(end_ms)
     col_start_ms = max(0, orig_start_ms - collar)
@@ -272,10 +323,10 @@ def _compute_and_store(
     fully within [orig_start_ms, orig_end_ms] (100% overlap) are stored.
     All layers are extracted from the single forward pass.
     '''
-    to_vector = _import_to_vector()
-    frame_module = _import_frame()
+    to_vector_module = _resolve_runtime_module('to_vector', to_vector)
+    frame_module = _resolve_runtime_module('frame', frame)
 
-    outputs = to_vector.filename_to_vector(
+    outputs = to_vector_module.filename_to_vector(
         audio_filename,
         start=_ms_to_s(col_start_ms),
         end=_ms_to_s(col_end_ms),
@@ -326,18 +377,26 @@ def _compute_and_store(
 
 # ── Build return value ───────────────────────────────────────────────────────
 
-def _build_embeddings(arrays, layers_list, single_layer, frame_aggregation,
-                      echoframe_keys):
+def _build_embeddings(
+    arrays,
+    layers_list,
+    single_layer,
+    frame_aggregation,
+    echoframe_keys,
+):
     '''Assemble an Embeddings instance from per-layer arrays.'''
-    Embeddings = _import_embeddings()
     processed = [_apply_aggregation(arr, frame_aggregation) for arr in arrays]
 
     if single_layer:
         data = processed[0]
         dims = ('embed_dim',) if frame_aggregation else ('frames', 'embed_dim')
-        return Embeddings(data=data, dims=dims, layers=None,
-                          echoframe_keys=echoframe_keys,
-                          frame_aggregation=frame_aggregation)
+        return Embeddings(
+            data=data,
+            dims=dims,
+            layers=None,
+            echoframe_keys=echoframe_keys,
+            frame_aggregation=frame_aggregation,
+        )
 
     data = np.stack(processed, axis=0)
     dims = (
@@ -345,9 +404,13 @@ def _build_embeddings(arrays, layers_list, single_layer, frame_aggregation,
         if frame_aggregation
         else ('layers', 'frames', 'embed_dim')
     )
-    return Embeddings(data=data, dims=dims, layers=tuple(layers_list),
-                      echoframe_keys=echoframe_keys,
-                      frame_aggregation=frame_aggregation)
+    return Embeddings(
+        data=data,
+        dims=dims,
+        layers=tuple(layers_list),
+        echoframe_keys=echoframe_keys,
+        frame_aggregation=frame_aggregation,
+    )
 
 
 def _apply_aggregation(data, frame_aggregation):
@@ -364,7 +427,6 @@ def _apply_aggregation(data, frame_aggregation):
 # ── Utilities ────────────────────────────────────────────────────────────────
 
 def _make_echoframe_key(phraser_key, collar, model_name, layer):
-    EchoframeMetadata = _import_metadata()
     md = EchoframeMetadata(
         phraser_key=phraser_key,
         collar=collar,
@@ -382,7 +444,6 @@ def _ms_to_s(value):
 def _resolve_store(store, store_root):
     if store is not None:
         return store
-    echoframe = _import_echoframe()
     return echoframe.Store(store_root)
 
 
@@ -392,61 +453,5 @@ def _resolve_compute_model(model_name, model):
     return _MODEL_NAME_ALIASES.get(model_name, model_name)
 
 
-def _import_echoframe():
-    try:
-        import echoframe
-    except ImportError as exc:
-        raise ImportError(
-            'echoframe is required to store or load hidden states'
-        ) from exc
-    return echoframe
-
-
-def _import_to_vector():
-    try:
-        import to_vector
-    except ImportError as exc:
-        raise ImportError(
-            'to-vector is required to compute hidden states'
-        ) from exc
-    return to_vector
-
-
-def _import_frame():
-    try:
-        import frame
-    except ImportError as exc:
-        raise ImportError(
-            'frame is required for frame selection'
-        ) from exc
-    return frame
-
-
-def _import_embeddings():
-    try:
-        from echoframe import Embeddings
-    except ImportError as exc:
-        raise ImportError(
-            'echoframe.Embeddings is required; install echoframe'
-        ) from exc
-    return Embeddings
-
-
-def _import_token_embeddings():
-    try:
-        from echoframe import TokenEmbeddings
-    except ImportError as exc:
-        raise ImportError(
-            'echoframe.TokenEmbeddings is required; install echoframe'
-        ) from exc
-    return TokenEmbeddings
-
-
-def _import_metadata():
-    try:
-        from echoframe.metadata import EchoframeMetadata
-    except ImportError as exc:
-        raise ImportError(
-            'echoframe.metadata is required; install echoframe'
-        ) from exc
-    return EchoframeMetadata
+def _resolve_runtime_module(module_name, default_module):
+    return sys.modules.get(module_name, default_module)
