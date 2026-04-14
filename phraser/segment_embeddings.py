@@ -362,10 +362,10 @@ def _load_codebook_indices_object(store, phraser_key, collar, model_name,
     if model_architecture is None:
         model_architecture = _infer_architecture_from_stored_matrix(
             store.load(phraser_key, collar, model_name, 'codebook_matrix', 0))
-    return Codebook(echoframe_keys=(indices_metadata.entry_id,),
-        data=data, model_architecture=model_architecture,
-        codebook_matrix_echoframe_keys=(matrix_metadata.entry_id,)
-        ).bind_store(store)
+    return Codebook(echoframe_key=indices_metadata.entry_id, data=data,
+        model_architecture=model_architecture,
+        codebook_matrix_echoframe_key=matrix_metadata.entry_id).bind_store(
+            store)
 
 
 def _resolve_codebook_model_architecture(model):
