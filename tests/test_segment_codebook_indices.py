@@ -165,7 +165,7 @@ class TestGetCodebookIndices(ModuleFixture):
             [1, 2],
             [2, 1],
         ]))
-        np.testing.assert_array_equal(result.to_codevectors(), np.array([
+        np.testing.assert_array_equal(result.codevectors, np.array([
             [1.0, 2.0, 7.0, 8.0],
             [3.0, 4.0, 5.0, 6.0],
             [5.0, 6.0, 3.0, 4.0],
@@ -211,7 +211,7 @@ class TestGetCodebookIndices(ModuleFixture):
             [0, 1],
             [1, 1],
         ]))
-        np.testing.assert_array_equal(result.to_codevectors(), np.array([
+        np.testing.assert_array_equal(result.codevectors, np.array([
             [[2.0], [3.0]],
             [[1.0], [4.0]],
             [[2.0], [4.0]],
