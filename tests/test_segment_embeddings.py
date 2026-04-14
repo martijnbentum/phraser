@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 from echoframe import Embeddings
 
+FAKE_MODEL = object()
+
 
 MODULE_PATH = (Path(__file__).resolve().parents[1]
                / 'phraser' / 'segment_embeddings.py')
@@ -146,7 +148,7 @@ class TestFrameSelection(ModuleFixture):
         self._patch('to_vector', fake_tv)
         self._patch('frame', make_fake_frame_module(frames))
         self.module.get_embeddings(segment, layers=6, collar=collar,
-                                   store=store, model='dummy')
+                                   store=store, model=FAKE_MODEL)
         return store
 
     def test_model_called_with_collared_window(self):
@@ -175,7 +177,7 @@ class TestFrameSelection(ModuleFixture):
         self._patch('frame', make_fake_frame_module(FakeEmptyFrames()))
         with self.assertRaises(ValueError):
             self.module.get_embeddings(make_segment(), layers=6,
-                                       store=store, model='dummy')
+                                       store=store, model=FAKE_MODEL)
 
 
 # ── F3: multi-layer support ───────────────────────────────────────────────────
@@ -190,21 +192,21 @@ class TestMultiLayer(ModuleFixture):
     def test_single_int_layer_produces_no_layers_dim(self):
         store = FakeStore()
         result = self.module.get_embeddings(
-            make_segment(), layers=4, store=store, model='dummy')
+            make_segment(), layers=4, store=store, model=FAKE_MODEL)
         self.assertEqual(result.dims, ('frames', 'embed_dim'))
         self.assertIsNone(result.layers)
 
     def test_list_of_layers_stores_each_separately(self):
         store = FakeStore()
         self.module.get_embeddings(
-            make_segment(), layers=[4, 6], store=store, model='dummy')
+            make_segment(), layers=[4, 6], store=store, model=FAKE_MODEL)
         stored_layers = {call[4] for call in store.put_calls}
         self.assertEqual(stored_layers, {4, 6})
 
     def test_list_of_layers_result_has_layers_dim(self):
         store = FakeStore()
         result = self.module.get_embeddings(
-            make_segment(), layers=[4, 6], store=store, model='dummy')
+            make_segment(), layers=[4, 6], store=store, model=FAKE_MODEL)
         self.assertEqual(result.dims, ('layers', 'frames', 'embed_dim'))
         self.assertEqual(result.layers, (4, 6))
         self.assertEqual(result.data.shape[0], 2)
@@ -221,14 +223,14 @@ class TestMultiLayer(ModuleFixture):
                     types.SimpleNamespace(filename_to_vector=counting_ftv))
         store = FakeStore()
         self.module.get_embeddings(
-            make_segment(), layers=[4, 6, 8], store=store, model='dummy')
+            make_segment(), layers=[4, 6, 8], store=store, model=FAKE_MODEL)
         self.assertEqual(call_count['n'], 1)
 
     def test_out_of_range_layer_raises(self):
         store = FakeStore()
         with self.assertRaises(ValueError):
             self.module.get_embeddings(
-                make_segment(), layers=99, store=store, model='dummy')
+                make_segment(), layers=99, store=store, model=FAKE_MODEL)
 
 
 # ── F4: aggregation on retrieval ─────────────────────────────────────────────
@@ -244,7 +246,7 @@ class TestAggregation(ModuleFixture):
         store = FakeStore()
         result = self.module.get_embeddings(
             make_segment(), layers=4, frame_aggregation=None,
-            store=store, model='dummy')
+            store=store, model=FAKE_MODEL)
         self.assertEqual(result.dims, ('frames', 'embed_dim'))
         self.assertEqual(result.data.ndim, 2)
 
@@ -252,7 +254,7 @@ class TestAggregation(ModuleFixture):
         store = FakeStore()
         result = self.module.get_embeddings(
             make_segment(), layers=4, frame_aggregation='mean',
-            store=store, model='dummy')
+            store=store, model=FAKE_MODEL)
         self.assertEqual(result.dims, ('embed_dim',))
         self.assertEqual(result.data.ndim, 1)
 
@@ -260,7 +262,7 @@ class TestAggregation(ModuleFixture):
         store = FakeStore()
         result = self.module.get_embeddings(
             make_segment(), layers=4, frame_aggregation='centroid',
-            store=store, model='dummy')
+            store=store, model=FAKE_MODEL)
         self.assertEqual(result.dims, ('embed_dim',))
         self.assertEqual(result.data.ndim, 1)
 
@@ -268,7 +270,7 @@ class TestAggregation(ModuleFixture):
         store = FakeStore()
         result = self.module.get_embeddings(
             make_segment(), layers=[4, 6], frame_aggregation='mean',
-            store=store, model='dummy')
+            store=store, model=FAKE_MODEL)
         self.assertEqual(result.dims, ('layers', 'embed_dim'))
         self.assertEqual(result.data.shape[0], 2)
 
@@ -277,7 +279,7 @@ class TestAggregation(ModuleFixture):
         with self.assertRaises(ValueError):
             self.module.get_embeddings(
                 make_segment(), layers=4, frame_aggregation='unknown',
-                store=store, model='dummy')
+                store=store, model=FAKE_MODEL)
 
     def test_mean_values_are_correct(self):
         data = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
@@ -285,7 +287,7 @@ class TestAggregation(ModuleFixture):
         store = FakeStore(stored={key: data})
         result = self.module.get_embeddings(
             make_segment(), layers=4, frame_aggregation='mean',
-            store=store, model='dummy', collar=500)
+            store=store, model=FAKE_MODEL, collar=500)
         np.testing.assert_array_almost_equal(
             result.data, np.mean(data, axis=0))
 
@@ -314,7 +316,7 @@ class TestBatch(ModuleFixture):
         counter = {'n': 0}
         self._patch('to_vector', self._make_counting_tv(counter))
         self.module.get_embeddings_batch(
-            [seg], layers=6, store=store, model='dummy')
+            [seg], layers=6, store=store, model=FAKE_MODEL)
         self.assertEqual(counter['n'], 0)
 
     def test_miss_triggers_one_model_call_per_segment(self):
@@ -324,7 +326,7 @@ class TestBatch(ModuleFixture):
         counter = {'n': 0}
         self._patch('to_vector', self._make_counting_tv(counter))
         self.module.get_embeddings_batch(
-            [seg1, seg2], layers=6, store=store, model='dummy')
+            [seg1, seg2], layers=6, store=store, model=FAKE_MODEL)
         self.assertEqual(counter['n'], 2)
 
     def test_batch_returns_result_for_every_segment(self):
@@ -333,7 +335,7 @@ class TestBatch(ModuleFixture):
         store = FakeStore()
         self._patch('to_vector', make_fake_to_vector(n_layers=13))
         results = self.module.get_embeddings_batch(
-            segs, layers=6, store=store, model='dummy')
+            segs, layers=6, store=store, model=FAKE_MODEL)
         self.assertEqual(results.token_count, len(segs))
 
     def test_partial_hit_computes_only_missing_layer(self):
@@ -343,7 +345,7 @@ class TestBatch(ModuleFixture):
         counter = {'n': 0}
         self._patch('to_vector', self._make_counting_tv(counter))
         self.module.get_embeddings_batch(
-            [seg], layers=[4, 6], store=store, model='dummy')
+            [seg], layers=[4, 6], store=store, model=FAKE_MODEL)
         self.assertEqual(counter['n'], 1)
         self.assertEqual({call[4] for call in store.put_calls}, {6})
 
@@ -354,10 +356,24 @@ class TestBatch(ModuleFixture):
         counter = {'n': 0}
         self._patch('to_vector', self._make_counting_tv(counter))
         self.module.get_embeddings_batch(
-            [seg], layers=6, store=store, model='dummy')
+            [seg], layers=6, store=store, model=None)
         self.module.get_embeddings_batch(
-            [seg], layers=6, store=store, model='dummy')
+            [seg], layers=6, store=store, model=None)
         self.assertEqual(counter['n'], 0)
+
+    def test_cache_miss_without_model_raises(self):
+        store = FakeStore()
+        self._patch('to_vector', make_fake_to_vector(n_layers=13))
+        with self.assertRaisesRegex(ValueError, 'loaded model object'):
+            self.module.get_embeddings(
+                make_segment(), layers=4, store=store, model=None)
+
+    def test_cache_miss_string_model_raises(self):
+        store = FakeStore()
+        self._patch('to_vector', make_fake_to_vector(n_layers=13))
+        with self.assertRaisesRegex(TypeError, 'loaded model object'):
+            self.module.get_embeddings(
+                make_segment(), layers=4, store=store, model='dummy')
 
 
 # ── Real Embeddings integration ───────────────────────────────────────────────
@@ -376,13 +392,13 @@ class TestRealEmbeddings(ModuleFixture):
     def test_result_is_embeddings_instance(self):
         store = FakeStore()
         result = self.module.get_embeddings(
-            make_segment(), layers=4, store=store, model='dummy')
+            make_segment(), layers=4, store=store, model=FAKE_MODEL)
         self.assertIsInstance(result, Embeddings)
 
     def test_layer_method_extracts_correct_layer(self):
         store = FakeStore()
         result = self.module.get_embeddings(
-            make_segment(), layers=[4, 6], store=store, model='dummy')
+            make_segment(), layers=[4, 6], store=store, model=FAKE_MODEL)
         extracted = result.layer(6)
         self.assertIsInstance(extracted, Embeddings)
         self.assertEqual(extracted.dims, ('frames', 'embed_dim'))
@@ -391,7 +407,7 @@ class TestRealEmbeddings(ModuleFixture):
     def test_layer_method_wrong_index_raises(self):
         store = FakeStore()
         result = self.module.get_embeddings(
-            make_segment(), layers=[4, 6], store=store, model='dummy')
+            make_segment(), layers=[4, 6], store=store, model=FAKE_MODEL)
         with self.assertRaises(ValueError):
             result.layer(99)
 
@@ -399,14 +415,14 @@ class TestRealEmbeddings(ModuleFixture):
         # FakeFrames always returns 3 frames; hidden_dim=4
         store = FakeStore()
         result = self.module.get_embeddings(
-            make_segment(), layers=4, store=store, model='dummy')
+            make_segment(), layers=4, store=store, model=FAKE_MODEL)
         self.assertEqual(result.shape, (3, 4))
 
     def test_mean_aggregation_result_is_embeddings(self):
         store = FakeStore()
         result = self.module.get_embeddings(
             make_segment(), layers=4, frame_aggregation='mean',
-            store=store, model='dummy')
+            store=store, model=FAKE_MODEL)
         self.assertIsInstance(result, Embeddings)
         self.assertEqual(result.dims, ('embed_dim',))
 

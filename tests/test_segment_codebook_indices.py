@@ -7,6 +7,9 @@ from pathlib import Path
 import numpy as np
 from echoframe import Codebook, TokenCodebooks
 
+FAKE_MODEL = object()
+SPIDR_MODEL = types.SimpleNamespace(model_architecture='spidr')
+
 
 MODULE_PATH = (Path(__file__).resolve().parents[1]
                / 'phraser' / 'segment_embeddings.py')
@@ -23,7 +26,8 @@ def load_module():
             filename_model_type=lambda model: 'spidr'
             if str(model) == 'spidr' else None,
             model_to_type=lambda model: 'spidr'
-            if model == 'spidr' else 'wav2vec2-pretraining',
+            if getattr(model, 'model_architecture', None) == 'spidr'
+            else 'wav2vec2-pretraining',
         )
     spec = importlib.util.spec_from_file_location(
         'segment_embeddings_under_test', MODULE_PATH)
@@ -151,7 +155,7 @@ class TestGetCodebookIndices(ModuleFixture):
         store = FakeStore()
 
         result = self.module.get_codebook_indices(
-            make_segment(), store=store, model='dummy')
+            make_segment(), store=store, model=FAKE_MODEL)
 
         self.assertIsInstance(result, Codebook)
         stored = store._stored[('0102', 500, 'wav2vec2',
@@ -183,7 +187,7 @@ class TestGetCodebookIndices(ModuleFixture):
         })
 
         self.module.get_codebook_indices(
-            make_segment(), store=store, model='dummy')
+            make_segment(), store=store, model=None)
 
         self.assertEqual(counter['n'], 0)
 
@@ -200,7 +204,7 @@ class TestGetCodebookIndices(ModuleFixture):
         store = FakeStore()
 
         result = self.module.get_codebook_indices(
-            make_segment(), store=store, model='spidr')
+            make_segment(), store=store, model=SPIDR_MODEL)
 
         np.testing.assert_array_equal(result.data, np.array([
             [1, 0],
@@ -231,10 +235,36 @@ class TestGetCodebookIndicesBatch(ModuleFixture):
         result = self.module.get_codebook_indices_batch([
             make_segment(key=b'\x01'),
             make_segment(key=b'\x02', start=1200, end=1500),
-        ], store=store, model='dummy')
+        ], store=store, model=FAKE_MODEL)
 
         self.assertIsInstance(result, TokenCodebooks)
         self.assertEqual(result.token_count, 2)
+
+    def test_cache_miss_without_model_raises(self):
+        artifacts = types.SimpleNamespace(
+            indices=np.array([[0, 1]]),
+            codebook_matrix=np.array([[1.0], [2.0]]),
+            model_architecture='wav2vec2',
+        )
+        self._patch('to_vector', make_fake_to_vector(artifacts))
+        store = FakeStore()
+
+        with self.assertRaisesRegex(ValueError, 'loaded model object'):
+            self.module.get_codebook_indices(
+                make_segment(), store=store, model=None)
+
+    def test_cache_miss_string_model_raises(self):
+        artifacts = types.SimpleNamespace(
+            indices=np.array([[0, 1]]),
+            codebook_matrix=np.array([[1.0], [2.0]]),
+            model_architecture='wav2vec2',
+        )
+        self._patch('to_vector', make_fake_to_vector(artifacts))
+        store = FakeStore()
+
+        with self.assertRaisesRegex(TypeError, 'loaded model object'):
+            self.module.get_codebook_indices(
+                make_segment(), store=store, model='dummy')
 
 
 if __name__ == '__main__':

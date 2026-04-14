@@ -6,6 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
+FAKE_MODEL = object()
+
 
 MODULE_PATH = (Path(__file__).resolve().parents[1]
                / 'phraser' / 'segment_embeddings.py')
@@ -111,7 +113,7 @@ class TestGetEmbeddingsBatchReturnType(ModuleFixture):
         seg = make_segment(key='seg-a')
         store = self._make_store_with_segment('seg-a', layer=4)
         result = self.module.get_embeddings_batch(
-            [seg], layers=4, store=store, model='dummy')
+            [seg], layers=4, store=store, model=FAKE_MODEL)
         self.assertIsInstance(result, TokenEmbeddings)
 
     def test_batch_token_count_matches_segment_count(self):
@@ -122,7 +124,7 @@ class TestGetEmbeddingsBatchReturnType(ModuleFixture):
             store._stored[(key, 500, 'wav2vec2', 'hidden_state', 4)] = \
                 np.zeros((3, 8))
         result = self.module.get_embeddings_batch(
-            [seg_a, seg_b], layers=4, store=store, model='dummy')
+            [seg_a, seg_b], layers=4, store=store, model=FAKE_MODEL)
         self.assertEqual(result.token_count, 2)
 
     def test_batch_token_order_matches_segment_order(self):
@@ -134,7 +136,7 @@ class TestGetEmbeddingsBatchReturnType(ModuleFixture):
             store._stored[(key, 500, 'wav2vec2', 'hidden_state', 4)] = \
                 np.zeros((3, 8))
         result = self.module.get_embeddings_batch(
-            [seg_a, seg_b], layers=4, store=store, model='dummy')
+            [seg_a, seg_b], layers=4, store=store, model=FAKE_MODEL)
         expected_first = EchoframeMetadata(
             phraser_key='seg-first', collar=500, model_name='wav2vec2',
             output_type='hidden_state', layer=4).echoframe_key
@@ -153,7 +155,7 @@ class TestGetEmbeddingsBatchReturnType(ModuleFixture):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter('always')
             result = self.module.get_embeddings_batch(
-                [seg_a, seg_b], layers=4, store=store, model='dummy')
+                [seg_a, seg_b], layers=4, store=store, model=FAKE_MODEL)
         self.assertTrue(
             any('duplicate' in str(w.message).lower() for w in caught),
             msg='Expected a duplicate warning but none was raised')
@@ -167,7 +169,7 @@ class TestGetEmbeddingsBatchReturnType(ModuleFixture):
             store._stored[(key, 500, 'wav2vec2', 'hidden_state', 4)] = \
                 np.zeros((3, 8))
         result = self.module.get_embeddings_batch(
-            [seg_a, seg_b], layers=4, store=store, model='dummy')
+            [seg_a, seg_b], layers=4, store=store, model=FAKE_MODEL)
         self.assertEqual(len(result.echoframe_keys), result.token_count)
 
 

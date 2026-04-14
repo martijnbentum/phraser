@@ -21,10 +21,6 @@ from echoframe.metadata import EchoframeMetadata
 import to_vector.model_registry as to_vector_model_registry
 
 
-_MODEL_NAME_ALIASES = {'hubert': 'facebook/hubert-base-ls960',
-    'wav2vec2': 'facebook/wav2vec2-base',
-    'wavlm': 'microsoft/wavlm-base-plus'}
-
 _VALID_AGGREGATIONS = (None, 'mean', 'centroid')
 
 
@@ -37,10 +33,10 @@ def get_embeddings(segment, layers, collar=500, model_name='wav2vec2',
                        .end, and .audio
     layers:            int or list of int hidden-state layer indices
     collar:            extra context in milliseconds added on both sides
-    model_name:        stable storage label; resolved via built-in aliases
+    model_name:        stable storage label used in echoframe
     frame_aggregation: None (all frames), 'mean', or 'centroid'
-    model:             optional pre-loaded model or path
-                       (overrides alias)
+    model:             optional loaded model object; only required when
+                       embeddings must be computed
     store:             optional echoframe.Store instance
     store_root:        store root used when store is not provided
     gpu:               pass True to request CUDA in to-vector
@@ -48,8 +44,8 @@ def get_embeddings(segment, layers, collar=500, model_name='wav2vec2',
     '''
     layers_list, single_layer = _normalise_layers(layers)
     _validate_aggregation(frame_aggregation)
-    store = _resolve_store(store, store_root)
-    compute_model = _resolve_compute_model(model_name, model)
+    if store is None:
+        store = echoframe.Store(store_root)
     phraser_key = segment_to_echoframe_key(segment)
 
     audio_filename, col_start_ms, col_end_ms, orig_start_ms, orig_end_ms = (
@@ -58,6 +54,7 @@ def get_embeddings(segment, layers, collar=500, model_name='wav2vec2',
     missing = [layer for layer in layers_list if not store.exists(
         phraser_key, collar, model_name, 'hidden_state', layer)]
     if missing:
+        compute_model = _require_loaded_model(model, 'embeddings')
         _compute_and_store(audio_filename, col_start_ms, col_end_ms,
             orig_start_ms, orig_end_ms, collar, missing, model_name,
             compute_model, phraser_key, store, gpu, tags)
@@ -84,10 +81,10 @@ def get_embeddings_batch(segments, layers, collar=500,
                         and .audio
     layers:             int or list of int hidden-state layer indices
     collar:             extra context in milliseconds added on both sides
-    model_name:         stable storage label; resolved via built-in aliases
+    model_name:         stable storage label used in echoframe
     frame_aggregation:  None (all frames), 'mean', or 'centroid'
-    model:              optional pre-loaded model or path
-                        (overrides alias)
+    model:              optional loaded model object; only required when
+                        embeddings must be computed
     store:              optional echoframe.Store instance
     store_root:         store root used when store is not provided
     gpu:                pass True to request CUDA in to-vector
@@ -95,8 +92,8 @@ def get_embeddings_batch(segments, layers, collar=500,
     '''
     layers_list, single_layer = _normalise_layers(layers)
     _validate_aggregation(frame_aggregation)
-    store = _resolve_store(store, store_root)
-    compute_model = _resolve_compute_model(model_name, model)
+    if store is None:
+        store = echoframe.Store(store_root)
 
     token_list = []
     for segment in segments:
@@ -107,6 +104,7 @@ def get_embeddings_batch(segments, layers, collar=500,
         missing = [layer for layer in layers_list if not store.exists(
             phraser_key, collar, model_name, 'hidden_state', layer)]
         if missing:
+            compute_model = _require_loaded_model(model, 'embeddings')
             _compute_and_store(audio_filename, col_start_ms, col_end_ms,
                 orig_start_ms, orig_end_ms, collar, missing, model_name,
                 compute_model, phraser_key, store, gpu, tags)
@@ -132,38 +130,39 @@ def get_codebook_indices(segment, collar=500, model_name='wav2vec2',
 
     segment:      phraser segment-like object with .key, .start, .end, .audio
     collar:       extra context in milliseconds added on both sides
-    model_name:   stable storage label; resolved via built-in aliases or
-                  explicit SpidR path labels
-    model:        optional pre-loaded model or path
-                  (overrides alias)
+    model_name:   stable storage label used in echoframe
+    model:        optional loaded model object; only required when
+                  codebook indices must be computed
     store:        optional echoframe.Store instance
     store_root:   store root used when store is not provided
     gpu:          pass True to request CUDA in to-vector
     tags:         optional list of echoframe tags
     '''
-    store = _resolve_store(store, store_root)
-    compute_model = _resolve_compute_model(model_name, model)
-    model_architecture = _resolve_codebook_model_architecture(compute_model)
+    if store is None:
+        store = echoframe.Store(store_root)
     phraser_key = segment_to_echoframe_key(segment)
     audio_filename, col_start_ms, col_end_ms, orig_start_ms, orig_end_ms = (
         _segment_window(segment, collar))
 
     if _codebook_artifacts_missing(store, phraser_key, collar, model_name):
+        compute_model = _require_loaded_model(model, 'codebook indices')
+        model_architecture = _resolve_codebook_model_architecture(
+            compute_model)
         _compute_and_store_codebook_indices(audio_filename, col_start_ms,
             col_end_ms, orig_start_ms, orig_end_ms, collar, model_name,
             compute_model, model_architecture, phraser_key, store, gpu, tags)
+        return _load_codebook_indices_object(store, phraser_key, collar,
+            model_name, model_architecture)
     return _load_codebook_indices_object(store, phraser_key, collar,
-        model_name, model_architecture)
+        model_name, model_architecture=None)
 
 
 def get_codebook_indices_batch(segments, collar=500,
     model_name='wav2vec2', model=None, store=None,
     store_root='echoframe', gpu=False, tags=None):
     '''Return codebook indices for a list of segments.'''
-    store = _resolve_store(store, store_root)
-    compute_model = _resolve_compute_model(model_name, model)
-    model_architecture = _resolve_codebook_model_architecture(compute_model)
-
+    if store is None:
+        store = echoframe.Store(store_root)
     token_list = []
     for segment in segments:
         phraser_key = segment_to_echoframe_key(segment)
@@ -171,12 +170,18 @@ def get_codebook_indices_batch(segments, collar=500,
             _segment_window(segment, collar))
         if _codebook_artifacts_missing(store, phraser_key, collar,
             model_name):
+            compute_model = _require_loaded_model(model, 'codebook indices')
+            model_architecture = _resolve_codebook_model_architecture(
+                compute_model)
             _compute_and_store_codebook_indices(audio_filename, col_start_ms,
                 col_end_ms, orig_start_ms, orig_end_ms, collar, model_name,
                 compute_model, model_architecture, phraser_key, store, gpu,
                 tags)
         token_list.append(_load_codebook_indices_object(store, phraser_key,
-            collar, model_name, model_architecture))
+            collar, model_name,
+            model_architecture=_resolve_codebook_model_architecture(model)
+            if model is not None and not isinstance(model, (str, Path))
+            else None))
     return TokenCodebooks(tokens=token_list)
 
 
@@ -354,6 +359,9 @@ def _load_codebook_indices_object(store, phraser_key, collar, model_name,
     if indices_metadata is None or matrix_metadata is None:
         raise ValueError('stored codebook artifacts were not found')
     data = store.load(phraser_key, collar, model_name, 'codebook_indices', 0)
+    if model_architecture is None:
+        model_architecture = _infer_architecture_from_stored_matrix(
+            store.load(phraser_key, collar, model_name, 'codebook_matrix', 0))
     return Codebook(echoframe_keys=(indices_metadata.entry_id,),
         data=data, model_architecture=model_architecture,
         codebook_matrix_echoframe_keys=(matrix_metadata.entry_id,)
@@ -361,20 +369,19 @@ def _load_codebook_indices_object(store, phraser_key, collar, model_name,
 
 
 def _resolve_codebook_model_architecture(model):
-    if model is None:
-        return 'wav2vec2'
-    if isinstance(model, (str, Path)):
-        if to_vector_model_registry.filename_model_type(str(model)) == 'spidr':
-            return 'spidr'
-        if str(model) == 'spidr':
-            return 'spidr'
-        return 'wav2vec2'
     model_type = to_vector_model_registry.model_to_type(model)
     if model_type == 'spidr':
         return 'spidr'
     if model_type in {'wav2vec2', 'wav2vec2-pretraining'}:
         return 'wav2vec2'
     raise ValueError('codebook indices currently support wav2vec2 and spidr')
+
+
+def _infer_architecture_from_stored_matrix(codebook_matrix):
+    matrix = np.asarray(codebook_matrix)
+    if matrix.ndim == 3:
+        return 'spidr'
+    return 'wav2vec2'
 
 
 def _make_echoframe_key(phraser_key, collar, model_name, layer):
@@ -387,13 +394,13 @@ def _ms_to_s(value):
     return int(value) / 1000.0
 
 
-def _resolve_store(store, store_root):
-    if store is not None:
-        return store
-    return echoframe.Store(store_root)
-
-
-def _resolve_compute_model(model_name, model):
-    if model is not None:
-        return model
-    return _MODEL_NAME_ALIASES.get(model_name, model_name)
+def _require_loaded_model(model, output_label):
+    if model is None:
+        raise ValueError(
+            f'model is required as a loaded model object when '
+            f'{output_label} must be computed')
+    if isinstance(model, (str, Path)):
+        raise TypeError(
+            'model must be a loaded model object; string and path values '
+            'are not accepted for compute paths')
+    return model

@@ -5,6 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
+FAKE_MODEL = object()
+
 
 MODULE_PATH = (Path(__file__).resolve().parents[1]
                / 'phraser' / 'segment_embeddings.py')
@@ -117,7 +119,7 @@ class TestFrameAggregationParam(ModuleFixture):
         store = FakeStore()
         result = self.module.get_embeddings(
             make_segment(), layers=4, frame_aggregation=None,
-            store=store, model='dummy')
+            store=store, model=FAKE_MODEL)
         self.assertIsNotNone(result)
 
     def test_get_embeddings_old_aggregation_param_raises(self):
@@ -125,41 +127,41 @@ class TestFrameAggregationParam(ModuleFixture):
         with self.assertRaises(TypeError):
             self.module.get_embeddings(
                 make_segment(), layers=4, aggregation=None,
-                store=store, model='dummy')
+                store=store, model=FAKE_MODEL)
 
     def test_frame_aggregation_none_dims_contain_frames(self):
         store = FakeStore()
         result = self.module.get_embeddings(
             make_segment(), layers=4, frame_aggregation=None,
-            store=store, model='dummy')
+            store=store, model=FAKE_MODEL)
         self.assertIn('frames', result.dims)
 
     def test_frame_aggregation_mean_dims_no_frames(self):
         store = FakeStore()
         result = self.module.get_embeddings(
             make_segment(), layers=4, frame_aggregation='mean',
-            store=store, model='dummy')
+            store=store, model=FAKE_MODEL)
         self.assertNotIn('frames', result.dims)
 
     def test_frame_aggregation_mean_stored_on_embeddings(self):
         store = FakeStore()
         result = self.module.get_embeddings(
             make_segment(), layers=4, frame_aggregation='mean',
-            store=store, model='dummy')
+            store=store, model=FAKE_MODEL)
         self.assertEqual(result.frame_aggregation, 'mean')
 
     def test_frame_aggregation_centroid_dims_no_frames(self):
         store = FakeStore()
         result = self.module.get_embeddings(
             make_segment(), layers=4, frame_aggregation='centroid',
-            store=store, model='dummy')
+            store=store, model=FAKE_MODEL)
         self.assertNotIn('frames', result.dims)
 
     def test_frame_aggregation_centroid_stored_on_embeddings(self):
         store = FakeStore()
         result = self.module.get_embeddings(
             make_segment(), layers=4, frame_aggregation='centroid',
-            store=store, model='dummy')
+            store=store, model=FAKE_MODEL)
         self.assertEqual(result.frame_aggregation, 'centroid')
 
     def test_invalid_frame_aggregation_raises(self):
@@ -167,7 +169,7 @@ class TestFrameAggregationParam(ModuleFixture):
         with self.assertRaises(ValueError):
             self.module.get_embeddings(
                 make_segment(), layers=4, frame_aggregation='unknown',
-                store=store, model='dummy')
+                store=store, model=FAKE_MODEL)
 
 
 if __name__ == '__main__':
