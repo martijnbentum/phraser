@@ -31,6 +31,7 @@ site/
 .eggs/
 *.egg
 *.egg-info/
+uv.lock
 pip-wheel-metadata/
 
 .ipynb_checkpoints/
