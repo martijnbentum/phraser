@@ -1,5 +1,4 @@
 import importlib.util
-import sys
 import types
 import unittest
 from pathlib import Path
@@ -104,7 +103,7 @@ class FakeStore:
 
 def make_fake_to_vector(n_layers=13, n_frames=50, hidden_dim=768,
                         captured=None):
-    '''Returns a fake to_vector module whose filename_to_vector records calls.'''
+    '''Return a fake to_vector module that records filename_to_vector calls.'''
     def filename_to_vector(filename, start, end, model, gpu,
                            numpify_output):
         if captured is not None:
@@ -122,22 +121,19 @@ def make_fake_to_vector(n_layers=13, n_frames=50, hidden_dim=768,
 
 
 class ModuleFixture(unittest.TestCase):
-    '''Base class: loads module fresh and manages sys.modules patches.'''
+    '''Base class: loads module fresh and manages module patches.'''
 
     def setUp(self):
         self.module = load_module()
         self._old = {}
 
     def _patch(self, name, fake):
-        self._old[name] = sys.modules.get(name)
-        sys.modules[name] = fake
+        self._old[name] = getattr(self.module, name)
+        setattr(self.module, name, fake)
 
     def tearDown(self):
         for name, old in self._old.items():
-            if old is None:
-                sys.modules.pop(name, None)
-            else:
-                sys.modules[name] = old
+            setattr(self.module, name, old)
 
 
 # ── F2: frame selection before storage ───────────────────────────────────────

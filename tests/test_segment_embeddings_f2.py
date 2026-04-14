@@ -1,5 +1,4 @@
 import importlib.util
-import sys
 import types
 import unittest
 from pathlib import Path
@@ -97,15 +96,12 @@ class ModuleFixture(unittest.TestCase):
         self._old = {}
 
     def _patch(self, name, fake):
-        self._old[name] = sys.modules.get(name)
-        sys.modules[name] = fake
+        self._old[name] = getattr(self.module, name)
+        setattr(self.module, name, fake)
 
     def tearDown(self):
         for name, old in self._old.items():
-            if old is None:
-                sys.modules.pop(name, None)
-            else:
-                sys.modules[name] = old
+            setattr(self.module, name, old)
 
 
 # ── F2 tests ─────────────────────────────────────────────────────────────────

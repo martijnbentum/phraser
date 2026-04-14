@@ -6,7 +6,6 @@ feature extraction without changing the current public API.
 '''
 
 from pathlib import Path
-import sys
 
 import echoframe
 import frame
@@ -190,10 +189,7 @@ def _compute_and_store(audio_filename, col_start_ms, col_end_ms,
     fully within [orig_start_ms, orig_end_ms] (100% overlap) are stored.
     All layers are extracted from the single forward pass.
     '''
-    to_vector_module = _resolve_runtime_module('to_vector', to_vector)
-    frame_module = _resolve_runtime_module('frame', frame)
-
-    outputs = to_vector_module.filename_to_vector(audio_filename,
+    outputs = to_vector.filename_to_vector(audio_filename,
         start=_ms_to_s(col_start_ms), end=_ms_to_s(col_end_ms),
         model=compute_model, gpu=gpu, numpify_output=True)
 
@@ -201,7 +197,7 @@ def _compute_and_store(audio_filename, col_start_ms, col_end_ms,
     if hidden_states is None:
         raise ValueError('to-vector outputs did not contain hidden_states')
 
-    frames = frame_module.make_frames_from_outputs(outputs,
+    frames = frame.make_frames_from_outputs(outputs,
         start_time=_ms_to_s(col_start_ms))
 
     selected = frames.select_frames(_ms_to_s(orig_start_ms),
@@ -276,7 +272,3 @@ def _resolve_compute_model(model_name, model):
     if model is not None:
         return model
     return _MODEL_NAME_ALIASES.get(model_name, model_name)
-
-
-def _resolve_runtime_module(module_name, default_module):
-    return sys.modules.get(module_name, default_module)

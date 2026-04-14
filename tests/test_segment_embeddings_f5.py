@@ -36,40 +36,27 @@ class ModuleFixture(unittest.TestCase):
 
 class TestImportHelpers(ModuleFixture):
 
-    def test_import_embeddings_returns_embeddings_class(self):
+    def test_module_exports_embeddings_class(self):
         from echoframe import Embeddings
-        result = self.module._import_embeddings()
+        result = self.module.Embeddings
         self.assertIs(result, Embeddings)
 
-    def test_import_token_embeddings_returns_token_embeddings_class(self):
+    def test_module_exports_token_embeddings_class(self):
         from echoframe import TokenEmbeddings
-        result = self.module._import_token_embeddings()
+        result = self.module.TokenEmbeddings
         self.assertIs(result, TokenEmbeddings)
 
-    def test_import_metadata_returns_echoframe_metadata_class(self):
+    def test_module_exports_metadata_class(self):
         from echoframe.metadata import EchoframeMetadata
-        result = self.module._import_metadata()
+        result = self.module.EchoframeMetadata
         self.assertIs(result, EchoframeMetadata)
 
-    def test_missing_echoframe_raises_import_error_with_message(self):
-        # Setting a module to None in sys.modules causes ImportError when
-        # Python tries to do 'from <module> import <name>'.
+    def test_missing_echoframe_raises_import_error_on_module_load(self):
         self._patch('echoframe', None)
         self._patch('echoframe.metadata', None)
 
-        # Reload so the helpers perform fresh imports against patched sys.modules
-        module = load_module()
-
         with self.assertRaises(ImportError) as ctx:
-            module._import_embeddings()
-        self.assertIn('echoframe', str(ctx.exception).lower())
-
-        with self.assertRaises(ImportError) as ctx:
-            module._import_token_embeddings()
-        self.assertIn('echoframe', str(ctx.exception).lower())
-
-        with self.assertRaises(ImportError) as ctx:
-            module._import_metadata()
+            load_module()
         self.assertIn('echoframe', str(ctx.exception).lower())
 
 
