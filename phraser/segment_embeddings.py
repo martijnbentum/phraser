@@ -11,8 +11,14 @@ import echoframe
 import frame
 import numpy as np
 import to_vector
-from echoframe import Embeddings, TokenEmbeddings
+from echoframe import (
+    Codebook,
+    Embeddings,
+    TokenCodebooks,
+    TokenEmbeddings,
+)
 from echoframe.metadata import EchoframeMetadata
+import to_vector.model_registry as to_vector_model_registry
 
 
 _MODEL_NAME_ALIASES = {'hubert': 'facebook/hubert-base-ls960',
@@ -118,6 +124,60 @@ def get_embeddings_batch(segments, layers, collar=500,
             echoframe_keys=echoframe_keys))
 
     return TokenEmbeddings(tokens=token_list)
+
+
+def get_codebook_indices(segment, collar=500, model_name='wav2vec2',
+    model=None, store=None, store_root='echoframe', gpu=False, tags=None):
+    '''Return codebook indices for a single segment.
+
+    segment:      phraser segment-like object with .key, .start, .end, .audio
+    collar:       extra context in milliseconds added on both sides
+    model_name:   stable storage label; resolved via built-in aliases or
+                  explicit SpidR path labels
+    model:        optional pre-loaded model or path
+                  (overrides alias)
+    store:        optional echoframe.Store instance
+    store_root:   store root used when store is not provided
+    gpu:          pass True to request CUDA in to-vector
+    tags:         optional list of echoframe tags
+    '''
+    store = _resolve_store(store, store_root)
+    compute_model = _resolve_compute_model(model_name, model)
+    model_architecture = _resolve_codebook_model_architecture(compute_model)
+    phraser_key = segment_to_echoframe_key(segment)
+    audio_filename, col_start_ms, col_end_ms, orig_start_ms, orig_end_ms = (
+        _segment_window(segment, collar))
+
+    if _codebook_artifacts_missing(store, phraser_key, collar, model_name):
+        _compute_and_store_codebook_indices(audio_filename, col_start_ms,
+            col_end_ms, orig_start_ms, orig_end_ms, collar, model_name,
+            compute_model, model_architecture, phraser_key, store, gpu, tags)
+    return _load_codebook_indices_object(store, phraser_key, collar,
+        model_name, model_architecture)
+
+
+def get_codebook_indices_batch(segments, collar=500,
+    model_name='wav2vec2', model=None, store=None,
+    store_root='echoframe', gpu=False, tags=None):
+    '''Return codebook indices for a list of segments.'''
+    store = _resolve_store(store, store_root)
+    compute_model = _resolve_compute_model(model_name, model)
+    model_architecture = _resolve_codebook_model_architecture(compute_model)
+
+    token_list = []
+    for segment in segments:
+        phraser_key = segment_to_echoframe_key(segment)
+        audio_filename, col_start_ms, col_end_ms, orig_start_ms, orig_end_ms = (
+            _segment_window(segment, collar))
+        if _codebook_artifacts_missing(store, phraser_key, collar,
+            model_name):
+            _compute_and_store_codebook_indices(audio_filename, col_start_ms,
+                col_end_ms, orig_start_ms, orig_end_ms, collar, model_name,
+                compute_model, model_architecture, phraser_key, store, gpu,
+                tags)
+        token_list.append(_load_codebook_indices_object(store, phraser_key,
+            collar, model_name, model_architecture))
+    return TokenCodebooks(tokens=token_list)
 
 
 def segment_to_echoframe_key(segment):
@@ -250,6 +310,71 @@ def _apply_aggregation(data, frame_aggregation):
     if frame_aggregation == 'centroid':
         return data[len(data) // 2]
     raise ValueError(f'unknown aggregation: {frame_aggregation!r}')
+
+
+def _codebook_artifacts_missing(store, phraser_key, collar, model_name):
+    return (not store.exists(phraser_key, collar, model_name,
+        'codebook_indices', 0) or not store.exists(phraser_key, collar,
+        model_name, 'codebook_matrix', 0))
+
+
+def _compute_and_store_codebook_indices(audio_filename, col_start_ms,
+    col_end_ms, orig_start_ms, orig_end_ms, collar, model_name,
+    compute_model, model_architecture, phraser_key, store, gpu, tags):
+    outputs = to_vector.filename_to_vector(audio_filename,
+        start=_ms_to_s(col_start_ms), end=_ms_to_s(col_end_ms),
+        model=compute_model, gpu=gpu, numpify_output=True)
+    frames = frame.make_frames_from_outputs(outputs,
+        start_time=_ms_to_s(col_start_ms))
+    selected = frames.select_frames(_ms_to_s(orig_start_ms),
+        _ms_to_s(orig_end_ms), percentage_overlap=100)
+    if not selected:
+        message = 'no frames fully within '
+        message += f'[{orig_start_ms}, {orig_end_ms}] ms'
+        raise ValueError(message)
+    frame_indices = [item.index for item in selected]
+    artifacts = to_vector.filename_to_codebook_artifacts(
+        audio_filename, start=_ms_to_s(col_start_ms), end=_ms_to_s(col_end_ms),
+        model=compute_model, gpu=gpu)
+    if artifacts.model_architecture != model_architecture:
+        raise ValueError('codebook helper returned unexpected architecture')
+    selected_indices = np.asarray(artifacts.indices)[frame_indices]
+    store.put(phraser_key, collar, model_name, 'codebook_indices', 0,
+        selected_indices, tags=tags)
+    store.put(phraser_key, collar, model_name, 'codebook_matrix', 0,
+        np.asarray(artifacts.codebook_matrix), tags=tags)
+
+
+def _load_codebook_indices_object(store, phraser_key, collar, model_name,
+    model_architecture):
+    indices_metadata = store.find_one(phraser_key, collar, model_name,
+        'codebook_indices', 0)
+    matrix_metadata = store.find_one(phraser_key, collar, model_name,
+        'codebook_matrix', 0)
+    if indices_metadata is None or matrix_metadata is None:
+        raise ValueError('stored codebook artifacts were not found')
+    data = store.load(phraser_key, collar, model_name, 'codebook_indices', 0)
+    return Codebook(echoframe_keys=(indices_metadata.entry_id,),
+        data=data, model_architecture=model_architecture,
+        codebook_matrix_echoframe_keys=(matrix_metadata.entry_id,)
+        ).bind_store(store)
+
+
+def _resolve_codebook_model_architecture(model):
+    if model is None:
+        return 'wav2vec2'
+    if isinstance(model, (str, Path)):
+        if to_vector_model_registry.filename_model_type(str(model)) == 'spidr':
+            return 'spidr'
+        if str(model) == 'spidr':
+            return 'spidr'
+        return 'wav2vec2'
+    model_type = to_vector_model_registry.model_to_type(model)
+    if model_type == 'spidr':
+        return 'spidr'
+    if model_type in {'wav2vec2', 'wav2vec2-pretraining'}:
+        return 'wav2vec2'
+    raise ValueError('codebook indices currently support wav2vec2 and spidr')
 
 
 def _make_echoframe_key(phraser_key, collar, model_name, layer):
