@@ -35,8 +35,7 @@ def get_embeddings(
     store=None,
     store_root='echoframe',
     gpu=False,
-    tags=None,
-):
+    tags=None):
     '''Return embeddings for a single segment.
 
     segment: phraser segment-like object with .key, .start, .end,
@@ -136,8 +135,7 @@ def get_embeddings_batch(
     store=None,
     store_root='echoframe',
     gpu=False,
-    tags=None,
-):
+    tags=None):
     '''Return embeddings for a list of segments.
 
     Checks echoframe for each (segment, layer) pair first; only missing
@@ -312,8 +310,7 @@ def _compute_and_store(
     phraser_key,
     store,
     gpu,
-    tags,
-):
+    tags):
     '''Run one forward pass and store selected frames for each layer.
 
     The model runs on the full collared window. Only frames that are
@@ -376,8 +373,7 @@ def _build_embeddings(
     layers_list,
     single_layer,
     frame_aggregation,
-    echoframe_keys,
-):
+    echoframe_keys):
     '''Assemble an Embeddings instance from per-layer arrays.'''
     processed = [_apply_aggregation(arr, frame_aggregation) for arr in arrays]
 
