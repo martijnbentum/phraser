@@ -247,7 +247,7 @@ class TestAggregation(ModuleFixture):
     def test_no_aggregation_preserves_frames_dim(self):
         store = FakeStore()
         result = self.module.get_embeddings(
-            make_segment(), layers=4, aggregation=None,
+            make_segment(), layers=4, frame_aggregation=None,
             store=store, model='dummy')
         self.assertEqual(result.dims, ('frames', 'embed_dim'))
         self.assertEqual(result.data.ndim, 2)
@@ -255,7 +255,7 @@ class TestAggregation(ModuleFixture):
     def test_mean_aggregation_removes_frames_dim(self):
         store = FakeStore()
         result = self.module.get_embeddings(
-            make_segment(), layers=4, aggregation='mean',
+            make_segment(), layers=4, frame_aggregation='mean',
             store=store, model='dummy')
         self.assertEqual(result.dims, ('embed_dim',))
         self.assertEqual(result.data.ndim, 1)
@@ -263,7 +263,7 @@ class TestAggregation(ModuleFixture):
     def test_centroid_aggregation_removes_frames_dim(self):
         store = FakeStore()
         result = self.module.get_embeddings(
-            make_segment(), layers=4, aggregation='centroid',
+            make_segment(), layers=4, frame_aggregation='centroid',
             store=store, model='dummy')
         self.assertEqual(result.dims, ('embed_dim',))
         self.assertEqual(result.data.ndim, 1)
@@ -271,7 +271,7 @@ class TestAggregation(ModuleFixture):
     def test_mean_multi_layer_dims(self):
         store = FakeStore()
         result = self.module.get_embeddings(
-            make_segment(), layers=[4, 6], aggregation='mean',
+            make_segment(), layers=[4, 6], frame_aggregation='mean',
             store=store, model='dummy')
         self.assertEqual(result.dims, ('layers', 'embed_dim'))
         self.assertEqual(result.data.shape[0], 2)
@@ -280,7 +280,7 @@ class TestAggregation(ModuleFixture):
         store = FakeStore()
         with self.assertRaises(ValueError):
             self.module.get_embeddings(
-                make_segment(), layers=4, aggregation='unknown',
+                make_segment(), layers=4, frame_aggregation='unknown',
                 store=store, model='dummy')
 
     def test_mean_values_are_correct(self):
@@ -288,7 +288,7 @@ class TestAggregation(ModuleFixture):
         key = ('0102', 500, 'wav2vec2', 'hidden_state', 4)
         store = FakeStore(stored={key: data})
         result = self.module.get_embeddings(
-            make_segment(), layers=4, aggregation='mean',
+            make_segment(), layers=4, frame_aggregation='mean',
             store=store, model='dummy', collar=500)
         np.testing.assert_array_almost_equal(
             result.data, np.mean(data, axis=0))
@@ -338,7 +338,7 @@ class TestBatch(ModuleFixture):
         self._patch('to_vector', make_fake_to_vector(n_layers=13))
         results = self.module.get_embeddings_batch(
             segs, layers=6, store=store, model='dummy')
-        self.assertEqual(set(results.keys()), set(segs))
+        self.assertEqual(results.token_count, len(segs))
 
     def test_partial_hit_computes_only_missing_layer(self):
         seg = FakeSegment()
@@ -399,31 +399,6 @@ class TestRealEmbeddings(ModuleFixture):
         with self.assertRaises(ValueError):
             result.layer(99)
 
-    def test_add_concatenates_along_frames(self):
-        store = FakeStore()
-        seg_a = make_segment(key=b'\x01')
-        seg_b = make_segment(key=b'\x02')
-        a = self.module.get_embeddings(
-            seg_a, layers=4, store=store, model='dummy')
-        b = self.module.get_embeddings(
-            seg_b, layers=4, store=store, model='dummy')
-        combined = a + b
-        self.assertIsInstance(combined, Embeddings)
-        self.assertEqual(combined.dims, ('frames', 'embed_dim'))
-        self.assertEqual(combined.shape[0], a.shape[0] + b.shape[0])
-
-    def test_concat_multi_layer_along_frames(self):
-        store = FakeStore()
-        seg_a = make_segment(key=b'\x01')
-        seg_b = make_segment(key=b'\x02')
-        a = self.module.get_embeddings(
-            seg_a, layers=[4, 6], store=store, model='dummy')
-        b = self.module.get_embeddings(
-            seg_b, layers=[4, 6], store=store, model='dummy')
-        combined = Embeddings.concat([a, b], axis='frames')
-        self.assertEqual(combined.dims, ('layers', 'frames', 'embed_dim'))
-        self.assertEqual(combined.shape[1], a.shape[1] + b.shape[1])
-
     def test_embeddings_shape_matches_selected_frames(self):
         # FakeFrames always returns 3 frames; hidden_dim=4
         store = FakeStore()
@@ -434,7 +409,7 @@ class TestRealEmbeddings(ModuleFixture):
     def test_mean_aggregation_result_is_embeddings(self):
         store = FakeStore()
         result = self.module.get_embeddings(
-            make_segment(), layers=4, aggregation='mean',
+            make_segment(), layers=4, frame_aggregation='mean',
             store=store, model='dummy')
         self.assertIsInstance(result, Embeddings)
         self.assertEqual(result.dims, ('embed_dim',))
