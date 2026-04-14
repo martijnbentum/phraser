@@ -25,8 +25,6 @@ _MODEL_NAME_ALIASES = {
 _VALID_AGGREGATIONS = (None, 'mean', 'centroid')
 
 
-# ── Public API ───────────────────────────────────────────────────────────────
-
 def get_embeddings(
     segment,
     layers,
@@ -41,17 +39,17 @@ def get_embeddings(
 ):
     '''Return embeddings for a single segment.
 
-    segment:           phraser segment-like object with .key, .start,
-                       .end, and .audio
-    layers:            int or list of int — hidden-state layer indices
-    collar:            extra context in milliseconds added on both sides
-    model_name:        stable storage label; resolved via built-in aliases
+    segment: phraser segment-like object with .key, .start, .end,
+        and .audio
+    layers: int or list of int hidden-state layer indices
+    collar: extra context in milliseconds added on both sides
+    model_name: stable storage label; resolved via built-in aliases
     frame_aggregation: None (all frames), 'mean', or 'centroid'
-    model:             optional pre-loaded model or path (overrides alias)
-    store:             optional echoframe.Store instance
-    store_root:        store root used when store is not provided
-    gpu:               pass True to request CUDA in to-vector
-    tags:              optional list of echoframe tags
+    model: optional pre-loaded model or path (overrides alias)
+    store: optional echoframe.Store instance
+    store_root: store root used when store is not provided
+    gpu: pass True to request CUDA in to-vector
+    tags: optional list of echoframe tags
     '''
     layers_list, single_layer = _normalise_layers(layers)
     _validate_aggregation(frame_aggregation)
@@ -242,8 +240,6 @@ def segment_to_echoframe_key(segment):
     raise TypeError('segment.key must be bytes or str')
 
 
-# ── Layers and validation ────────────────────────────────────────────────────
-
 def _normalise_layers(layers):
     '''Return (list_of_layer_ints, single_int_flag).'''
     if isinstance(layers, int):
@@ -262,13 +258,16 @@ def _validate_aggregation(frame_aggregation):
         )
 
 
-# ── Segment window ───────────────────────────────────────────────────────────
-
 def _segment_window(segment, collar):
     '''Resolve audio filename and time boundaries for a segment.
 
-    Returns (audio_filename, col_start_ms, col_end_ms,
-             orig_start_ms, orig_end_ms).
+    Returns (
+        audio_filename,
+        col_start_ms,
+        col_end_ms,
+        orig_start_ms,
+        orig_end_ms,
+    ).
     col_* are the collared boundaries used as model input.
     orig_* are the original segment boundaries used for frame selection.
     '''
@@ -299,8 +298,6 @@ def _segment_window(segment, collar):
         orig_end_ms,
     )
 
-
-# ── Compute and store ────────────────────────────────────────────────────────
 
 def _compute_and_store(
     audio_filename,
@@ -337,8 +334,7 @@ def _compute_and_store(
 
     hidden_states = getattr(outputs, 'hidden_states', None)
     if hidden_states is None:
-        raise ValueError(
-            'to-vector outputs did not contain hidden_states')
+        raise ValueError('to-vector outputs did not contain hidden_states')
 
     frames = frame_module.make_frames_from_outputs(
         outputs,
@@ -374,8 +370,6 @@ def _compute_and_store(
             tags=tags,
         )
 
-
-# ── Build return value ───────────────────────────────────────────────────────
 
 def _build_embeddings(
     arrays,
@@ -423,8 +417,6 @@ def _apply_aggregation(data, frame_aggregation):
         return data[len(data) // 2]
     raise ValueError(f'unknown aggregation: {frame_aggregation!r}')
 
-
-# ── Utilities ────────────────────────────────────────────────────────────────
 
 def _make_echoframe_key(phraser_key, collar, model_name, layer):
     md = EchoframeMetadata(
