@@ -1,6 +1,10 @@
 '''Thin forwarding wrappers for echoframe segment feature retrieval.'''
 
-from echoframe import segment_features
+try: from echoframe import segment_features
+except ImportError:
+    raise ImportError('echoframe is required for segment embedding retrieval. '
+        'uv pip install git+https://git@github.com/martijnbentum/echoframe.git')
+    
 
 
 def get_embeddings(segment, layers, collar=500, model_name='wav2vec2',
