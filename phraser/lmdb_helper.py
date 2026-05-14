@@ -109,7 +109,7 @@ class DB:
                     If True, overwrites existing value.
         '''
         #fail early if any key exists and overwrite is False
-        if self.check_any_key_exist(keys, db_name) and not overwrite:
+        if not overwrite and self.check_any_key_exist(keys, db_name):
             m = f'At least one key already exists in LMDB store at {db_name}. '
             m += f'Use overwrite=True to overwrite.'
             m += f'written nothing.'
