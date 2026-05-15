@@ -103,6 +103,7 @@ PHONE_TYPES = {
     "ɪ": "vowel",
     "ɲ": "consonant",
     "ʃ": "consonant",
+    "ʒ": "consonant",
     "ʏ": "vowel",
     "": "other",
 }
