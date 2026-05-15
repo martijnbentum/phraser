@@ -1,4 +1,5 @@
 from . import utils
+from progressbar import progressbar
 
 NO_OVERLAP = utils.overlap_dict[False]
 OVERLAP = utils.overlap_dict[True]
@@ -6,7 +7,7 @@ OVERLAP = utils.overlap_dict[True]
 
 def check_overlap_audios(audios):
     """Set overlap_code on all items for each audio in a list."""
-    for audio in audios:
+    for audio in progressbar(audios):
         check_overlap_audio(audio)
 
 
