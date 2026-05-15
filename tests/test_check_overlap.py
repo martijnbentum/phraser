@@ -93,7 +93,7 @@ class TestCheckOverlap(unittest.TestCase):
 
     def test_empty_audio_no_save(self):
         audio = make_audio(phrases=[], n_speakers=1)
-        m.check_overlap(audio)
+        m.check_overlap_audio(audio)
         self.assertEqual(FakePhrase._cache.save_many_calls, [])
 
     def test_single_speaker_all_no_overlap(self):
@@ -101,7 +101,7 @@ class TestCheckOverlap(unittest.TestCase):
         syllable = make_syllable(0, 100, phones=[phone])
         word = make_word(0, 100, syllables=[syllable])
         phrase = FakePhrase(0, 100, speaker_id='spk1', words=[word])
-        m.check_overlap(make_audio([phrase], n_speakers=1))
+        m.check_overlap_audio(make_audio([phrase], n_speakers=1))
         self.assertEqual(phrase.overlap_code, NO_OVERLAP)
         self.assertEqual(word.overlap_code, NO_OVERLAP)
         self.assertEqual(syllable.overlap_code, NO_OVERLAP)
@@ -110,13 +110,13 @@ class TestCheckOverlap(unittest.TestCase):
     def test_multi_speaker_no_phrase_overlap_all_no_overlap(self):
         phrase_a = FakePhrase(0, 100, speaker_id='spk1')
         phrase_b = FakePhrase(200, 300, speaker_id='spk2')
-        m.check_overlap(make_audio([phrase_a, phrase_b], n_speakers=2))
+        m.check_overlap_audio(make_audio([phrase_a, phrase_b], n_speakers=2))
         self.assertEqual(phrase_a.overlap_code, NO_OVERLAP)
         self.assertEqual(phrase_b.overlap_code, NO_OVERLAP)
 
     def test_save_many_called_exactly_once(self):
         phrase = FakePhrase(0, 100, speaker_id='spk1')
-        m.check_overlap(make_audio([phrase], n_speakers=1))
+        m.check_overlap_audio(make_audio([phrase], n_speakers=1))
         self.assertEqual(len(FakePhrase._cache.save_many_calls), 1)
 
     def test_save_many_receives_all_items(self):
@@ -124,7 +124,7 @@ class TestCheckOverlap(unittest.TestCase):
         syllable = make_syllable(0, 100, phones=[phone])
         word = make_word(0, 100, syllables=[syllable])
         phrase = FakePhrase(0, 100, speaker_id='spk1', words=[word])
-        m.check_overlap(make_audio([phrase], n_speakers=1))
+        m.check_overlap_audio(make_audio([phrase], n_speakers=1))
         saved = FakePhrase._cache.save_many_calls[0][0]
         self.assertIn(phrase, saved)
         self.assertIn(word, saved)

@@ -4,7 +4,13 @@ NO_OVERLAP = utils.overlap_dict[False]
 OVERLAP = utils.overlap_dict[True]
 
 
-def check_overlap(audio):
+def check_overlap_audios(audios):
+    """Set overlap_code on all items for each audio in a list."""
+    for audio in audios:
+        check_overlap_audio(audio)
+
+
+def check_overlap_audio(audio):
     """Set overlap_code on all phrases/words/syllables/phones for the given audio.
 
     Collects all items upfront, sets overlap_code in memory, then writes
