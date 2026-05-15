@@ -106,4 +106,5 @@ PHONE_TYPES = {
     "ʒ": "consonant",
     "ʏ": "vowel",
     "": "other",
+    "(..)": "other",
 }
