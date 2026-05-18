@@ -1,0 +1,363 @@
+import gc
+import random
+import time
+
+from . import key_helper
+from . import lmdb_helper
+from . import locations
+from . import struct_value
+
+
+R = "\033[91m"
+G = "\033[92m"
+B = "\033[94m"
+GR = "\033[90m"
+RE = "\033[0m"
+
+
+class UnboundStoreError(RuntimeError):
+    pass
+
+
+class Store:
+    """
+    LMDB-backed object store with identity-map caching,
+    class registration, and store-bound object loading.
+    """
+
+    def __init__(self, path=locations.cgn_lmdb, verbose=False):
+        self.DB = lmdb_helper.DB(path=path)
+        self.path = path
+        self._cache = {}
+        self.CLASS_MAP = {}
+        self.save_counter = {}
+        self.load_counter = {}
+        self.save_key_counter = {}
+        self.verbose = verbose
+        self._classes_loaded = {}
+        self.fraction = None
+        self.db_saving_allowed = True
+
+    def __repr__(self):
+        m = f'<{R}Store{RE} {B}path{RE} {self.path} | '
+        m += f'{B}cached objects{RE} {len(self._cache)} | '
+        m += f'{B}db objects{RE} {len(self.all_keys())}>'
+        return m
+
+    def __str__(self):
+        d = self.rank_to_keys_dict()
+        m = self.__repr__() + '\n'
+        m += f'{G}cached objects per class:{RE}\n'
+        for class_name, count in self.load_counter.items():
+            m += f'  {B}{class_name:<9}{RE} {count}\n'
+        m += f'{G}db objects per class:{RE}\n'
+        for class_name, keys in d.items():
+            m += f'  {B}{class_name:<9}{RE} {len(keys)}\n'
+        m += f'{G}saved objects per class (this session):{RE}\n'
+        for class_name, count in self.save_counter.items():
+            m += f'  {B}{class_name:<9}{RE} {count}\n'
+        m += f'{G}fully cached classes:{RE} '
+        x = [name for name, loaded in self._classes_loaded.items() if loaded]
+        m += f'  {", ".join(x)}\n'
+        if self.fraction is not None:
+            m += f'using part of db {B}sampling fraction{RE} {self.fraction}\n'
+        else:
+            m += f'{GR}using full database (no sampling fraction){RE}\n'
+        return m
+
+    def register(self, cls):
+        self.CLASS_MAP[cls.__name__] = cls
+        if cls.__name__ not in self.save_counter:
+            self.save_counter[cls.__name__] = 0
+        if cls.__name__ not in self.load_counter:
+            self.load_counter[cls.__name__] = 0
+
+    def save(self, obj, overwrite=False, fail_gracefully=False):
+        if not self.db_saving_allowed:
+            return
+        key = key_helper.instance_to_key(obj)
+        value = struct_value.pack_instance(obj)
+        fail_message = f"Object with key {key} already exists. Skipping save."
+        try:
+            self.DB.write(key=key, value=value, overwrite=overwrite)
+        except KeyError as e:
+            if fail_gracefully:
+                print(fail_message)
+            else:
+                raise e
+        self._cache[key] = obj
+        self.save_counter[obj.object_type] += 1
+        if key not in self.save_key_counter:
+            self.save_key_counter[key] = 1
+        else:
+            self.save_key_counter[key] += 1
+        self._handle_label_links([obj])
+
+    def save_many(self, objs, overwrite=False, fail_gracefully=False):
+        if not self.db_saving_allowed:
+            return
+        start = time.time()
+        itk = key_helper.instance_to_key
+        pi = struct_value.pack_instance
+        keys = [itk(obj) for obj in objs]
+        values = [pi(obj) for obj in objs]
+        try:
+            self.DB.write_many(keys, values, overwrite=overwrite)
+        except KeyError as e:
+            print('failed', time.time() - start)
+            if fail_gracefully:
+                print(e)
+                return
+            else:
+                raise e
+        cache_update = {key: obj for key, obj in zip(keys, objs)}
+        self._cache.update(cache_update)
+        for key in cache_update.keys():
+            if key not in self.save_key_counter:
+                self.save_key_counter[key] = 1
+            else:
+                self.save_key_counter[key] += 1
+        self._handle_label_links(objs)
+
+    def _handle_label_links(self, objs):
+        label_index_keys = items_to_label_index_keys(objs)
+        if label_index_keys:
+            self.DB.write_many_label_index_links(label_index_keys)
+
+    def load(self, key):
+        try:
+            return self._cache[key]
+        except KeyError:
+            pass
+        value = self.DB.load(key=key)
+        obj = value_key_to_instance(self, value, key)
+        self._cache[key] = obj
+        self.load_counter[obj.object_type] += 1
+        return obj
+
+    def load_many(self, keys):
+        if len(keys) == 0:
+            return []
+        if len(keys) == 1:
+            return [self.load(keys[0])]
+        start = time.time()
+        objs = [[] for _ in range(len(keys))]
+        key_to_index = {key: i for i, key in enumerate(keys)}
+        if self.verbose:
+            print(time.time() - start, 'objs initialized')
+
+        found_in_cache = []
+        not_found_in_cache = []
+        for index, key in enumerate(keys):
+            if key in self._cache:
+                found_in_cache.append(key)
+                objs[index] = self._cache[key]
+            else:
+                not_found_in_cache.append(key)
+        if self.verbose:
+            print(time.time() - start, 'cache checked')
+
+        if len(not_found_in_cache) == 0:
+            return objs
+        if len(not_found_in_cache) == 1:
+            index = key_to_index[not_found_in_cache[0]]
+            objs[index] = self.load(not_found_in_cache[0])
+            return objs
+
+        if len(not_found_in_cache) > 100_000:
+            gc.disable()
+        try:
+            results = self.DB.load_many(keys=not_found_in_cache)
+            if self.verbose:
+                print(time.time() - start, 'lmdb data loaded')
+            for key, data in zip(not_found_in_cache, results):
+                index = key_to_index[key]
+                value = self.DB.load(key=key)
+                obj = value_key_to_instance(self, value, key)
+                self._cache[key] = obj
+                objs[index] = obj
+                self.load_counter[obj.object_type] += 1
+        finally:
+            if len(not_found_in_cache) > 100_000:
+                gc.enable()
+        if self.verbose:
+            print('gc enabled', time.time() - start)
+        return objs
+
+    def label_to_instances(self, label, object_type):
+        keys = list(self.DB.label_to_segment_keys(label, object_type))
+        return self.load_many(keys)
+
+    def delete(self, key):
+        self.DB.delete(key=key)
+        if key in self._cache:
+            del self._cache[key]
+
+    def delete_many(self, keys):
+        self.DB.delete_many(keys=keys)
+        for key in keys:
+            if key in self._cache:
+                del self._cache[key]
+
+    def update(self, old_key, obj):
+        self.delete(old_key)
+        self.save(obj, overwrite=True)
+        if old_key in self._cache:
+            del self._cache[old_key]
+
+    def rank_to_keys_dict(self, update=False):
+        if not update:
+            if hasattr(self, '_rank_to_keys_dict'):
+                return self._rank_to_keys_dict
+        d = self.DB.rank_to_keys_dict()
+        self._rank_to_keys_dict = d
+        return self._rank_to_keys_dict
+
+    def all_keys(self):
+        return self.DB.all_keys()
+
+    def all_links(self):
+        return self.DB.all_links()
+
+    def preload_class_instances(self, cls=None, class_name=None):
+        if cls is None and class_name is None:
+            raise ValueError('Either cls or class_name must be provided.')
+        if cls is None:
+            cls = self.CLASS_MAP[class_name]
+        class_name = cls.__name__
+        rank = key_helper.CLASS_RANK_MAP[class_name]
+        start = time.time()
+        if class_name in self._classes_loaded:
+            return
+        keys = self.rank_to_keys_dict().get(rank, [])
+        self.load_many(keys)
+        duration = time.time() - start
+        if self.verbose:
+            print(f'Loaded all objects of class: {cls.__name__}, in {duration:.2f} seconds.')
+        self._classes_loaded[class_name] = True
+
+    def _preload_sampled_fraction(self, fraction):
+        self.fraction = fraction
+        if self.fraction is None:
+            return
+        phrases = sample_instances_from_class(self, 'Phrase', self.fraction)
+        d = load_hierarchy_from_phrases(self, phrases['instances'])
+        d['Phrase'] = phrases
+        for key in self.CLASS_MAP.keys():
+            if key in d:
+                self._classes_loaded[key] = True
+
+    def attach(self, obj, force=False):
+        existing = getattr(obj, '_store', None)
+        if existing is not None and existing is not self and not force:
+            raise ValueError(
+                "Object already bound to a different store; pass force=True to rebind"
+            )
+        obj._store = self
+
+    def queryset(self, cls):
+        return self._class_querysets[cls]
+
+    def reconnect(self):
+        self.DB._open_env()
+
+    def reload(self):
+        self.DB._open_env()
+        self._cache.clear()
+        self._classes_loaded.clear()
+        if hasattr(self, '_rank_to_keys_dict'):
+            del self._rank_to_keys_dict
+
+    def disable_writes(self):
+        self.db_saving_allowed = False
+
+    def enable_writes(self):
+        self.db_saving_allowed = True
+
+    def is_db_saving_allowed(self):
+        return self.db_saving_allowed
+
+
+def value_key_to_instance(store, value, key):
+    info = key_helper.key_to_info(key)
+    object_type = info['object_type']
+    cls = store.CLASS_MAP[object_type]
+    obj = cls.__new__(cls)
+    data = struct_value.unpack_instance(object_type, value)
+    data.update(info)
+    data['_key'] = key
+    obj.__dict__.update(data)
+    obj._store = store
+    return obj
+
+
+def collect_attribute_keys(objs, attr_name):
+    keys = []
+    append = keys.append
+    for obj in objs:
+        key = getattr(obj, attr_name, None)
+        if key is not None:
+            append(key)
+    return keys
+
+
+def load_phrase_descendants(store, phrases):
+    results = {}
+    word_keys, syllable_keys, phone_keys = [], [], []
+    for phrase in phrases:
+        k = store.DB.instance_to_child_keys(phrase, 'Word')
+        if k:
+            word_keys.extend(k)
+        k = store.DB.instance_to_child_keys(phrase, 'Syllable')
+        if k:
+            syllable_keys.extend(k)
+        k = store.DB.instance_to_child_keys(phrase, 'Phone')
+        if k:
+            phone_keys.extend(k)
+    items = [('Word', word_keys), ('Syllable', syllable_keys), ('Phone', phone_keys)]
+    for child_class_name, child_keys in items:
+        instances = store.load_many(child_keys)
+        results[child_class_name] = {'keys': child_keys, 'instances': instances}
+    return results
+
+
+def load_linked_audio_and_speakers(store, objs):
+    audio_keys = collect_attribute_keys(objs, 'audio_key')
+    speaker_keys = collect_attribute_keys(objs, 'speaker_key')
+    audio_keys = list(set(audio_keys))
+    speaker_keys = list(set(speaker_keys))
+    audios = store.load_many(audio_keys)
+    speakers = store.load_many(speaker_keys)
+    return {
+        'Audio': {'keys': audio_keys, 'instances': audios},
+        'Speaker': {'keys': speaker_keys, 'instances': speakers},
+    }
+
+
+def load_hierarchy_from_phrases(store, phrases):
+    instances_dict = load_phrase_descendants(store, phrases)
+    audio_speaker_dict = load_linked_audio_and_speakers(store, phrases)
+    instances_dict.update(audio_speaker_dict)
+    return instances_dict
+
+
+def sample_instances_from_class(store, class_name='Phrase', fraction=0.1):
+    rank = key_helper.CLASS_RANK_MAP[class_name]
+    try:
+        keys = store.rank_to_keys_dict()[rank]
+    except KeyError:
+        keys = []
+    n_sample = max(1, int(len(keys) * fraction))
+    sampled_keys = random.sample(keys, n_sample)
+    sampled_objects = store.load_many(sampled_keys)
+    return {'keys': sampled_keys, 'instances': sampled_objects}
+
+
+def items_to_label_index_keys(items):
+    label_index_keys = []
+    for item in items:
+        try:
+            label_index_keys.append(item.label_index_key)
+        except AttributeError:
+            pass
+    return label_index_keys

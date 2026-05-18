@@ -68,10 +68,10 @@ def fix_references(segment, old_key, new_key):
                 child._save_status = "save"
 
 
-def write_changes_to_db(segments, cache):
+def write_changes_to_db(segments, store):
     for segment in segments:
         if segment._save_status == 'save':
             segment.save(overwrite=True)
         elif segment._save_status == 'update':
-            cache.update(segment._old_key, segment)
+            store.update(segment._old_key, segment)
         segment._save_status = None

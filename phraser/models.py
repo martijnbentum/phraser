@@ -3,13 +3,14 @@ import uuid
 
 from ssh_audio_play import play
 
-from . import cache as cache_module
+from . import store as store_module
 from . import key_helper
 from . import model_helper
 from . import query
 from . import struct_value
 from . import utils
 from .model_helper import EMPTY_ID
+from .store import UnboundStoreError
 
 R= "\033[91m"
 G= "\033[92m"
@@ -17,71 +18,70 @@ B= "\033[94m"
 GR= "\033[90m"
 RE= "\033[0m"
 
-object_type_to_ljust_label = {'Phrase': 40, 'Word': 15, 
+object_type_to_ljust_label = {'Phrase': 40, 'Word': 15,
     'Syllable': 12, 'Phone': 3}
 
+
+def _require_store(obj):
+    if not hasattr(obj, '_store') or obj._store is None:
+        raise UnboundStoreError(
+            f"{type(obj).__name__} is not bound to a store; "
+            f"use store.create_{type(obj).__name__.lower()}() or pass store= to the constructor"
+        )
 
 
 class Segment:
     IDENTITY_FIELDS= {'label', 'start', 'end', 'audio_key'}
     DB_FIELDS = {'identifier', 'label', 'start', 'end', 'parent_id',
         'parent_start', 'audio_id', 'speaker_id'}
-    METADATA_FIELDS = {}# subclasses override
-    '''
-    Base time-aligned segment with a unique ID and parent/child links.
-    '''
-    allowed_child_type = []# subclasses override
+    METADATA_FIELDS = {}
+    allowed_child_type = []
     overlap_code = 9
 
     @classmethod
-    def get_default_cache(cls):
-        if hasattr(cls, 'objects'): 
-            return cls.objects.cache
-
-    @classmethod
-    def get_or_create(cls, **kwargs):
+    def get_or_create(cls, store, **kwargs):
         lookup = {k: kwargs[k] for k in cls.IDENTITY_FIELDS if k in kwargs}
         if not lookup:
             raise ValueError('No identity fields provided')
         missing = [k for k in cls.IDENTITY_FIELDS if k not in kwargs]
         if missing:
             raise ValueError(f'Missing identity fields: {missing}')
-        instance = cls.objects.get_or_none(**lookup)
+        instance = store.queryset(cls).get_or_none(**lookup)
         if instance is None:
-            instance = cls(**kwargs)
+            instance = cls(store=store, **kwargs)
             return instance, True
         return instance, False
 
     @property
     def exists_in_db(self):
+        _require_store(self)
         cls = self.__class__
         lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
-        existing = cls.objects.get_or_none(**lookup)
-        return existing is not None
+        return self._store.queryset(cls).get_or_none(**lookup) is not None
 
-    def __init__(self, label = None, start = None, end = None, 
-        parent_id=EMPTY_ID, audio_id= EMPTY_ID, 
-        speaker_id= EMPTY_ID, parent_start = 0,  
-        save = True, overwrite = False, **kwargs):
-        
+    def __init__(self, label=None, start=None, end=None,
+        parent_id=EMPTY_ID, audio_id=EMPTY_ID,
+        speaker_id=EMPTY_ID, parent_start=0,
+        save=True, overwrite=False, store=None, **kwargs):
+
+        self._store = store
         self.object_type = self.__class__.__name__
         self.label = label
         self.start = int(start)
         self.end = int(end)
         self.identifier = key_helper.make_identifier()
 
-        self.parent_id= parent_id
+        self.parent_id = parent_id
         self.parent_start = parent_start
         self.audio_id = audio_id
         self.speaker_id = speaker_id
         self.overwrite = overwrite
-            
 
-        # Extra metadata
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-        if save: self.save(overwrite=overwrite)
+        if save:
+            self.save(overwrite=overwrite)
         self._save_status = None
 
     def __repr__(self):
@@ -117,7 +117,7 @@ class Segment:
         values = tuple(getattr(self, field) for field in self.IDENTITY_FIELDS)
         return hash(values)
 
-    def play(self, collar = None, wait = False):
+    def play(self, collar=None, wait=False):
         if collar is not None:
             if collar < 0: raise ValueError("collar must be non-negative.")
             if collar > self.audio.duration / 2:
@@ -129,30 +129,29 @@ class Segment:
         else: start = self.start; end = self.end
         start = utils.miliseconds_to_seconds(start)
         end = utils.miliseconds_to_seconds(end)
-        play.play_audio(self.audio.filename, start=start, end=end, wait = wait)
+        play.play_audio(self.audio.filename, start=start, end=end, wait=wait)
         m = f'Playing {self.object_type} "{self.label}" '
         m += f'from {start:.2f}s to {end:.2f}s\n'
         m += f'(audio filename={self.audio.filename})'
         print(m)
-    
-    def play_children(self, collar = None):
+
+    def play_children(self, collar=None):
         for child in self.children:
-            child.play(collar=collar, wait = True)
+            child.play(collar=collar, wait=True)
             time.sleep(0.3)
 
     @property
     def child_class(self):
         if self.allowed_child_type:
             return self.allowed_child_type
+
     @property
     def child_class_name(self):
         if self.child_class is None: return None
         return self.child_class.__name__
-         
 
     @property
     def key(self):
-        """Return the LMDB key for this segment."""
         if hasattr(self, '_key'): return self._key
         return key_helper.instance_to_key(self)
 
@@ -164,7 +163,6 @@ class Segment:
     def label_index_key(self):
         return key_helper.instance_to_label_index_key(self)
 
-
     @property
     def parent_class_name(self):
         if self.object_type == 'Phrase': return None
@@ -174,50 +172,44 @@ class Segment:
     def parent_key(self):
         if self.object_type == "Phrase": return None
         if self.parent_id == EMPTY_ID: return None
-        audio_id = self.audio_id
-        return key_helper.audio_id_segment_id_class_to_key(self.audio_id, 
+        return key_helper.audio_id_segment_id_class_to_key(self.audio_id,
             self.parent_id, self.parent_class_name, self.parent_start)
-            
-            
+
     @property
     def phrase_key(self):
         if self.object_type == "Phrase": return self.key
         if self.object_type == 'Word': return self.parent_key
         if self.phrase_id == EMPTY_ID: return None
-        return key_helper.audio_id_segment_id_class_to_key(self.audio_id, 
+        return key_helper.audio_id_segment_id_class_to_key(self.audio_id,
             self.phrase_id, 'Phrase', self.phrase_start)
-            
 
     @property
     def parent(self):
-        """Return the parent segment."""
         if self.object_type == "Phrase": return None
         if hasattr(self, '_parent'): return self._parent
-        if self.parent_id == EMPTY_ID: return 
-        self._parent = cache.load(self.parent_key)
+        if self.parent_id == EMPTY_ID: return
+        _require_store(self)
+        self._parent = self._store.load(self.parent_key)
         return self._parent
 
     @property
     def child_keys(self):
-        if self.allowed_child_type is None: 
+        if self.allowed_child_type is None:
             self._child_keys = None
-        return list(cache.DB.instance_to_child_keys(self))
+        _require_store(self)
+        return list(self._store.DB.instance_to_child_keys(self))
 
     @property
     def children(self):
-        """Return the list of child segments."""
         if self.allowed_child_type is None: return []
         if hasattr(self, '_children'): return self._children
+        _require_store(self)
         self._children, self._related = [], []
-        if self.child_keys: 
-            children = cache.load_many(self.child_keys) 
-                
-        else:
-            children = []
+        children = self._store.load_many(self.child_keys) if self.child_keys else []
         sid = self.speaker_id
         for child in children:
             if child.speaker_id == sid: self._children.append(child)
-            else: self._related.append(child) 
+            else: self._related.append(child)
         return self._children
 
     @property
@@ -226,7 +218,6 @@ class Segment:
         if self.allowed_child_type is None: return []
         _ = self.children
         return self._related
-        
 
     @property
     def audio_key(self):
@@ -235,13 +226,13 @@ class Segment:
 
     @property
     def audio(self):
-        """Return the associated Audio object."""
         if self.audio_key is None: return None
-        if hasattr(self, '_audio') and self._audio is not None: 
+        if hasattr(self, '_audio') and self._audio is not None:
             return self._audio
-        self._audio = cache.load(self.audio_key) 
+        _require_store(self)
+        self._audio = self._store.load(self.audio_key)
         return self._audio
-        
+
     @property
     def speaker_key(self):
         if self.speaker_id == EMPTY_ID: return None
@@ -249,10 +240,10 @@ class Segment:
 
     @property
     def speaker(self):
-        """Return the associated Speaker object."""
-        if self.speaker_key is None: return None 
+        if self.speaker_key is None: return None
         if hasattr(self, '_speaker'): return self._speaker
-        self._speaker = cache.load(self.speaker_key)
+        _require_store(self)
+        self._speaker = self._store.load(self.speaker_key)
         return self._speaker
 
     @property
@@ -261,9 +252,9 @@ class Segment:
         if self.object_type == 'Word': return self.parent
         if hasattr(self, '_phrase'): return self._phrase
         if self.phrase_key is None: return None
-        self._phrase = cache.load(self.phrase_key)
+        _require_store(self)
+        self._phrase = self._store.load(self.phrase_key)
         return self._phrase
-
 
     @property
     def duration(self):
@@ -279,42 +270,41 @@ class Segment:
 
     def duration_seconds(self):
         return utils.miliseconds_to_seconds(self.duration)
-            
-    def save(self, overwrite = None, fail_gracefully = False):
-        cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
 
-    def add_audio(self, audio = None, audio_id = None, update_database = True, 
-        propagate = True):
-        ''' Link this segment (and by default its family) to an Audio object.
-        '''
+    def save(self, overwrite=None, fail_gracefully=False):
+        _require_store(self)
+        self._store.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
+
+    def add_audio(self, audio=None, audio_id=None, update_database=True,
+        propagate=True):
         if audio_id is None and audio is None:
             print("Warning: No audio or audio_id provided to add_audio.")
-        if audio is not None: 
+        if audio is not None:
             audio_id = audio.identifier
             self._audio = audio
         all_segments = [self]
-        # family starts with self
         if propagate: all_segments += list(self.iter_family())[1:]
 
         for segment in all_segments:
             segment._apply_audio_id(audio_id)
 
-        if update_database:  
-            model_helper.write_changes_to_db(all_segments, cache)
+        if update_database:
+            _require_store(self)
+            model_helper.write_changes_to_db(all_segments, self._store)
 
     def _apply_audio_id(self, audio_id):
         old_key = self.key
-        self.audio_id= audio_id
+        self.audio_id = audio_id
         new_key = self.key
-        if old_key != new_key: 
+        if old_key != new_key:
             self._save_status = 'update'
         self._old_key = old_key
 
-    def add_speaker(self, speaker = None, speaker_id = None,
-        update_database = True, propagate = True):
+    def add_speaker(self, speaker=None, speaker_id=None,
+        update_database=True, propagate=True):
         if speaker_id is None and speaker is None:
             print("Warning: No speaker or speaker_id provided to add_speaker.")
-        if speaker is not None: 
+        if speaker is not None:
             speaker_id = speaker.identifier
             self._speaker = speaker
         all_segments = [self]
@@ -322,16 +312,15 @@ class Segment:
             all_segments += list(self.iter_family())[1:]
         for segment in all_segments:
             segment._apply_speaker_id(speaker_id, update_database)
-        if update_database:  
-            model_helper.write_changes_to_db(all_segments, cache)
+        if update_database:
+            _require_store(self)
+            model_helper.write_changes_to_db(all_segments, self._store)
 
     def _apply_speaker_id(self, speaker_id, update_database):
         if self.speaker_id == speaker_id: return
         self.speaker_id = speaker_id
-            
 
-    # ------------------ hierarchy helpers ------------------
-    def add_parent(self, parent, update_database = True):
+    def add_parent(self, parent, update_database=True):
         if self.object_type == 'Phrase':
             raise TypeError("Phrase cannot have a parent segment.")
         if self.__class__ != parent.allowed_child_type:
@@ -345,25 +334,21 @@ class Segment:
             'add_audio', update_database=update_database)
         model_helper.ensure_consistent_link(self, parent, 'speaker_id',
             'add_speaker', update_database=update_database)
-        if update_database: self.save(overwrite = True)
+        if update_database: self.save(overwrite=True)
 
-    def add_child(self, child, update_database = True):
+    def add_child(self, child, update_database=True):
         child.add_parent(self, update_database=update_database)
 
-    # ------------------ serialization ------------------
-
     def delete(self):
-        cache.delete(self.key)
+        _require_store(self)
+        self._store.delete(self.key)
 
     def has_extra(self):
         if hasattr(self, 'extra') and self.extra:
             return True
         return False
 
-
     def to_struct_value(self):
-        '''Serialize to a struct value (for LMDB storage).
-        '''
         return struct_value.pack_segment(self)
 
     @property
@@ -381,16 +366,15 @@ class Segment:
             if overlap is None: return self.overlap_items != []
             return overlap
         return self.overlap_items != []
-        
 
     @property
     def overlap_items(self):
         if hasattr(self, '_overlap_items'): return self._overlap_items
-        if self.object_type == 'Phrase': 
+        if self.object_type == 'Phrase':
             if not self.audio: return []
             items = self.audio.phrases
         else:
-            items =  self.parent.related
+            items = self.parent.related
         if items is None: return []
         overlapping = []
         for item in items:
@@ -404,14 +388,13 @@ class Segment:
 
     @property
     def siblings(self):
-        if self.object_type == 'Phrase': 
+        if self.object_type == 'Phrase':
             return self.audio.phrases
         if self.parent is None: return
         return self.parent.children
 
     @property
     def next_sibling(self):
-        """Return the next segment at the same level (same parent)."""
         siblings = self.siblings
         if siblings is None: return None
         try:
@@ -424,34 +407,23 @@ class Segment:
 
     @property
     def prev_sibling(self):
-        """Return the previous segment at the same level."""
         siblings = self.siblings
         if siblings is None: return None
         try:
             idx = siblings.index(self)
         except ValueError:
             return None
-
         if idx - 1 >= 0:
             return siblings[idx - 1]
         return None
 
     def iter_descendants_of_type(self, cls):
-        """
-        Yield all descendant segments of the given class type.
-        Works regardless of depth (e.g. Word → Syllable → Phone).
-        """
         for child in self.children:
             if isinstance(child, cls):
                 yield child
-            # recurse
             yield from child.iter_descendants_of_type(cls)
 
     def iter_ancestors_of_type(self, cls):
-        """
-        Yield all ancestor segments of the given class type.
-        Walks upward (child → parent → parent → ...).
-        """
         if cls == Phrase and self.phrase is not None: yield self.phrase
         parent = self.parent
         while parent is not None:
@@ -461,14 +433,14 @@ class Segment:
 
     @property
     def descendant_keys(self):
-        return cache.DB.instance_to_descendant_keys(self)
+        _require_store(self)
+        return self._store.DB.instance_to_descendant_keys(self)
 
     @property
     def descendants(self):
-        #if hasattr(self, '_descendants'): return self._descendants
+        _require_store(self)
         keys = self.descendant_keys
-        return cache.load_many(keys)
-
+        return self._store.load_many(keys)
 
     def iter_descendants(self):
         for child in self.children:
@@ -489,30 +461,25 @@ class Segment:
 
 
 class Phrase(Segment):
-    METADATA_FIELDS = {'filename','language', 'speech_style', 
-        'channel_index', 'overlap','version'}
+    METADATA_FIELDS = {'filename', 'language', 'speech_style',
+        'channel_index', 'overlap', 'version'}
     filename = ''
 
     @property
     def all_objects(self):
         objs = [self]
-        if self.words: objs += self.words 
+        if self.words: objs += self.words
         if self.syllables: objs += self.syllables
-        if self.phones: objs += self.phones 
+        if self.phones: objs += self.phones
         return objs
 
     @property
     def all_keys(self):
-        keys = [x.key for x in self.all_objects]
-        return keys
+        return [x.key for x in self.all_objects]
 
-    def delete(self, do_reconnect_db = True):
-        """ Delete this phrase and all its descendants from the database.
-        """
-        all_keys = self.all_keys
-        cache.delete_many(all_keys)
-        if do_reconnect_db:
-            reconnect_db()
+    def delete(self):
+        _require_store(self)
+        self._store.delete_many(self.all_keys)
 
     @property
     def phrase_start(self):
@@ -524,45 +491,40 @@ class Phrase(Segment):
 
     @property
     def words(self):
-        """Return all words in this phrase."""
         return self.children
 
     @property
     def syllables(self):
-        """Return all syllables in this phrase."""
         return list(self.iter_descendants_of_type(Syllable))
 
     @property
     def phones(self):
-        """Return all phones in this phrase."""
         return list(self.iter_descendants_of_type(Phone))
 
     @property
     def words_query(self):
-        """Return a query object for all words for this speaker."""
-        return query.queryset_from_items(self.words, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.words, self._store)
+
     @property
     def syllables_query(self):
-        """Return a query object for all syllables for this speaker."""
-        return query.queryset_from_items(self.syllables, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.syllables, self._store)
+
     @property
     def phones_query(self):
-        """Return a query object for all phones for this speaker."""
-        return query.queryset_from_items(self.phones, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.phones, self._store)
 
-
-    def apply_phrase_id_and_start(self, update_database = True):
+    def apply_phrase_id_and_start(self, update_database=True):
         for syllable in self.syllables:
             syllable._add_phrase(self, update_database=update_database)
         for phone in self.phones:
             phone._add_phrase(self, update_database=update_database)
 
-        
-
 
 class Word(Segment):
-    METADATA_FIELDS = {'pos', 'overlap', 'sos',
-        'eos','freq', 'ipa'}
+    METADATA_FIELDS = {'pos', 'overlap', 'sos', 'eos', 'freq', 'ipa'}
     ipa = ''
 
     @property
@@ -575,31 +537,30 @@ class Word(Segment):
 
     @property
     def syllables(self):
-        """Return all syllables in this word."""
         return list(self.iter_descendants_of_type(Syllable))
 
     @property
     def phones(self):
-        """Return all phones in this word."""
         return list(self.iter_descendants_of_type(Phone))
 
     @property
     def syllables_query(self):
-        """Return a query object for all syllables for this speaker."""
-        return query.queryset_from_items(self.syllables, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.syllables, self._store)
+
     @property
     def phones_query(self):
-        """Return a query object for all phones for this speaker."""
-        return query.queryset_from_items(self.phones, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.phones, self._store)
 
-def _add_phrase(self, phrase, update_database = True):
+def _add_phrase(self, phrase, update_database=True):
     if self.phrase_id == phrase.identifier: return
     if self.phrase_id != EMPTY_ID and self.phrase_id != phrase.identifier:
         m = f"This {self.object_type} is already linked to a different phrase."
         raise ValueError(m)
     self.phrase_id = phrase.identifier
     self.phrase_start = phrase.start
-    if update_database: self.save(overwrite = True)
+    if update_database: self.save(overwrite=True)
 
 
 class Syllable(Segment):
@@ -610,7 +571,6 @@ class Syllable(Segment):
 
     _add_phrase = _add_phrase
 
-
     @property
     def stress(self):
         if self.stress_code == 0: return 'unstressed'
@@ -620,18 +580,16 @@ class Syllable(Segment):
 
     @property
     def phones(self):
-        """Return all phones in this syllable."""
         return self.children
 
     @property
     def word(self):
-        """Return the parent word of this syllable."""
         return self.parent
 
     @property
     def phones_query(self):
-        """Return a query object for all phones for this speaker."""
-        return query.queryset_from_items(self.phones, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.phones, self._store)
 
 class Phone(Segment):
     METADATA_FIELDS = {'features'}
@@ -651,12 +609,10 @@ class Phone(Segment):
 
     @property
     def syllable(self):
-        """Return the parent syllable of this phone."""
         return self.parent
 
     @property
     def word(self):
-        """Return the parent word of this phone."""
         if self.parent is None:
             return None
         if self.parent.object_type == "Word":
@@ -676,19 +632,15 @@ class Audio:
     n_channels = 0
     sample_rate = 0
 
-    @classmethod
-    def get_default_cache(cls):
-        if hasattr(cls, 'objects'): 
-            return cls.objects.cache
-
     @property
     def exists_in_db(self):
+        _require_store(self)
         cls = self.__class__
         lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
-        existing = cls.objects.get_or_none(**lookup)
-        return existing is not None
-        
-    def __init__(self, filename = None,  save=True, overwrite=False, **kwargs):
+        return self._store.queryset(cls).get_or_none(**lookup) is not None
+
+    def __init__(self, filename=None, save=True, overwrite=False, store=None, **kwargs):
+        self._store = store
         self.object_type = self.__class__.__name__
         self.filename = filename
         self.identifier = key_helper.make_identifier()
@@ -700,8 +652,8 @@ class Audio:
             self.save(overwrite=overwrite)
 
     def __repr__(self):
-        if len(self.filename) > 20: 
-            filename = self.filename.split('/')[-1] 
+        if len(self.filename) > 20:
+            filename = self.filename.split('/')[-1]
             if len(filename) > 20: filename = '...' + filename[-17:]
         else: filename = self.filename
         m = f'{R}Audio{RE} {B}filename {RE}{filename} '
@@ -730,31 +682,29 @@ class Audio:
             return True
         return False
 
-
     @property
     def speakers(self):
         if hasattr(self, '_speakers'): return self._speakers
         speakers = [x.speaker for x in self.phrases]
-        unique_speakers = set(speakers)
-        self._speakers = list(unique_speakers)
+        self._speakers = list(set(speakers))
         return self._speakers
 
     @property
     def phrase_keys(self):
         if hasattr(self, '_phrase_keys'): return self._phrase_keys
-        self._phrase_keys = list(cache.DB.audio_id_to_child_keys(
-            self.identifier))
+        _require_store(self)
+        self._phrase_keys = list(self._store.DB.audio_id_to_child_keys(self.identifier))
         return self._phrase_keys
 
     @property
     def phrases(self):
         if hasattr(self, '_phrases'): return self._phrases
-        self._phrases= cache.load_many(self.phrase_keys)
+        _require_store(self)
+        self._phrases = self._store.load_many(self.phrase_keys)
         return self._phrases
 
     @property
     def words(self):
-        """Return all words across all phrases for this speaker."""
         words = []
         for phrase in self.phrases:
             for word in phrase.words:
@@ -763,7 +713,6 @@ class Audio:
 
     @property
     def syllables(self):
-        """Return all syllables across all phrases for this speaker."""
         syllables = []
         for phrase in self.phrases:
             for syllable in phrase.syllables:
@@ -772,45 +721,45 @@ class Audio:
 
     @property
     def phones(self):
-        """Return all phones across all phrases for this speaker."""
         phones = []
         for phrase in self.phrases:
             for phone in phrase.phones:
                 phones.append(phone)
         return phones
-    
+
     @property
     def speakers_query(self):
-        """Return a query object for all phrases for this speaker."""
-        return query.queryset_from_items(self.phrases, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.phrases, self._store)
+
     @property
     def words_query(self):
-        """Return a query object for all words for this speaker."""
-        return query.queryset_from_items(self.words, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.words, self._store)
+
     @property
     def syllables_query(self):
-        """Return a query object for all syllables for this speaker."""
-        return query.queryset_from_items(self.syllables, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.syllables, self._store)
+
     @property
     def phones_query(self):
-        """Return a query object for all phones for this speaker."""
-        return query.queryset_from_items(self.phones, cache)
-    
+        _require_store(self)
+        return query.queryset_from_items(self.phones, self._store)
+
     @property
     def key(self):
-        """Return the LMDB key for this segment."""
         return key_helper.instance_to_key(self)
 
     def save(self, overwrite=None, fail_gracefully=False):
-        cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
-
+        _require_store(self)
+        self._store.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
 
 
 class Speaker:
     IDENTITY_FIELDS= {'name', 'dataset'}
-    DB_FIELDS = {'name', 'dataset','identifier'}
-    METADATA_FIELDS = {'gender', 'age', 'language', 'dialect', 'region', 
-        'channel'}
+    DB_FIELDS = {'name', 'dataset', 'identifier'}
+    METADATA_FIELDS = {'gender', 'age', 'language', 'dialect', 'region', 'channel'}
     FIELDS = DB_FIELDS.union(METADATA_FIELDS)
 
     gender_code = 9
@@ -820,37 +769,32 @@ class Speaker:
     region = ''
     language = ''
 
-    @classmethod
-    def get_default_cache(cls):
-        if hasattr(cls, 'objects'): 
-            return cls.objects.cache
-
     @property
     def exists_in_db(self):
+        _require_store(self)
         cls = self.__class__
         lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
-        existing = cls.objects.get_or_none(**lookup)
-        return existing is not None
-        
-    def __init__(self, name =None, dataset = None, save=True, overwrite=False, 
-        **kwargs):
+        return self._store.queryset(cls).get_or_none(**lookup) is not None
+
+    def __init__(self, name=None, dataset=None, save=True, overwrite=False,
+        store=None, **kwargs):
+        self._store = store
         self.object_type = self.__class__.__name__
         self.name = name
         self.dataset = dataset
         self.identifier = key_helper.make_identifier()
         self.overwrite = overwrite
 
-        # Extra metadata
         extra = {}
         if 'extra' in kwargs:
             e = kwargs.pop('extra')
             if not isinstance(e, dict):
                 raise ValueError("extra must be a dict")
-            extra.update( e )
+            extra.update(e)
         for k, v in kwargs.items():
             if k in self.FIELDS:
                 setattr(self, k, v)
-            elif not k in extra: 
+            elif k not in extra:
                 extra[k] = v
         self.extra = extra
 
@@ -860,7 +804,6 @@ class Speaker:
     def __repr__(self):
         if len(self.name) > 12: name = self.name[:9] + '...'
         else: name = self.name
-            
         m = f'{R}Speaker{RE} {B}name {RE}{name:<20} | '
         m += f'{GR}ID={self.identifier.hex()}{RE}'
         return m
@@ -880,7 +823,8 @@ class Speaker:
         if not hasattr(self, '_audios'): self._audios = []
         if audio not in self._audios:
             self._audios.append(audio)
-        cache.DB.write_speaker_audio_link(self, audio) 
+        _require_store(self)
+        self._store.DB.write_speaker_audio_link(self, audio)
 
     def has_extra(self):
         if hasattr(self, 'extra') and self.extra:
@@ -895,14 +839,15 @@ class Speaker:
 
     @property
     def audios(self):
-        if hasattr(self, '_audios'): return self._audios 
-        audio_keys = cache.DB.speaker_to_audio_keys(self)
-        self._audios = cache.load_many(audio_keys)
+        if hasattr(self, '_audios'): return self._audios
+        _require_store(self)
+        audio_keys = self._store.DB.speaker_to_audio_keys(self)
+        self._audios = self._store.load_many(audio_keys)
         return self._audios
 
     @property
     def phrase_keys(self):
-        if hasattr(self, '_phrase_keys'): return self._phrase_keys 
+        if hasattr(self, '_phrase_keys'): return self._phrase_keys
         self._phrase_keys = []
         for audio in self.audios:
             self._phrase_keys += audio.phrase_keys
@@ -910,14 +855,13 @@ class Speaker:
 
     @property
     def phrases(self):
-        """Return all phrases across all audios for this speaker."""
-        if hasattr(self, '_phrases'): return self._phrases 
-        self._phrases = cache.load_many(self.phrase_keys)
+        if hasattr(self, '_phrases'): return self._phrases
+        _require_store(self)
+        self._phrases = self._store.load_many(self.phrase_keys)
         return self._phrases
 
     @property
     def words(self):
-        """Return all words across all phrases for this speaker."""
         words = []
         for phrase in self.phrases:
             for word in phrase.words:
@@ -926,7 +870,6 @@ class Speaker:
 
     @property
     def syllables(self):
-        """Return all syllables across all phrases for this speaker."""
         syllables = []
         for phrase in self.phrases:
             for syllable in phrase.syllables:
@@ -935,42 +878,43 @@ class Speaker:
 
     @property
     def phones(self):
-        """Return all phones across all phrases for this speaker."""
         phones = []
         for phrase in self.phrases:
             for phone in phrase.phones:
                 phones.append(phone)
         return phones
-    
+
     @property
     def phrases_query(self):
-        """Return a query object for all phrases for this speaker."""
-        return query.queryset_from_items(self.phrases, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.phrases, self._store)
+
     @property
     def words_query(self):
-        """Return a query object for all words for this speaker."""
-        return query.queryset_from_items(self.words, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.words, self._store)
+
     @property
     def syllables_query(self):
-        """Return a query object for all syllables for this speaker."""
-        return query.queryset_from_items(self.syllables, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.syllables, self._store)
+
     @property
     def phones_query(self):
-        """Return a query object for all phones for this speaker."""
-        return query.queryset_from_items(self.phones, cache)
+        _require_store(self)
+        return query.queryset_from_items(self.phones, self._store)
 
     @property
     def key(self):
-        """Return the LMDB key for this segment."""
         return key_helper.instance_to_key(self)
-            
-    def save(self, overwrite=None, fail_gracefully=False):
-        cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
 
-    def delete(self, do_reconnect_db = True):
-        cache.delete(self.key)
-        if do_reconnect_db:
-            reconnect_db()
+    def save(self, overwrite=None, fail_gracefully=False):
+        _require_store(self)
+        self._store.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
+
+    def delete(self):
+        _require_store(self)
+        self._store.delete(self.key)
 
     @property
     def metadata_present(self):
@@ -979,7 +923,6 @@ class Speaker:
             if hasattr(self, name):
                 names.append(name)
         return names
-
 
 
 Phrase.allowed_child_type = Word
@@ -991,54 +934,56 @@ Phone.allowed_child_type = None
 Phone.parent_class = Syllable
 
 
-def load_cache(fraction = None):
-    global cache
+def load_cache(path=None, fraction=None):
+    from . import locations
+    if path is None:
+        path = locations.cgn_lmdb
     t = time.time()
-    cache = cache_module.Cache()
-    print(f'cache created in {time.time() - t:.2f} seconds')
+    store = store_module.Store(path)
+    print(f'store created in {time.time() - t:.2f} seconds')
 
-    cache.register(Audio)
-    print(f'Audio registered in {time.time() - t:.2f} seconds')
-    cache.register(Phrase)
-    cache.register(Word)
-    cache.register(Syllable)
-    cache.register(Phone)
-    cache.register(Speaker)
-    print(f'Classes registered in {time.time() - t:.2f} seconds')
+    store.register(Audio)
+    store.register(Phrase)
+    store.register(Word)
+    store.register(Syllable)
+    store.register(Phone)
+    store.register(Speaker)
+    print(f'classes registered in {time.time() - t:.2f} seconds')
 
+    store.audios = query.get_class_object(Audio, store)
+    store.phrases = query.get_class_object(Phrase, store)
+    store.words = query.get_class_object(Word, store)
+    store.syllables = query.get_class_object(Syllable, store)
+    store.phones = query.get_class_object(Phone, store)
+    store.speakers = query.get_class_object(Speaker, store)
+    print(f'query objects created in {time.time() - t:.2f} seconds')
 
-    Audio.objects = query.get_class_object(Audio, cache)
-    print(f'Audio.objects created in {time.time() - t:.2f} seconds')
-    Phrase.objects = query.get_class_object(Phrase, cache)
-    Word.objects = query.get_class_object(Word, cache)
-    Syllable.objects = query.get_class_object(Syllable, cache)
-    Phone.objects = query.get_class_object(Phone, cache)
-    Speaker.objects = query.get_class_object(Speaker, cache)
-    print(f'Class objects created in {time.time() - t:.2f} seconds')
+    store._class_querysets = {
+        Audio: store.audios,
+        Phrase: store.phrases,
+        Word: store.words,
+        Syllable: store.syllables,
+        Phone: store.phones,
+        Speaker: store.speakers,
+    }
 
-    cache.relations_to_class_map = {
-        'audios': Audio, 
+    store.relations_to_class_map = {
+        'audios': Audio,
         'speakers': Speaker,
         'phrases': Phrase,
         'words': Word,
         'syllables': Syllable,
         'phones': Phone,
     }
-    print(f'relations_to_class_map created in {time.time() - t:.2f} seconds')
+
+    store.create_audio = lambda **kw: Audio(store=store, **kw)
+    store.create_phrase = lambda **kw: Phrase(store=store, **kw)
+    store.create_word = lambda **kw: Word(store=store, **kw)
+    store.create_syllable = lambda **kw: Syllable(store=store, **kw)
+    store.create_phone = lambda **kw: Phone(store=store, **kw)
+    store.create_speaker = lambda **kw: Speaker(store=store, **kw)
+
     if fraction is not None:
-        cache._preload_sampled_fraction(fraction)
-    print(f'Cache loaded in {time.time() - t:.2f} seconds')
-            
-load_cache()
-
-def touch_db():
-    load_cache()
-
-def reconnect_db():
-    load_cache()
-
-def turn_off_db_saving():
-    cache.turn_off_db_saving()
-
-def turn_on_db_saving():
-    cache.turn_on_db_saving()
+        store._preload_sampled_fraction(fraction)
+    print(f'store loaded in {time.time() - t:.2f} seconds')
+    return store
