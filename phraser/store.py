@@ -78,7 +78,7 @@ class Store:
         if cls.__name__ not in self.load_counter:
             self.load_counter[cls.__name__] = 0
 
-    def build_query_roots(self):
+    def attach_query_roots(self):
         '''Attach store-scoped query roots.'''
         from . import query
         self.audios = query.get_class_object(self.CLASS_MAP['Audio'], self)
@@ -105,7 +105,7 @@ class Store:
         self._cache = {}
         if hasattr(self, '_rank_to_keys_dict'):
             del self._rank_to_keys_dict
-        self.build_query_roots()
+        self.attach_query_roots()
 
     def create_audio(self, *args, **kwargs):
         return self._create('Audio', *args, **kwargs)

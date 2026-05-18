@@ -516,13 +516,11 @@ class Phrase(Segment):
         keys = [x.key for x in self.all_objects]
         return keys
 
-    def delete(self, do_reconnect_db = True):
+    def delete(self):
         """ Delete this phrase and all its descendants from the database.
         """
         all_keys = self.all_keys
         self.store.delete_many(all_keys)
-        if do_reconnect_db:
-            self.store.reconnect()
 
     @property
     def phrase_start(self):
@@ -975,10 +973,8 @@ class Speaker:
         self.store.save(self, overwrite=overwrite,
             fail_gracefully=fail_gracefully)
 
-    def delete(self, do_reconnect_db = True):
+    def delete(self):
         self.store.delete(self.key)
-        if do_reconnect_db:
-            self.store.reconnect()
 
     @property
     def metadata_present(self):
@@ -1030,7 +1026,7 @@ def open_store(path=locations.cgn_lmdb, fraction = None):
     store.register(Speaker)
     print(f'Classes registered in {time.time() - t:.2f} seconds')
 
-    store.build_query_roots()
+    store.attach_query_roots()
     print(f'Query roots created in {time.time() - t:.2f} seconds')
 
     store.relations_to_class_map = {
