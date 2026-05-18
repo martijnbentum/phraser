@@ -11,34 +11,16 @@ from . import store as store_module
 from . import struct_value
 from . import utils
 from .model_helper import EMPTY_ID
+from .store import UnboundStoreError
 
 R= "\033[91m"
 G= "\033[92m"
 B= "\033[94m"
 GR= "\033[90m"
 RE= "\033[0m"
+object_type_to_ljust_label={'Phrase':40, 'Word':15, 'Syllable':12, 'Phone':3}
 
-object_type_to_ljust_label = {'Phrase': 40, 'Word': 15, 
-    'Syllable': 12, 'Phone': 3}
-
-
-class UnboundStoreError(RuntimeError):
-    pass
-
-
-class StoreBound:
-    @property
-    def store(self):
-        store = getattr(self, '_store', None)
-        if store is None:
-            name = self.__class__.__name__
-            raise UnboundStoreError(
-                f'{name} is not bound to a Store. Create it with store=... '
-                'or use Store.create_*().')
-        return store
-
-
-class Segment(StoreBound):
+class Segment:
     IDENTITY_FIELDS= {'label', 'start', 'end', 'audio_key'}
     DB_FIELDS = {'identifier', 'label', 'start', 'end', 'parent_id',
         'parent_start', 'audio_id', 'speaker_id'}
@@ -48,32 +30,6 @@ class Segment(StoreBound):
     '''
     allowed_child_type = []# subclasses override
     overlap_code = 9
-
-    @classmethod
-    def get_or_create(cls, **kwargs):
-        try: store = kwargs.pop('store')
-        except KeyError:
-            raise UnboundStoreError(
-                f'{cls.__name__}.get_or_create() requires store=...')
-        lookup = {k: kwargs[k] for k in cls.IDENTITY_FIELDS if k in kwargs}
-        if not lookup:
-            raise ValueError('No identity fields provided')
-        missing = [k for k in cls.IDENTITY_FIELDS if k not in kwargs]
-        if missing:
-            raise ValueError(f'Missing identity fields: {missing}')
-        query_root = store.query_for_class(cls)
-        instance = query_root.get_or_none(**lookup)
-        if instance is None:
-            instance = cls(store=store, **kwargs)
-            return instance, True
-        return instance, False
-
-    @property
-    def exists_in_db(self):
-        cls = self.__class__
-        lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
-        existing = self.store.query_for_class(cls).get_or_none(**lookup)
-        return existing is not None
 
     def __init__(self, label = None, start = None, end = None, 
         parent_id=EMPTY_ID, audio_id= EMPTY_ID, 
@@ -504,6 +460,42 @@ class Segment(StoreBound):
         yield from self.iter_ancestors()
         yield from self.iter_descendants()
 
+    @property
+    def store(self):
+        store = getattr(self, '_store', None)
+        if store is None:
+            name = self.__class__.__name__
+            m = f'{name} is not bound to a Store. Create it with store=... '
+            m += f'or Store.create_{name}().'
+            raise UnboundStoreError(m)
+        return store
+
+    @classmethod
+    def get_or_create(cls, **kwargs):
+        try: store = kwargs.pop('store')
+        except KeyError:
+            raise UnboundStoreError(
+                f'{cls.__name__}.get_or_create() requires store=...')
+        lookup = {k: kwargs[k] for k in cls.IDENTITY_FIELDS if k in kwargs}
+        if not lookup:
+            raise ValueError('No identity fields provided')
+        missing = [k for k in cls.IDENTITY_FIELDS if k not in kwargs]
+        if missing:
+            raise ValueError(f'Missing identity fields: {missing}')
+        query_root = store.query_for_class(cls)
+        instance = query_root.get_or_none(**lookup)
+        if instance is None:
+            instance = cls(store=store, **kwargs)
+            return instance, True
+        return instance, False
+
+    @property
+    def exists_in_db(self):
+        cls = self.__class__
+        lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
+        existing = self.store.query_for_class(cls).get_or_none(**lookup)
+        return existing is not None
+
 
 
 class Phrase(Segment):
@@ -682,7 +674,7 @@ class Phone(Segment):
         return self.parent.parent
 
 
-class Audio(StoreBound):
+class Audio:
     IDENTITY_FIELDS= {'filename'}
     METADATA_FIELDS = {'sample_rate', 'duration', 'n_channels', 'dataset',
         'language', 'dialect'}
@@ -694,13 +686,6 @@ class Audio(StoreBound):
     n_channels = 0
     sample_rate = 0
 
-    @property
-    def exists_in_db(self):
-        cls = self.__class__
-        lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
-        existing = self.store.query_for_class(cls).get_or_none(**lookup)
-        return existing is not None
-        
     def __init__(self, filename = None,  save=True, overwrite=False,
         store=None, **kwargs):
         self.object_type = self.__class__.__name__
@@ -820,9 +805,26 @@ class Audio(StoreBound):
         self.store.save(self, overwrite=overwrite,
             fail_gracefully=fail_gracefully)
 
+    @property
+    def store(self):
+        store = getattr(self, '_store', None)
+        if store is None:
+            name = self.__class__.__name__
+            m = f'{name} is not bound to a Store. Create it with store=... '
+            m += f'or Store.create_{name}().'
+            raise UnboundStoreError(m)
+        return store
+
+    @property
+    def exists_in_db(self):
+        cls = self.__class__
+        lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
+        existing = self.store.query_for_class(cls).get_or_none(**lookup)
+        return existing is not None
 
 
-class Speaker(StoreBound):
+
+class Speaker:
     IDENTITY_FIELDS= {'name', 'dataset'}
     DB_FIELDS = {'name', 'dataset','identifier'}
     METADATA_FIELDS = {'gender', 'age', 'language', 'dialect', 'region', 
@@ -836,13 +838,6 @@ class Speaker(StoreBound):
     region = ''
     language = ''
 
-    @property
-    def exists_in_db(self):
-        cls = self.__class__
-        lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
-        existing = self.store.query_for_class(cls).get_or_none(**lookup)
-        return existing is not None
-        
     def __init__(self, name =None, dataset = None, save=True, overwrite=False, 
         store=None, **kwargs):
         self.object_type = self.__class__.__name__
@@ -992,6 +987,23 @@ class Speaker(StoreBound):
             if hasattr(self, name):
                 names.append(name)
         return names
+
+    @property
+    def store(self):
+        store = getattr(self, '_store', None)
+        if store is None:
+            name = self.__class__.__name__
+            m = f'{name} is not bound to a Store. Create it with store=... '
+            m += f'or Store.create_{name}().'
+            raise UnboundStoreError(m)
+        return store
+
+    @property
+    def exists_in_db(self):
+        cls = self.__class__
+        lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
+        existing = self.store.query_for_class(cls).get_or_none(**lookup)
+        return existing is not None
 
 
 

@@ -16,6 +16,10 @@ GR= "\033[90m"
 RE= "\033[0m"
 
 
+class UnboundStoreError(RuntimeError):
+    pass
+
+
 class Store:
     """
     Barebones LMDB-backed store with:
@@ -125,9 +129,19 @@ class Store:
         kwargs.setdefault('store', self)
         return self.CLASS_MAP[class_name](*args, **kwargs)
 
-    def _bind(self, obj):
+    def attach(self, obj, force=False):
+        '''Bind an object to this store.
+        force:  allow rebinding an object from a different store
+        '''
+        existing = getattr(obj, '_store', None)
+        if existing is not None and existing is not self and not force:
+            message = 'object is already bound to a different Store'
+            raise ValueError(message)
         obj._store = self
         return obj
+
+    def _bind(self, obj):
+        return self.attach(obj)
 
     def save(self, obj, overwrite = False, fail_gracefully = False):
         '''save an object to LMDB.
@@ -331,10 +345,18 @@ class Store:
 
     def turn_on_db_saving(self):
         '''allow saving to LMDB'''
-        self.db_saving_allowed = True
+        self.enable_writes()
 
     def turn_off_db_saving(self):
         '''disallow saving to LMDB'''
+        self.disable_writes()
+
+    def enable_writes(self):
+        '''Allow saving to LMDB.'''
+        self.db_saving_allowed = True
+
+    def disable_writes(self):
+        '''Disallow saving to LMDB.'''
         self.db_saving_allowed = False
 
     def is_db_saving_allowed(self):
