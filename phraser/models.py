@@ -3,10 +3,11 @@ import uuid
 
 from ssh_audio_play import play
 
-from . import cache as cache_module
 from . import key_helper
+from . import locations
 from . import model_helper
 from . import query
+from . import store as store_module
 from . import struct_value
 from . import utils
 from .model_helper import EMPTY_ID
@@ -21,8 +22,23 @@ object_type_to_ljust_label = {'Phrase': 40, 'Word': 15,
     'Syllable': 12, 'Phone': 3}
 
 
+class UnboundStoreError(RuntimeError):
+    pass
 
-class Segment:
+
+class StoreBound:
+    @property
+    def store(self):
+        store = getattr(self, '_store', None)
+        if store is None:
+            name = self.__class__.__name__
+            raise UnboundStoreError(
+                f'{name} is not bound to a Store. Create it with store=... '
+                'or use Store.create_*().')
+        return store
+
+
+class Segment(StoreBound):
     IDENTITY_FIELDS= {'label', 'start', 'end', 'audio_key'}
     DB_FIELDS = {'identifier', 'label', 'start', 'end', 'parent_id',
         'parent_start', 'audio_id', 'speaker_id'}
@@ -34,21 +50,21 @@ class Segment:
     overlap_code = 9
 
     @classmethod
-    def get_default_cache(cls):
-        if hasattr(cls, 'objects'): 
-            return cls.objects.cache
-
-    @classmethod
     def get_or_create(cls, **kwargs):
+        try: store = kwargs.pop('store')
+        except KeyError:
+            raise UnboundStoreError(
+                f'{cls.__name__}.get_or_create() requires store=...')
         lookup = {k: kwargs[k] for k in cls.IDENTITY_FIELDS if k in kwargs}
         if not lookup:
             raise ValueError('No identity fields provided')
         missing = [k for k in cls.IDENTITY_FIELDS if k not in kwargs]
         if missing:
             raise ValueError(f'Missing identity fields: {missing}')
-        instance = cls.objects.get_or_none(**lookup)
+        query_root = store.query_for_class(cls)
+        instance = query_root.get_or_none(**lookup)
         if instance is None:
-            instance = cls(**kwargs)
+            instance = cls(store=store, **kwargs)
             return instance, True
         return instance, False
 
@@ -56,13 +72,13 @@ class Segment:
     def exists_in_db(self):
         cls = self.__class__
         lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
-        existing = cls.objects.get_or_none(**lookup)
+        existing = self.store.query_for_class(cls).get_or_none(**lookup)
         return existing is not None
 
     def __init__(self, label = None, start = None, end = None, 
         parent_id=EMPTY_ID, audio_id= EMPTY_ID, 
         speaker_id= EMPTY_ID, parent_start = 0,  
-        save = True, overwrite = False, **kwargs):
+        save = True, overwrite = False, store = None, **kwargs):
         
         self.object_type = self.__class__.__name__
         self.label = label
@@ -75,6 +91,7 @@ class Segment:
         self.audio_id = audio_id
         self.speaker_id = speaker_id
         self.overwrite = overwrite
+        self._store = store
             
 
         # Extra metadata
@@ -194,14 +211,14 @@ class Segment:
         if self.object_type == "Phrase": return None
         if hasattr(self, '_parent'): return self._parent
         if self.parent_id == EMPTY_ID: return 
-        self._parent = cache.load(self.parent_key)
+        self._parent = self.store.load(self.parent_key)
         return self._parent
 
     @property
     def child_keys(self):
         if self.allowed_child_type is None: 
             self._child_keys = None
-        return list(cache.DB.instance_to_child_keys(self))
+        return list(self.store.DB.instance_to_child_keys(self))
 
     @property
     def children(self):
@@ -210,7 +227,7 @@ class Segment:
         if hasattr(self, '_children'): return self._children
         self._children, self._related = [], []
         if self.child_keys: 
-            children = cache.load_many(self.child_keys) 
+            children = self.store.load_many(self.child_keys) 
                 
         else:
             children = []
@@ -239,7 +256,7 @@ class Segment:
         if self.audio_key is None: return None
         if hasattr(self, '_audio') and self._audio is not None: 
             return self._audio
-        self._audio = cache.load(self.audio_key) 
+        self._audio = self.store.load(self.audio_key) 
         return self._audio
         
     @property
@@ -252,7 +269,7 @@ class Segment:
         """Return the associated Speaker object."""
         if self.speaker_key is None: return None 
         if hasattr(self, '_speaker'): return self._speaker
-        self._speaker = cache.load(self.speaker_key)
+        self._speaker = self.store.load(self.speaker_key)
         return self._speaker
 
     @property
@@ -261,7 +278,7 @@ class Segment:
         if self.object_type == 'Word': return self.parent
         if hasattr(self, '_phrase'): return self._phrase
         if self.phrase_key is None: return None
-        self._phrase = cache.load(self.phrase_key)
+        self._phrase = self.store.load(self.phrase_key)
         return self._phrase
 
 
@@ -281,7 +298,8 @@ class Segment:
         return utils.miliseconds_to_seconds(self.duration)
             
     def save(self, overwrite = None, fail_gracefully = False):
-        cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
+        self.store.save(self, overwrite=overwrite,
+            fail_gracefully=fail_gracefully)
 
     def add_audio(self, audio = None, audio_id = None, update_database = True, 
         propagate = True):
@@ -300,7 +318,7 @@ class Segment:
             segment._apply_audio_id(audio_id)
 
         if update_database:  
-            model_helper.write_changes_to_db(all_segments, cache)
+            model_helper.write_changes_to_db(all_segments, self.store)
 
     def _apply_audio_id(self, audio_id):
         old_key = self.key
@@ -323,7 +341,7 @@ class Segment:
         for segment in all_segments:
             segment._apply_speaker_id(speaker_id, update_database)
         if update_database:  
-            model_helper.write_changes_to_db(all_segments, cache)
+            model_helper.write_changes_to_db(all_segments, self.store)
 
     def _apply_speaker_id(self, speaker_id, update_database):
         if self.speaker_id == speaker_id: return
@@ -353,7 +371,7 @@ class Segment:
     # ------------------ serialization ------------------
 
     def delete(self):
-        cache.delete(self.key)
+        self.store.delete(self.key)
 
     def has_extra(self):
         if hasattr(self, 'extra') and self.extra:
@@ -461,13 +479,13 @@ class Segment:
 
     @property
     def descendant_keys(self):
-        return cache.DB.instance_to_descendant_keys(self)
+        return self.store.DB.instance_to_descendant_keys(self)
 
     @property
     def descendants(self):
         #if hasattr(self, '_descendants'): return self._descendants
         keys = self.descendant_keys
-        return cache.load_many(keys)
+        return self.store.load_many(keys)
 
 
     def iter_descendants(self):
@@ -510,9 +528,9 @@ class Phrase(Segment):
         """ Delete this phrase and all its descendants from the database.
         """
         all_keys = self.all_keys
-        cache.delete_many(all_keys)
+        self.store.delete_many(all_keys)
         if do_reconnect_db:
-            reconnect_db()
+            self.store.reconnect()
 
     @property
     def phrase_start(self):
@@ -540,15 +558,15 @@ class Phrase(Segment):
     @property
     def words_query(self):
         """Return a query object for all words for this speaker."""
-        return query.queryset_from_items(self.words, cache)
+        return query.queryset_from_items(self.words, self.store)
     @property
     def syllables_query(self):
         """Return a query object for all syllables for this speaker."""
-        return query.queryset_from_items(self.syllables, cache)
+        return query.queryset_from_items(self.syllables, self.store)
     @property
     def phones_query(self):
         """Return a query object for all phones for this speaker."""
-        return query.queryset_from_items(self.phones, cache)
+        return query.queryset_from_items(self.phones, self.store)
 
 
     def apply_phrase_id_and_start(self, update_database = True):
@@ -586,11 +604,11 @@ class Word(Segment):
     @property
     def syllables_query(self):
         """Return a query object for all syllables for this speaker."""
-        return query.queryset_from_items(self.syllables, cache)
+        return query.queryset_from_items(self.syllables, self.store)
     @property
     def phones_query(self):
         """Return a query object for all phones for this speaker."""
-        return query.queryset_from_items(self.phones, cache)
+        return query.queryset_from_items(self.phones, self.store)
 
 def _add_phrase(self, phrase, update_database = True):
     if self.phrase_id == phrase.identifier: return
@@ -631,7 +649,7 @@ class Syllable(Segment):
     @property
     def phones_query(self):
         """Return a query object for all phones for this speaker."""
-        return query.queryset_from_items(self.phones, cache)
+        return query.queryset_from_items(self.phones, self.store)
 
 class Phone(Segment):
     METADATA_FIELDS = {'features'}
@@ -664,7 +682,7 @@ class Phone(Segment):
         return self.parent.parent
 
 
-class Audio:
+class Audio(StoreBound):
     IDENTITY_FIELDS= {'filename'}
     METADATA_FIELDS = {'sample_rate', 'duration', 'n_channels', 'dataset',
         'language', 'dialect'}
@@ -676,23 +694,20 @@ class Audio:
     n_channels = 0
     sample_rate = 0
 
-    @classmethod
-    def get_default_cache(cls):
-        if hasattr(cls, 'objects'): 
-            return cls.objects.cache
-
     @property
     def exists_in_db(self):
         cls = self.__class__
         lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
-        existing = cls.objects.get_or_none(**lookup)
+        existing = self.store.query_for_class(cls).get_or_none(**lookup)
         return existing is not None
         
-    def __init__(self, filename = None,  save=True, overwrite=False, **kwargs):
+    def __init__(self, filename = None,  save=True, overwrite=False,
+        store=None, **kwargs):
         self.object_type = self.__class__.__name__
         self.filename = filename
         self.identifier = key_helper.make_identifier()
         self.overwrite = overwrite
+        self._store = store
 
         self._set_kwargs(**kwargs)
 
@@ -742,14 +757,14 @@ class Audio:
     @property
     def phrase_keys(self):
         if hasattr(self, '_phrase_keys'): return self._phrase_keys
-        self._phrase_keys = list(cache.DB.audio_id_to_child_keys(
+        self._phrase_keys = list(self.store.DB.audio_id_to_child_keys(
             self.identifier))
         return self._phrase_keys
 
     @property
     def phrases(self):
         if hasattr(self, '_phrases'): return self._phrases
-        self._phrases= cache.load_many(self.phrase_keys)
+        self._phrases= self.store.load_many(self.phrase_keys)
         return self._phrases
 
     @property
@@ -782,19 +797,19 @@ class Audio:
     @property
     def speakers_query(self):
         """Return a query object for all phrases for this speaker."""
-        return query.queryset_from_items(self.phrases, cache)
+        return query.queryset_from_items(self.phrases, self.store)
     @property
     def words_query(self):
         """Return a query object for all words for this speaker."""
-        return query.queryset_from_items(self.words, cache)
+        return query.queryset_from_items(self.words, self.store)
     @property
     def syllables_query(self):
         """Return a query object for all syllables for this speaker."""
-        return query.queryset_from_items(self.syllables, cache)
+        return query.queryset_from_items(self.syllables, self.store)
     @property
     def phones_query(self):
         """Return a query object for all phones for this speaker."""
-        return query.queryset_from_items(self.phones, cache)
+        return query.queryset_from_items(self.phones, self.store)
     
     @property
     def key(self):
@@ -802,11 +817,12 @@ class Audio:
         return key_helper.instance_to_key(self)
 
     def save(self, overwrite=None, fail_gracefully=False):
-        cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
+        self.store.save(self, overwrite=overwrite,
+            fail_gracefully=fail_gracefully)
 
 
 
-class Speaker:
+class Speaker(StoreBound):
     IDENTITY_FIELDS= {'name', 'dataset'}
     DB_FIELDS = {'name', 'dataset','identifier'}
     METADATA_FIELDS = {'gender', 'age', 'language', 'dialect', 'region', 
@@ -820,25 +836,21 @@ class Speaker:
     region = ''
     language = ''
 
-    @classmethod
-    def get_default_cache(cls):
-        if hasattr(cls, 'objects'): 
-            return cls.objects.cache
-
     @property
     def exists_in_db(self):
         cls = self.__class__
         lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
-        existing = cls.objects.get_or_none(**lookup)
+        existing = self.store.query_for_class(cls).get_or_none(**lookup)
         return existing is not None
         
     def __init__(self, name =None, dataset = None, save=True, overwrite=False, 
-        **kwargs):
+        store=None, **kwargs):
         self.object_type = self.__class__.__name__
         self.name = name
         self.dataset = dataset
         self.identifier = key_helper.make_identifier()
         self.overwrite = overwrite
+        self._store = store
 
         # Extra metadata
         extra = {}
@@ -880,7 +892,7 @@ class Speaker:
         if not hasattr(self, '_audios'): self._audios = []
         if audio not in self._audios:
             self._audios.append(audio)
-        cache.DB.write_speaker_audio_link(self, audio) 
+        self.store.DB.write_speaker_audio_link(self, audio) 
 
     def has_extra(self):
         if hasattr(self, 'extra') and self.extra:
@@ -896,8 +908,8 @@ class Speaker:
     @property
     def audios(self):
         if hasattr(self, '_audios'): return self._audios 
-        audio_keys = cache.DB.speaker_to_audio_keys(self)
-        self._audios = cache.load_many(audio_keys)
+        audio_keys = self.store.DB.speaker_to_audio_keys(self)
+        self._audios = self.store.load_many(audio_keys)
         return self._audios
 
     @property
@@ -912,7 +924,7 @@ class Speaker:
     def phrases(self):
         """Return all phrases across all audios for this speaker."""
         if hasattr(self, '_phrases'): return self._phrases 
-        self._phrases = cache.load_many(self.phrase_keys)
+        self._phrases = self.store.load_many(self.phrase_keys)
         return self._phrases
 
     @property
@@ -945,19 +957,19 @@ class Speaker:
     @property
     def phrases_query(self):
         """Return a query object for all phrases for this speaker."""
-        return query.queryset_from_items(self.phrases, cache)
+        return query.queryset_from_items(self.phrases, self.store)
     @property
     def words_query(self):
         """Return a query object for all words for this speaker."""
-        return query.queryset_from_items(self.words, cache)
+        return query.queryset_from_items(self.words, self.store)
     @property
     def syllables_query(self):
         """Return a query object for all syllables for this speaker."""
-        return query.queryset_from_items(self.syllables, cache)
+        return query.queryset_from_items(self.syllables, self.store)
     @property
     def phones_query(self):
         """Return a query object for all phones for this speaker."""
-        return query.queryset_from_items(self.phones, cache)
+        return query.queryset_from_items(self.phones, self.store)
 
     @property
     def key(self):
@@ -965,12 +977,13 @@ class Speaker:
         return key_helper.instance_to_key(self)
             
     def save(self, overwrite=None, fail_gracefully=False):
-        cache.save(self, overwrite=overwrite, fail_gracefully=fail_gracefully)
+        self.store.save(self, overwrite=overwrite,
+            fail_gracefully=fail_gracefully)
 
     def delete(self, do_reconnect_db = True):
-        cache.delete(self.key)
+        self.store.delete(self.key)
         if do_reconnect_db:
-            reconnect_db()
+            self.store.reconnect()
 
     @property
     def metadata_present(self):
@@ -991,32 +1004,24 @@ Phone.allowed_child_type = None
 Phone.parent_class = Syllable
 
 
-def load_cache(fraction = None):
-    global cache
+def open_store(path=locations.cgn_lmdb, fraction = None):
     t = time.time()
-    cache = cache_module.Cache()
-    print(f'cache created in {time.time() - t:.2f} seconds')
+    store = store_module.Store(path=path)
+    print(f'store created in {time.time() - t:.2f} seconds')
 
-    cache.register(Audio)
+    store.register(Audio)
     print(f'Audio registered in {time.time() - t:.2f} seconds')
-    cache.register(Phrase)
-    cache.register(Word)
-    cache.register(Syllable)
-    cache.register(Phone)
-    cache.register(Speaker)
+    store.register(Phrase)
+    store.register(Word)
+    store.register(Syllable)
+    store.register(Phone)
+    store.register(Speaker)
     print(f'Classes registered in {time.time() - t:.2f} seconds')
 
+    store.build_query_roots()
+    print(f'Query roots created in {time.time() - t:.2f} seconds')
 
-    Audio.objects = query.get_class_object(Audio, cache)
-    print(f'Audio.objects created in {time.time() - t:.2f} seconds')
-    Phrase.objects = query.get_class_object(Phrase, cache)
-    Word.objects = query.get_class_object(Word, cache)
-    Syllable.objects = query.get_class_object(Syllable, cache)
-    Phone.objects = query.get_class_object(Phone, cache)
-    Speaker.objects = query.get_class_object(Speaker, cache)
-    print(f'Class objects created in {time.time() - t:.2f} seconds')
-
-    cache.relations_to_class_map = {
+    store.relations_to_class_map = {
         'audios': Audio, 
         'speakers': Speaker,
         'phrases': Phrase,
@@ -1026,19 +1031,6 @@ def load_cache(fraction = None):
     }
     print(f'relations_to_class_map created in {time.time() - t:.2f} seconds')
     if fraction is not None:
-        cache._preload_sampled_fraction(fraction)
-    print(f'Cache loaded in {time.time() - t:.2f} seconds')
-            
-load_cache()
-
-def touch_db():
-    load_cache()
-
-def reconnect_db():
-    load_cache()
-
-def turn_off_db_saving():
-    cache.turn_off_db_saving()
-
-def turn_on_db_saving():
-    cache.turn_on_db_saving()
+        store._preload_sampled_fraction(fraction)
+    print(f'Store loaded in {time.time() - t:.2f} seconds')
+    return store

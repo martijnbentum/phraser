@@ -9,8 +9,8 @@ def assign_phrases_phone_positions(phrases, phone_types=None, update_database=Tr
             update_database=False)
         all_phones.extend(phrase.phones)
     if update_database and all_phones:
-        cache = all_phones[0].__class__.get_default_cache()
-        cache.save_many(all_phones, overwrite=True)
+        store = all_phones[0].store
+        store.save_many(all_phones, overwrite=True)
 
 def assign_phrase_phone_positions(phrase, phone_types=None, update_database=True):
     '''Assign onset/nucleus/coda positions to all phones in a phrase
@@ -21,8 +21,8 @@ def assign_phrase_phone_positions(phrase, phone_types=None, update_database=True
     if update_database:
         phones = phrase.phones
         if phones:
-            cache = phones[0].__class__.get_default_cache()
-            cache.save_many(phones, overwrite=True)
+            store = phones[0].store
+            store.save_many(phones, overwrite=True)
 
 def assign_phone_positions(syllable, phone_types=None, update_database=True):
     '''Assign onset/nucleus/coda position to each phone in a syllable.
@@ -36,8 +36,8 @@ def assign_phone_positions(syllable, phone_types=None, update_database=True):
         elif i < vowel_indices[0]: phone.position = 'onset'
         elif i > vowel_indices[-1]: phone.position = 'coda'
     if update_database:
-        cache = phones[0].__class__.get_default_cache()
-        cache.save_many(phones, overwrite=True)
+        store = phones[0].store
+        store.save_many(phones, overwrite=True)
 
 def phones_to_vowel_indices(phones, phone_types=None):
     '''Return the indices of vowel phones in the list.

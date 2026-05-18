@@ -28,8 +28,8 @@ def check_overlap_audio(audio):
             item.overlap_code = NO_OVERLAP
     else: _set_overlap_codes(audio.phrases)
 
-    cache = all_items[0].__class__.get_default_cache()
-    cache.save_many(all_items, overwrite=True)
+    store = all_items[0].store
+    store.save_many(all_items, overwrite=True)
 
 
 def _set_overlap_codes(all_phrases):

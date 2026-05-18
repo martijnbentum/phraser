@@ -12,12 +12,12 @@ B= "\033[94m"
 GR= "\033[90m"
 RE= "\033[0m"
 
-def queryset_from_items(items, cache = None):
+def queryset_from_items(items, store = None):
     """
     Create a QuerySet for items.
 
     Example:
-        qs = queryset_from_items(some_words, cache)
+        qs = queryset_from_items(some_words, store)
         qs.filter(label="t").order_by("start")
     """
     # Materialize once (supports generators)
@@ -31,44 +31,44 @@ def queryset_from_items(items, cache = None):
             f"{', '.join(t.__name__ for t in types)}"
         )
     cls = types.pop()
-    if cache is None:
-        cache = cls.get_default_cache()
+    if store is None:
+        store = items[0].store
 
     # Empty input -> empty queryset
-    data = Data(cls, cache)
+    data = Data(cls, store)
 
     # Convert to LMDB keys and restrict
     keys = objects_to_keys(items)
 
-    # Optional: keep only keys that actually exist for this class in the cache
+    # Optional: keep only keys that actually exist for this class in the store.
     data.keys = keys
 
     return QuerySet(data)
 
 
-def get_class_object(cls, cache):
-    '''sets the objects attribute on each class (e.g. Audio.objects)'''
-    data = Data(cls, cache)
+def get_class_object(cls, store):
+    '''Return a store-scoped query object for a class.'''
+    data = Data(cls, store)
     return QuerySet(data)
 
 class Data:
-    '''handles loading objects of a given class from cache'''
-    def __init__(self, cls, cache):
+    '''handles loading objects of a given class from store'''
+    def __init__(self, cls, store):
         self.cls = cls
-        self.cache = cache
+        self.store = store
         self.object_type = cls.__name__
         self.rank = key_helper.CLASS_RANK_MAP[self.object_type]
         self._get_keys(update = False)
 
     def _get_keys(self, update = False):
-        d = self.cache.rank_to_keys_dict(update = update)
+        d = self.store.rank_to_keys_dict(update = update)
         m = f'No keys found for object type: {B}{self.object_type}{RE}'
         try: self.keys = d[self.rank]
         except KeyError: self.keys = []
 
     def load(self, keys = None):
         if keys is None: keys = self.keys
-        objs = self.cache.load_many(keys)
+        objs = self.store.load_many(keys)
         return objs
 
 
@@ -165,9 +165,9 @@ class QuerySet:
                 ensure_relations_loaded(self, attr_name)
 
     @property
-    def cache(self):
-        '''returns the cache associated with the QuerySet'''
-        return self._data.cache
+    def store(self):
+        '''returns the store associated with the QuerySet'''
+        return self._data.store
 
 
 
@@ -292,10 +292,10 @@ class _Descending:
 
 def ensure_relations_loaded(queryset, attr_name):
     '''ensures that related objects for a given attribute are preloaded'''
-    relations_to_class_map = queryset._data.cache.relations_to_class_map
+    relations_to_class_map = queryset._data.store.relations_to_class_map
     if attr_name in relations_to_class_map:
         cls = relations_to_class_map[attr_name]
-        queryset._data.cache.preload_class_instances(cls)
+        queryset._data.store.preload_class_instances(cls)
 
 
 def queryset_summary(qs):
