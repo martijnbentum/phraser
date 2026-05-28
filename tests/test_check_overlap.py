@@ -1,3 +1,4 @@
+import contextlib
 import importlib.util
 import sys
 import types
@@ -11,20 +12,41 @@ _fake_utils = types.ModuleType('phraser.utils')
 _fake_utils.overlap_dict = {False: 0, True: 1, None: 9}
 _fake_utils.overlap = lambda a, b: a.start < b.end and b.start < a.end
 
-_fake_phraser = types.ModuleType('phraser')
-_fake_phraser.utils = _fake_utils
-sys.modules.setdefault('phraser', _fake_phraser)
-sys.modules['phraser.utils'] = _fake_utils
+
+@contextlib.contextmanager
+def fake_phraser_modules():
+    original_phraser = sys.modules.get('phraser')
+    original_utils = sys.modules.get('phraser.utils')
+    original_check_overlap = sys.modules.get('phraser.check_overlap')
+
+    fake_phraser = types.ModuleType('phraser')
+    fake_phraser.utils = _fake_utils
+    sys.modules['phraser'] = fake_phraser
+    sys.modules['phraser.utils'] = _fake_utils
+    try:
+        yield
+    finally:
+        restore_module('phraser', original_phraser)
+        restore_module('phraser.utils', original_utils)
+        restore_module('phraser.check_overlap', original_check_overlap)
+
+
+def restore_module(name, module):
+    if module is None:
+        sys.modules.pop(name, None)
+    else:
+        sys.modules[name] = module
 
 
 def load_module():
-    spec = importlib.util.spec_from_file_location('phraser.check_overlap',
-        MODULE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    module.__package__ = 'phraser'
-    sys.modules['phraser.check_overlap'] = module
-    spec.loader.exec_module(module)
-    return module
+    with fake_phraser_modules():
+        spec = importlib.util.spec_from_file_location('phraser.check_overlap',
+            MODULE_PATH)
+        module = importlib.util.module_from_spec(spec)
+        module.__package__ = 'phraser'
+        sys.modules['phraser.check_overlap'] = module
+        spec.loader.exec_module(module)
+        return module
 
 
 NO_OVERLAP = 0

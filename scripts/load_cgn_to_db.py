@@ -8,9 +8,9 @@ from phraser.utils import seconds_to_miliseconds
 from . import load_to_db
 from . import process_cgn
 
-def get_filenames_of_audios_in_db(reconnect_db = True, store=None):
+def get_filenames_of_audios_in_db(refresh_db = True, store=None):
     if store is None: store = models.open_store()
-    if reconnect_db: store.reconnect()
+    if refresh_db: store.refresh_query_roots()
     audios = list(store.audios.all())
     fn = [Path(x.filename).name for x in audios]
     duplicates = find_duplicates(fn)
@@ -20,9 +20,9 @@ def get_filenames_of_audios_in_db(reconnect_db = True, store=None):
             print(f'  {d}')
     return fn
 
-def get_cgn_speaker_names_in_db(reconnect_db = True, store=None):
+def get_cgn_speaker_names_in_db(refresh_db = True, store=None):
     if store is None: store = models.open_store()
-    if reconnect_db: store.reconnect()
+    if refresh_db: store.refresh_query_roots()
     speakers = list(store.speakers.filter(dataset='cgn'))
     names = [s.name for s in speakers]
     duplicates = find_duplicates(names)
@@ -32,21 +32,21 @@ def get_cgn_speaker_names_in_db(reconnect_db = True, store=None):
             print(f'  {d}')
     return names
 
-def get_cgn_textgrid_filenames_in_db(reconnect_db = True, store=None):
+def get_cgn_textgrid_filenames_in_db(refresh_db = True, store=None):
     if store is None: store = models.open_store()
-    if reconnect_db: store.reconnect()
+    if refresh_db: store.refresh_query_roots()
     phrases = list(store.phrases.filter(audio__dataset='cgn'))
     textgrid_fn = [x.filename for x in phrases]
     return textgrid_fn
 
 
-def save_audio_to_db(audio_infos = None, reconnect_db = True, store=None):
+def save_audio_to_db(audio_infos = None, refresh_db = True, store=None):
     if store is None:
         raise ValueError('store is required')
     if audio_infos is None:
         audio_infos = process_cgn.make_or_load_audio_info()
     skipped, added, audios = [], [], []
-    fn = get_filenames_of_audios_in_db(reconnect_db=reconnect_db,
+    fn = get_filenames_of_audios_in_db(refresh_db=refresh_db,
         store=store)
     print(f'making db {len(audio_infos)} audio objects')
     for audio_info in progressbar(audio_infos):
@@ -64,17 +64,17 @@ def save_audio_to_db(audio_infos = None, reconnect_db = True, store=None):
     load_to_db.save_items_to_db(audios, store=store)
     print(f'added {len(added)} new audio objects')
     print(f'skipped {len(skipped)} existing audio objects')
-    store.reconnect()
+    store.refresh_query_roots()
     return added, skipped
 
-def save_cgn_speakers_to_db(speaker_infos = None, reconnect_db = True,
+def save_cgn_speakers_to_db(speaker_infos = None, refresh_db = True,
     store=None):
     if store is None:
         raise ValueError('store is required')
     if speaker_infos is None:
         speaker_infos = process_cgn.make_or_load_speaker_info()
     skipped, added, speakers = [], [], []
-    speaker_names = get_cgn_speaker_names_in_db(reconnect_db=reconnect_db,
+    speaker_names = get_cgn_speaker_names_in_db(refresh_db=refresh_db,
         store=store)
     print(f'making db {len(speaker_infos)} speaker objects')
     for speaker_info in progressbar(speaker_infos):
@@ -91,34 +91,34 @@ def save_cgn_speakers_to_db(speaker_infos = None, reconnect_db = True,
     load_to_db.save_items_to_db(speakers, store=store)
     print(f'added {len(added)} new speaker objects')
     print(f'skipped {len(skipped)} existing speaker objects')
-    store.reconnect()
+    store.refresh_query_roots()
     return added, skipped
 
-def get_db_cgn_speaker(speaker_name, reconnect_db = True, store=None):
+def get_db_cgn_speaker(speaker_name, refresh_db = True, store=None):
     if store is None: store = models.open_store()
-    if reconnect_db: store.reconnect()
+    if refresh_db: store.refresh_query_roots()
     return store.speakers.get(name=speaker_name, dataset='cgn')
 
-def get_db_audio(filename, reconnect_db = True, store=None):
+def get_db_audio(filename, refresh_db = True, store=None):
     if store is None: store = models.open_store()
-    if reconnect_db: store.reconnect()
+    if refresh_db: store.refresh_query_roots()
     return store.audios.get(filename=filename) 
 
-def ort_info_to_speaker_and_audio(ort_info, reconnect_db = True, store=None):
+def ort_info_to_speaker_and_audio(ort_info, refresh_db = True, store=None):
     if store is None: store = models.open_store()
-    if reconnect_db: store.reconnect()
+    if refresh_db: store.refresh_query_roots()
     sid = ort_info['tier_name']
     filename = ort_info['audio_filename']
-    speaker = get_db_cgn_speaker(sid, reconnect_db=False, store=store)
-    audio = get_db_audio(filename, reconnect_db=False, store=store)
+    speaker = get_db_cgn_speaker(sid, refresh_db=False, store=store)
+    audio = get_db_audio(filename, refresh_db=False, store=store)
     store.DB.write_speaker_audio_link(speaker, audio)
     return speaker, audio
 
-def ort_infos_to_db_items(ort_infos, reconnect_db = True, save = True,
+def ort_infos_to_db_items(ort_infos, refresh_db = True, save = True,
     store=None):
     if store is None:
         raise ValueError('store is required')
-    if reconnect_db: store.reconnect()
+    if refresh_db: store.refresh_query_roots()
     name_to_speaker_dict = make_cgn_speaker_name_to_db_speaker_dict(
         store=store)
     fn_to_audio_dict = make_cgn_audio_filename_to_db_audio_dict(store=store)
@@ -149,7 +149,7 @@ def ort_infos_to_db_items(ort_infos, reconnect_db = True, save = True,
     print(f'{len(skipped)} existing db items skipped')
     print(f'{len(errors)} ort infos with missing speaker or audio')
     print(f'{len(no_textgrid)} ort infos with missing textgrid file')
-    if reconnect_db: store.reconnect()
+    if refresh_db: store.refresh_query_roots()
     return add_items, errors, skipped, no_textgrid
     
 
@@ -160,7 +160,7 @@ def ort_info_to_db_items(ort_info, speaker = None, audio = None, store=None):
         else: raise ValueError('store is required')
     if speaker is None or audio is None:
         speaker, audio = ort_info_to_speaker_and_audio(
-            ort_info, reconnect_db=False, store=store)
+            ort_info, refresh_db=False, store=store)
     else: store.DB.write_speaker_audio_link(speaker, audio)
     textgrid_filename = ort_info['output_filename']
     offset = ort_info['start_time']

@@ -100,9 +100,7 @@ class Store:
         elif class_name == 'Speaker': attr = 'speakers'
         return getattr(self, attr)
 
-    def reconnect(self):
-        self.DB._open_env()
-        self._cache = {}
+    def refresh_query_roots(self):
         if hasattr(self, '_rank_to_keys_dict'):
             del self._rank_to_keys_dict
         self.attach_query_roots()
@@ -263,9 +261,8 @@ class Store:
             results = self.DB.load_many(keys = not_found_in_cache) 
                 
             if self.verbose: print(time.time() - start, 'lmdb data loaded')
-            for key, data in zip(not_found_in_cache, results):
+            for key, value in zip(not_found_in_cache, results):
                 index = key_to_index[key]
-                value = self.DB.load(key = key)
                 obj = value_key_to_instance(self, value, key)
                 self._bind(obj)
                 self._cache[key] = obj

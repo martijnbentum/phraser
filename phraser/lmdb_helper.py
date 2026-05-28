@@ -16,13 +16,24 @@ class DB:
         self.map_size = map_size
         self.db_names = db_names
         self.max_dbs = len(db_names)
-        self._open_env()
+        self.open()
 
-    def _open_env(self):
+    def open(self):
+        self.close()
         env, db = open_lmdb(self.path, self.map_size, self.db_names, 
             self.max_dbs)
         self.env = env
         self.db = db
+
+    def close(self):
+        env = getattr(self, 'env', None)
+        if env is None: return
+        env.close()
+        self.env = None
+        self.db = {}
+
+    def _open_env(self):
+        self.open()
 
     def all_keys(self, db_name = 'main'):
         '''Return a list of all keys in the LMDB store for a named db.

@@ -272,9 +272,9 @@ def get_phrases_from_items(items):
     phrases = [item for item in items if isinstance(item, models.Phrase)]
     return phrases
 
-def check_items_excists_in_db(db_items, reconnect_db = True, store=None):
+def check_items_excists_in_db(db_items, refresh_db = True, store=None):
     store = require_store(store, db_items)
-    if reconnect_db: store.reconnect()
+    if refresh_db: store.refresh_query_roots()
     existing_items = []
     new_items = []
     for item in db_items:
