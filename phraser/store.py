@@ -16,7 +16,11 @@ GR= "\033[90m"
 RE= "\033[0m"
 
 
-class Cache:
+class UnboundStoreError(RuntimeError):
+    pass
+
+
+class Store:
     """
     Barebones LMDB-backed store with:
     - safe caching
@@ -38,7 +42,7 @@ class Cache:
         self.db_saving_allowed = True
 
     def __repr__(self):
-        m = f'<{R}Cache{RE} {B}path{RE} {self.path} | '
+        m = f'<{R}Store{RE} {B}path{RE} {self.path} | '
         m += f'{B}cached objects{RE} {len(self._cache)} | '
         m += f'{B}db objects{RE} {len(self.all_keys())}>'
         return m
@@ -60,7 +64,7 @@ class Cache:
         m += f'  {", ".join(x)}\n'
         if self.fraction is not None:
             m += f'using part of db {B}sampling fraction{RE} {self.fraction}\n'
-            m += f'do {R}models.load_cache(){RE} to gain full access to db\n'
+            m += f'do {R}models.open_store(){RE} to gain full access to db\n'
         else: m += f'{GR}using full database (no sampling fraction){RE}\n'
         return m
 
@@ -74,6 +78,69 @@ class Cache:
         if cls.__name__ not in self.load_counter:
             self.load_counter[cls.__name__] = 0
 
+    def attach_query_roots(self):
+        '''Attach store-scoped query roots.'''
+        from . import query
+        self.audios = query.get_class_object(self.CLASS_MAP['Audio'], self)
+        self.phrases = query.get_class_object(self.CLASS_MAP['Phrase'], self)
+        self.words = query.get_class_object(self.CLASS_MAP['Word'], self)
+        self.syllables = query.get_class_object(
+            self.CLASS_MAP['Syllable'], self)
+        self.phones = query.get_class_object(self.CLASS_MAP['Phone'], self)
+        self.speakers = query.get_class_object(self.CLASS_MAP['Speaker'], self)
+
+    def query_for_class(self, cls):
+        class_name = cls.__name__
+        attr = class_name.lower()
+        if class_name == 'Audio': attr = 'audios'
+        elif class_name == 'Phrase': attr = 'phrases'
+        elif class_name == 'Word': attr = 'words'
+        elif class_name == 'Syllable': attr = 'syllables'
+        elif class_name == 'Phone': attr = 'phones'
+        elif class_name == 'Speaker': attr = 'speakers'
+        return getattr(self, attr)
+
+    def refresh_query_roots(self):
+        if hasattr(self, '_rank_to_keys_dict'):
+            del self._rank_to_keys_dict
+        self.attach_query_roots()
+
+    def create_audio(self, *args, **kwargs):
+        return self._create('Audio', *args, **kwargs)
+
+    def create_phrase(self, *args, **kwargs):
+        return self._create('Phrase', *args, **kwargs)
+
+    def create_word(self, *args, **kwargs):
+        return self._create('Word', *args, **kwargs)
+
+    def create_syllable(self, *args, **kwargs):
+        return self._create('Syllable', *args, **kwargs)
+
+    def create_phone(self, *args, **kwargs):
+        return self._create('Phone', *args, **kwargs)
+
+    def create_speaker(self, *args, **kwargs):
+        return self._create('Speaker', *args, **kwargs)
+
+    def _create(self, class_name, *args, **kwargs):
+        kwargs.setdefault('store', self)
+        return self.CLASS_MAP[class_name](*args, **kwargs)
+
+    def attach(self, obj, force=False):
+        '''Bind an object to this store.
+        force:  allow rebinding an object from a different store
+        '''
+        existing = getattr(obj, '_store', None)
+        if existing is not None and existing is not self and not force:
+            message = 'object is already bound to a different Store'
+            raise ValueError(message)
+        obj._store = self
+        return obj
+
+    def _bind(self, obj):
+        return self.attach(obj)
+
     def save(self, obj, overwrite = False, fail_gracefully = False):
         '''save an object to LMDB.
         overwrite: if True, overwrite existing object with same key.
@@ -83,6 +150,7 @@ class Cache:
                           exists in database
         '''
         if not self.db_saving_allowed: return
+        self._bind(obj)
         key = key_helper.instance_to_key(obj)
         value = struct_value.pack_instance(obj)
         fail_message = f"Object with key {key} already exists. "
@@ -102,6 +170,9 @@ class Cache:
     def save_many(self, objs, overwrite = False, fail_gracefully = False):
         if not self.db_saving_allowed: return
         start = time.time()
+        objs = list(objs)
+        for obj in objs:
+            self._bind(obj)
         itk = key_helper.instance_to_key
         pi = struct_value.pack_instance
         keys = [itk(obj) for obj in objs]
@@ -139,10 +210,11 @@ class Cache:
         '''load an object from LMDB by key.
         key: to load the object from the database.
         '''
-        try: return self._cache[key]
+        try: return self._bind(self._cache[key])
         except KeyError: pass
         value = self.DB.load(key = key) 
         obj = value_key_to_instance(self, value, key)
+        self._bind(obj)
         self._cache[key] = obj
         self.load_counter[obj.object_type] += 1
         return obj
@@ -170,7 +242,7 @@ class Cache:
         for index, key in enumerate(keys):
             if key in self._cache:
                 found_in_cache.append(key)
-                objs[index] = self._cache[key]
+                objs[index] = self._bind(self._cache[key])
             else:
                 not_found_in_cache.append(key)
         if self.verbose: print(time.time() - start, 'cache checked')
@@ -189,10 +261,10 @@ class Cache:
             results = self.DB.load_many(keys = not_found_in_cache) 
                 
             if self.verbose: print(time.time() - start, 'lmdb data loaded')
-            for key, data in zip(not_found_in_cache, results):
+            for key, value in zip(not_found_in_cache, results):
                 index = key_to_index[key]
-                value = self.DB.load(key = key)
                 obj = value_key_to_instance(self, value, key)
+                self._bind(obj)
                 self._cache[key] = obj
                 objs[index] = obj
                 self.load_counter[obj.object_type] += 1
@@ -270,10 +342,18 @@ class Cache:
 
     def turn_on_db_saving(self):
         '''allow saving to LMDB'''
-        self.db_saving_allowed = True
+        self.enable_writes()
 
     def turn_off_db_saving(self):
         '''disallow saving to LMDB'''
+        self.disable_writes()
+
+    def enable_writes(self):
+        '''Allow saving to LMDB.'''
+        self.db_saving_allowed = True
+
+    def disable_writes(self):
+        '''Disallow saving to LMDB.'''
         self.db_saving_allowed = False
 
     def is_db_saving_allowed(self):
@@ -284,14 +364,14 @@ class Cache:
 
 
 
-def value_key_to_instance(cache, value, key):
+def value_key_to_instance(store, value, key):
     '''convert value, key loaded from LMDB to an instance of cls
     this speeds up loading by avoiding __init__ calls
     '''
 
     info = key_helper.key_to_info(key)
     object_type = info['object_type']
-    cls = cache.CLASS_MAP[object_type]
+    cls = store.CLASS_MAP[object_type]
     obj = cls.__new__(cls)
     data = struct_value.unpack_instance(object_type, value)
     data.update(info)
@@ -319,7 +399,7 @@ def collect_attribute_keys(objs, attr_name):
             append(key)
     return keys
 
-def load_phrase_descendants(cache, phrases):
+def load_phrase_descendants(store, phrases):
     '''
     load all descendants of given parent objects in order of classes.
     all descendants are bulk loaded per class to minimize LMDB hits.
@@ -330,20 +410,20 @@ def load_phrase_descendants(cache, phrases):
     results = {}
     word_keys, syllable_keys, phone_keys = [], [], []  
     for phrase in phrases:
-        k = cache.DB.instance_to_child_keys(phrase, 'Word')
+        k = store.DB.instance_to_child_keys(phrase, 'Word')
         if k: word_keys.extend(k)
-        k = cache.DB.instance_to_child_keys(phrase, 'Syllable')
+        k = store.DB.instance_to_child_keys(phrase, 'Syllable')
         if k: syllable_keys.extend(k)
-        k = cache.DB.instance_to_child_keys(phrase, 'Phone')
+        k = store.DB.instance_to_child_keys(phrase, 'Phone')
         if k: phone_keys.extend(k)
     items=[('Word',word_keys),('Syllable',syllable_keys),('Phone',phone_keys)]
     for child_class_name, child_keys in items:
-        instances = cache.load_many(child_keys)
+        instances = store.load_many(child_keys)
         results[child_class_name] = {'keys': child_keys,'instances':instances}
     return results
 
 
-def load_linked_audio_and_speakers(cache, objs):
+def load_linked_audio_and_speakers(store, objs):
     '''based on a list of objects with audio_key and speaker_key attributes,
     load all linked audio and speaker objects in bulk.
     '''
@@ -354,32 +434,32 @@ def load_linked_audio_and_speakers(cache, objs):
     audio_keys   = list(set(audio_keys))
     speaker_keys = list(set(speaker_keys))
 
-    audios   = cache.load_many(audio_keys)
-    speakers = cache.load_many(speaker_keys)
+    audios   = store.load_many(audio_keys)
+    speakers = store.load_many(speaker_keys)
     d = {}
     d['Audio']   = {'keys': audio_keys,   'instances': audios}
     d['Speaker'] = {'keys': speaker_keys, 'instances': speakers}
     return d
 
 
-def load_hierarchy_from_phrases(cache, phrases):
+def load_hierarchy_from_phrases(store, phrases):
     '''load words, syllables, phones, audios, and speakers linked to 
     the list of phrases in bulk per class
     this avoids repeated LMDB hits when loading linked objects per phrase
     '''
-    instances_dict =  load_phrase_descendants(cache, phrases)
-    audio_speaker_dict = load_linked_audio_and_speakers(cache, phrases)
+    instances_dict =  load_phrase_descendants(store, phrases)
+    audio_speaker_dict = load_linked_audio_and_speakers(store, phrases)
     instances_dict.update(audio_speaker_dict)
     return instances_dict
 
-def sample_instances_from_class(cache, class_name = 'Phrase', fraction = 0.1):
+def sample_instances_from_class(store, class_name = 'Phrase', fraction = 0.1):
     '''randomly sample a fraction of all objects of the given class'''
     rank = key_helper.CLASS_RANK_MAP[class_name]
-    try: keys = cache.rank_to_keys_dict[rank]
+    try: keys = store.rank_to_keys_dict()[rank]
     except KeyError: keys = []
     n_sample = max(1, int(len(keys) * fraction))
     sampled_keys = random.sample(keys, n_sample)
-    sampled_objects = cache.load_many(sampled_keys)
+    sampled_objects = store.load_many(sampled_keys)
     return {'keys': sampled_keys, 'instances': sampled_objects} 
 
 def items_to_label_index_keys(items):
