@@ -1,6 +1,8 @@
 import librosa
 import subprocess
 
+from . import utils
+
 def time_to_samples(time, sr):
     '''convert time to samples'''
     return int(time * sr)
@@ -51,5 +53,6 @@ def soxinfo_to_dict(soxinfo):
     d['n_channels'] = int(x[2].split(': ')[-1])
     d['sample_rate'] = int(x[3].split(': ')[-1])
     t = x[5].split(': ')[-1].split(' =')[0]
-    d['duration'] = clock_to_duration_in_seconds(t)
+    duration_seconds = clock_to_duration_in_seconds(t)
+    d['duration'] = utils.seconds_to_miliseconds(duration_seconds)
     return d

@@ -718,6 +718,8 @@ class Audio:
 
     def _set_kwargs(self, **kwargs):
         for k, v in kwargs.items():
+            if k == 'duration' and not isinstance(v, int):
+                raise ValueError('duration should be in milliseconds and should be int')
             setattr(self, k, v)
 
     def add_speaker(self, speaker):
