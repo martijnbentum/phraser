@@ -8,6 +8,7 @@ from . import lmdb_helper
 from . import locations
 from . import struct_value
 from . import utils
+from .struct_helper import RANK_CLASS_MAP
 
 R= "\033[91m"
 G= "\033[92m"
@@ -43,8 +44,7 @@ class Store:
 
     def __repr__(self):
         m = f'<{R}Store{RE} {B}path{RE} {self.path} | '
-        m += f'{B}cached objects{RE} {len(self._cache)} | '
-        m += f'{B}db objects{RE} {len(self.all_keys())}>'
+        m += f'{B}cached objects{RE} {len(self._cache)}>'
         return m
 
     def __str__(self):
@@ -54,7 +54,8 @@ class Store:
         for class_name, count in self.load_counter.items():
             m += f'  {B}{class_name:<9}{RE} {count}\n'
         m += f'{G}db objects per class:{RE}\n'
-        for class_name, keys in d.items():
+        for rank, keys in d.items():
+            class_name = RANK_CLASS_MAP.get(rank, str(rank))
             m += f'  {B}{class_name:<9}{RE} {len(keys)}\n'
         m += f'{G}saved objects per class (this session):{RE}\n'
         for class_name, count in self.save_counter.items():
@@ -69,8 +70,10 @@ class Store:
         return m
 
     def register(self, cls):
-        '''Register a class for loading/saving.
-        also initializes load and save counters for the class.
+        '''Register a class so the store can load and save its instances.
+        Initializes per-class load and save counters.
+        Must be called for every domain class (Audio, Phrase, Word, Syllable,
+        Phone, Speaker) before using the store.
         '''
         self.CLASS_MAP[cls.__name__] = cls
         if cls.__name__ not in self.save_counter:
@@ -79,7 +82,12 @@ class Store:
             self.load_counter[cls.__name__] = 0
 
     def attach_query_roots(self):
-        '''Attach store-scoped query roots.'''
+        '''Attach store-scoped query roots for each registered domain class.
+        Creates self.audios, self.phrases, self.words, self.syllables,
+        self.phones, and self.speakers as Query objects bound to this store.
+        Called once during store initialisation (see models.open_store) and
+        again by refresh_query_roots when the db changes.
+        '''
         from . import query
         self.audios = query.get_class_object(self.CLASS_MAP['Audio'], self)
         self.phrases = query.get_class_object(self.CLASS_MAP['Phrase'], self)
@@ -90,6 +98,12 @@ class Store:
         self.speakers = query.get_class_object(self.CLASS_MAP['Speaker'], self)
 
     def query_for_class(self, cls):
+        '''Return the store-scoped Query object for the given class.
+        Equivalent to accessing self.audios, self.phrases, etc. directly,
+        but accepts a class reference instead of a fixed attribute name.
+        Used by model methods that need to look up instances by class at
+        runtime (e.g. get_or_none lookups in Audio, Phrase, Word, etc.).
+        '''
         class_name = cls.__name__
         attr = class_name.lower()
         if class_name == 'Audio': attr = 'audios'
@@ -101,6 +115,10 @@ class Store:
         return getattr(self, attr)
 
     def refresh_query_roots(self):
+        '''Invalidate the cached rank-to-keys dict and re-attach query roots.
+        Call after adding or removing objects to ensure queries see the
+        updated db.
+        '''
         if hasattr(self, '_rank_to_keys_dict'):
             del self._rank_to_keys_dict
         self.attach_query_roots()
@@ -276,6 +294,12 @@ class Store:
         return objs
 
     def label_to_instances(self, label, object_type):
+        '''Return all instances of object_type whose label matches label.
+        label:       the surface form to look up (e.g. "the")
+        object_type: class name string (e.g. "Word", "Phrase")
+        Uses the label index written during save, so no full scan is needed.
+        Example: store.label_to_instances("the", "Word")
+        '''
         keys = list(self.DB.label_to_segment_keys(label, object_type))
         instances = self.load_many(keys)
         return instances
