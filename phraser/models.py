@@ -263,6 +263,7 @@ class Segment:
         '''
         if audio_id is None and audio is None:
             print("Warning: No audio or audio_id provided to add_audio.")
+            return
         if audio is not None: 
             audio_id = audio.identifier
             self._audio = audio
@@ -288,6 +289,7 @@ class Segment:
         update_database = True, propagate = True):
         if speaker_id is None and speaker is None:
             print("Warning: No speaker or speaker_id provided to add_speaker.")
+            return
         if speaker is not None: 
             speaker_id = speaker.identifier
             self._speaker = speaker
