@@ -3,9 +3,9 @@ from pathlib import Path
 from progressbar import progressbar
 
 from phraser import models
+from phraser import textgrid_loader as load_to_db
 from phraser.utils import seconds_to_miliseconds
 
-from . import load_to_db
 from . import process_cgn
 
 def get_filenames_of_audios_in_db(refresh_db = True, store=None):
