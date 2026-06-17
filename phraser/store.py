@@ -8,7 +8,7 @@ from . import lmdb_helper
 from . import locations
 from . import struct_value
 from . import utils
-from .struct_helper import RANK_CLASS_MAP
+from .struct_helper import CLASS_RANK_MAP, RANK_CLASS_MAP
 
 R= "\033[91m"
 G= "\033[92m"
@@ -29,11 +29,13 @@ class Store:
     - resolver for parent, children, speaker, audio
     """
 
-    def __init__(self, path = locations.cgn_lmdb, verbose = False):
+    def __init__(self, path = locations.cgn_lmdb, fraction = None,
+        verbose = False):
+        t = time.time()
         self.DB = lmdb_helper.DB(path = path)
         self.path = path
         self._cache = {}      # key:str → object
-        self.CLASS_MAP = {}   # filled externally (Audio, etc.)
+        self.CLASS_MAP = {}
         self.save_counter = {}
         self.load_counter = {}
         self.save_key_counter = {}
@@ -41,6 +43,10 @@ class Store:
         self._classes_loaded = {}
         self.fraction = None
         self.db_saving_allowed = True
+        self._register_default_classes()
+        if fraction is not None:
+            self._preload_sampled_fraction(fraction)
+        print(f'Store loaded in {time.time() - t:.2f} seconds')
 
     def __repr__(self):
         m = f'<{R}Store{RE} {B}path{RE} {self.path} | '
@@ -65,7 +71,7 @@ class Store:
         m += f'  {", ".join(x)}\n'
         if self.fraction is not None:
             m += f'using part of db {B}sampling fraction{RE} {self.fraction}\n'
-            m += f'do {R}models.open_store(){RE} to gain full access to db\n'
+            m += f'construct {R}Store(path){RE} to gain full access to db\n'
         else: m += f'{GR}using full database (no sampling fraction){RE}\n'
         return m
 
@@ -81,21 +87,38 @@ class Store:
         if cls.__name__ not in self.load_counter:
             self.load_counter[cls.__name__] = 0
 
+    def register_all(self, *classes):
+        '''Register several classes and (re)attach query roots in one call.'''
+        for cls in classes:
+            self.register(cls)
+        self.attach_query_roots()
+
+    def _register_default_classes(self):
+        '''Register the domain classes listed in CLASS_RANK_MAP and attach
+        query roots. The models import is deferred to avoid an import cycle
+        (models imports store at module load; see attach_query_roots for the
+        same pattern with query).
+        '''
+        from . import models
+        classes = [getattr(models, name) for name in CLASS_RANK_MAP]
+        self.register_all(*classes)
+
     def attach_query_roots(self):
-        '''Attach store-scoped query roots for each registered domain class.
-        Creates self.audios, self.phrases, self.words, self.syllables,
-        self.phones, and self.speakers as Query objects bound to this store.
-        Called once during store initialisation (see models.open_store) and
-        again by refresh_query_roots when the db changes.
+        '''Attach a store-scoped query root for each registered class and
+        build relations_to_class_map (plural attr name -> class).
+        Creates self.audios, self.phrases, etc. as Query objects bound to this
+        store. Called by register_all and by refresh_query_roots when the db
+        changes.
         '''
         from . import query
-        self.audios = query.get_class_object(self.CLASS_MAP['Audio'], self)
-        self.phrases = query.get_class_object(self.CLASS_MAP['Phrase'], self)
-        self.words = query.get_class_object(self.CLASS_MAP['Word'], self)
-        self.syllables = query.get_class_object(
-            self.CLASS_MAP['Syllable'], self)
-        self.phones = query.get_class_object(self.CLASS_MAP['Phone'], self)
-        self.speakers = query.get_class_object(self.CLASS_MAP['Speaker'], self)
+        self.relations_to_class_map = {}
+        self._query_roots = {}
+        for class_name, cls in self.CLASS_MAP.items():
+            attr = class_name.lower() + 's'  # Audio->audios, Phrase->phrases
+            root = query.get_class_object(cls, self)
+            setattr(self, attr, root)
+            self.relations_to_class_map[attr] = cls
+            self._query_roots[cls] = root
 
     def query_for_class(self, cls):
         '''Return the store-scoped Query object for the given class.
@@ -104,15 +127,7 @@ class Store:
         Used by model methods that need to look up instances by class at
         runtime (e.g. get_or_none lookups in Audio, Phrase, Word, etc.).
         '''
-        class_name = cls.__name__
-        attr = class_name.lower()
-        if class_name == 'Audio': attr = 'audios'
-        elif class_name == 'Phrase': attr = 'phrases'
-        elif class_name == 'Word': attr = 'words'
-        elif class_name == 'Syllable': attr = 'syllables'
-        elif class_name == 'Phone': attr = 'phones'
-        elif class_name == 'Speaker': attr = 'speakers'
-        return getattr(self, attr)
+        return self._query_roots[cls]
 
     def refresh_query_roots(self):
         '''Invalidate the cached rank-to-keys dict and re-attach query roots.
@@ -123,27 +138,12 @@ class Store:
             del self._rank_to_keys_dict
         self.attach_query_roots()
 
-    def create_audio(self, *args, **kwargs):
-        return self._create('Audio', *args, **kwargs)
-
-    def create_phrase(self, *args, **kwargs):
-        return self._create('Phrase', *args, **kwargs)
-
-    def create_word(self, *args, **kwargs):
-        return self._create('Word', *args, **kwargs)
-
-    def create_syllable(self, *args, **kwargs):
-        return self._create('Syllable', *args, **kwargs)
-
-    def create_phone(self, *args, **kwargs):
-        return self._create('Phone', *args, **kwargs)
-
-    def create_speaker(self, *args, **kwargs):
-        return self._create('Speaker', *args, **kwargs)
-
-    def _create(self, class_name, *args, **kwargs):
+    def create(self, cls, **kwargs):
+        '''Create an instance of cls bound to this store.
+        e.g. store.create(Audio, filename='x.wav')
+        '''
         kwargs.setdefault('store', self)
-        return self.CLASS_MAP[class_name](*args, **kwargs)
+        return cls(**kwargs)
 
     def attach(self, obj, force=False):
         '''Bind an object to this store.

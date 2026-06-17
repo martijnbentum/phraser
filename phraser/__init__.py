@@ -1,4 +1,4 @@
-from .models import Audio, Phone, Phrase, Speaker, Syllable, Word, open_store
+from .models import Audio, Phone, Phrase, Speaker, Syllable, Word
 from .store import Store, UnboundStoreError
 
 __all__ = [
@@ -10,5 +10,4 @@ __all__ = [
     "Syllable",
     "UnboundStoreError",
     "Word",
-    "open_store",
 ]

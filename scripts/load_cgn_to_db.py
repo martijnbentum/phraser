@@ -3,13 +3,14 @@ from pathlib import Path
 from progressbar import progressbar
 
 from phraser import models
+from phraser import Store
 from phraser import textgrid_loader as load_to_db
 from phraser.utils import seconds_to_miliseconds
 
 from . import process_cgn
 
 def get_filenames_of_audios_in_db(refresh_db = True, store=None):
-    if store is None: store = models.open_store()
+    if store is None: store = Store()
     if refresh_db: store.refresh_query_roots()
     audios = list(store.audios.all())
     fn = [Path(x.filename).name for x in audios]
@@ -21,7 +22,7 @@ def get_filenames_of_audios_in_db(refresh_db = True, store=None):
     return fn
 
 def get_cgn_speaker_names_in_db(refresh_db = True, store=None):
-    if store is None: store = models.open_store()
+    if store is None: store = Store()
     if refresh_db: store.refresh_query_roots()
     speakers = list(store.speakers.filter(dataset='cgn'))
     names = [s.name for s in speakers]
@@ -33,7 +34,7 @@ def get_cgn_speaker_names_in_db(refresh_db = True, store=None):
     return names
 
 def get_cgn_textgrid_filenames_in_db(refresh_db = True, store=None):
-    if store is None: store = models.open_store()
+    if store is None: store = Store()
     if refresh_db: store.refresh_query_roots()
     phrases = list(store.phrases.filter(audio__dataset='cgn'))
     textgrid_fn = [x.filename for x in phrases]
@@ -95,17 +96,17 @@ def save_cgn_speakers_to_db(speaker_infos = None, refresh_db = True,
     return added, skipped
 
 def get_db_cgn_speaker(speaker_name, refresh_db = True, store=None):
-    if store is None: store = models.open_store()
+    if store is None: store = Store()
     if refresh_db: store.refresh_query_roots()
     return store.speakers.get(name=speaker_name, dataset='cgn')
 
 def get_db_audio(filename, refresh_db = True, store=None):
-    if store is None: store = models.open_store()
+    if store is None: store = Store()
     if refresh_db: store.refresh_query_roots()
     return store.audios.get(filename=filename) 
 
 def ort_info_to_speaker_and_audio(ort_info, refresh_db = True, store=None):
-    if store is None: store = models.open_store()
+    if store is None: store = Store()
     if refresh_db: store.refresh_query_roots()
     sid = ort_info['tier_name']
     filename = ort_info['audio_filename']
@@ -172,12 +173,12 @@ def ort_info_to_db_items(ort_info, speaker = None, audio = None, store=None):
 
     
 def make_cgn_speaker_name_to_db_speaker_dict(store=None):
-    if store is None: store = models.open_store()
+    if store is None: store = Store()
     speakers = store.speakers.filter(dataset='cgn')
     name_to_speaker_dict = {s.name: s for s in speakers}
     return name_to_speaker_dict
 def make_cgn_audio_filename_to_db_audio_dict(store=None):
-    if store is None: store = models.open_store()
+    if store is None: store = Store()
     audios = store.audios.filter(dataset='cgn')
     fn_to_audio_dict = {a.filename: a for a in audios}
     return fn_to_audio_dict

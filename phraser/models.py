@@ -7,7 +7,6 @@ from . import key_helper
 from . import locations
 from . import model_helper
 from . import query
-from . import store as store_module
 from . import struct_value
 from . import utils
 from .model_helper import EMPTY_ID
@@ -78,7 +77,7 @@ class Segment:
         if self.object_type != other.object_type:
             return False
         if self.object_type == 'Phrase':
-            self.filename = other.filename
+            return self.filename == other.filename
         for field in self.IDENTITY_FIELDS:
             if getattr(self, field) != getattr(other, field):
                 return False
@@ -174,6 +173,7 @@ class Segment:
     def child_keys(self):
         if self.allowed_child_type is None: 
             self._child_keys = None
+            return []
         return list(self.store.DB.instance_to_child_keys(self))
 
     @property
@@ -253,7 +253,7 @@ class Segment:
     def duration_seconds(self):
         return utils.miliseconds_to_seconds(self.duration)
             
-    def save(self, overwrite = None, fail_gracefully = False):
+    def save(self, overwrite = False, fail_gracefully = False):
         self.store.save(self, overwrite=overwrite,
             fail_gracefully=fail_gracefully)
 
@@ -297,11 +297,11 @@ class Segment:
         if propagate:
             all_segments += list(self.iter_family())[1:]
         for segment in all_segments:
-            segment._apply_speaker_id(speaker_id, update_database)
-        if update_database:  
+            segment._apply_speaker_id(speaker_id)
+        if update_database:
             model_helper.write_changes_to_db(all_segments, self.store)
 
-    def _apply_speaker_id(self, speaker_id, update_database):
+    def _apply_speaker_id(self, speaker_id):
         if self.speaker_id == speaker_id: return
         self.speaker_id = speaker_id
             
@@ -487,7 +487,7 @@ class Segment:
         query_root = store.query_for_class(cls)
         instance = query_root.get_or_none(**lookup)
         if instance is None:
-            instance = cls(store=store, **kwargs)
+            instance = store.create(cls, **kwargs)
             return instance, True
         return instance, False
 
@@ -803,7 +803,7 @@ class Audio:
         """Return the LMDB key for this segment."""
         return key_helper.instance_to_key(self)
 
-    def save(self, overwrite=None, fail_gracefully=False):
+    def save(self, overwrite=False, fail_gracefully=False):
         self.store.save(self, overwrite=overwrite,
             fail_gracefully=fail_gracefully)
 
@@ -973,7 +973,7 @@ class Speaker:
         """Return the LMDB key for this segment."""
         return key_helper.instance_to_key(self)
             
-    def save(self, overwrite=None, fail_gracefully=False):
+    def save(self, overwrite=False, fail_gracefully=False):
         self.store.save(self, overwrite=overwrite,
             fail_gracefully=fail_gracefully)
 
@@ -1014,35 +1014,3 @@ Syllable.allowed_child_type = Phone
 Syllable.parent_class = Word
 Phone.allowed_child_type = None
 Phone.parent_class = Syllable
-
-
-def open_store(path=locations.cgn_lmdb, fraction = None):
-    t = time.time()
-    store = store_module.Store(path=path)
-    print(f'store created in {time.time() - t:.2f} seconds')
-
-    store.register(Audio)
-    print(f'Audio registered in {time.time() - t:.2f} seconds')
-    store.register(Phrase)
-    store.register(Word)
-    store.register(Syllable)
-    store.register(Phone)
-    store.register(Speaker)
-    print(f'Classes registered in {time.time() - t:.2f} seconds')
-
-    store.attach_query_roots()
-    print(f'Query roots created in {time.time() - t:.2f} seconds')
-
-    store.relations_to_class_map = {
-        'audios': Audio, 
-        'speakers': Speaker,
-        'phrases': Phrase,
-        'words': Word,
-        'syllables': Syllable,
-        'phones': Phone,
-    }
-    print(f'relations_to_class_map created in {time.time() - t:.2f} seconds')
-    if fraction is not None:
-        store._preload_sampled_fraction(fraction)
-    print(f'Store loaded in {time.time() - t:.2f} seconds')
-    return store

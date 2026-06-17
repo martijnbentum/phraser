@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 
-from phraser import Store, UnboundStoreError, open_store
+from phraser import Store, UnboundStoreError
 from phraser.models import Audio, Phone, Phrase, Speaker, Syllable, Word
 from phraser.query import QuerySet
 
@@ -16,17 +16,17 @@ class TestStoreBinding(unittest.TestCase):
     def setUpClass(cls):
         cls._tmpdir = tempfile.mkdtemp()
         with redirect_stdout(io.StringIO()):
-            cls.store = open_store(path=cls._tmpdir)
+            cls.store = Store(path=cls._tmpdir)
 
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls._tmpdir, ignore_errors=True)
 
     # ------------------------------------------------------------------ #
-    # 1. open_store attaches all six query roots
+    # 1. Store() attaches all six query roots
     # ------------------------------------------------------------------ #
 
-    def test_open_store_attaches_query_roots(self):
+    def test_store_attaches_query_roots(self):
         for attr in ('audios', 'phrases', 'words', 'syllables', 'phones', 'speakers'):
             with self.subTest(attr=attr):
                 self.assertTrue(hasattr(self.store, attr),
@@ -34,17 +34,17 @@ class TestStoreBinding(unittest.TestCase):
                 self.assertIsInstance(getattr(self.store, attr), QuerySet)
 
     # ------------------------------------------------------------------ #
-    # 2. store.create_*() factory methods bind objects to the store
+    # 2. store.create() factory method binds objects to the store
     # ------------------------------------------------------------------ #
 
     def test_store_create_methods_bind_objects(self):
         objs = {
-            'Audio':    self.store.create_audio(filename='bind.wav', save=False),
-            'Phrase':   self.store.create_phrase(label='bp', start=0, end=100, save=False),
-            'Word':     self.store.create_word(label='bw', start=0, end=50, save=False),
-            'Syllable': self.store.create_syllable(label='bs', start=0, end=50, save=False),
-            'Phone':    self.store.create_phone(label='t', start=0, end=50, save=False),
-            'Speaker':  self.store.create_speaker(name='bs', dataset='test', save=False),
+            'Audio':    self.store.create(Audio, filename='bind.wav', save=False),
+            'Phrase':   self.store.create(Phrase, label='bp', start=0, end=100, save=False),
+            'Word':     self.store.create(Word, label='bw', start=0, end=50, save=False),
+            'Syllable': self.store.create(Syllable, label='bs', start=0, end=50, save=False),
+            'Phone':    self.store.create(Phone, label='t', start=0, end=50, save=False),
+            'Speaker':  self.store.create(Speaker, name='bs', dataset='test', save=False),
         }
         for class_name, obj in objs.items():
             with self.subTest(class_name=class_name):
@@ -87,7 +87,7 @@ class TestStoreBinding(unittest.TestCase):
     # ------------------------------------------------------------------ #
 
     def test_get_or_create_uses_store_query_root(self):
-        self.store.create_word(label='preexist', start=400, end=500)
+        self.store.create(Word, label='preexist', start=400, end=500)
         # Refresh the word query root's key list from the live environment.
         self.store.words._data._get_keys(update=True)
 
@@ -106,7 +106,7 @@ class TestStoreBinding(unittest.TestCase):
 
     def test_store_save_and_load_rebinds_loaded_object(self):
         # Audio requires an explicit duration; there is no class-level default.
-        audio = self.store.create_audio(filename='slr_test.wav', duration=0)
+        audio = self.store.create(Audio, filename='slr_test.wav', duration=0)
         key = audio.key
         self.store._cache.clear()
 
@@ -121,8 +121,8 @@ class TestStoreBinding(unittest.TestCase):
     # ------------------------------------------------------------------ #
 
     def test_store_load_many_uses_bulk_results(self):
-        a1 = self.store.create_audio(filename='bulk1.wav', duration=0)
-        a2 = self.store.create_audio(filename='bulk2.wav', duration=0)
+        a1 = self.store.create(Audio, filename='bulk1.wav', duration=0)
+        a2 = self.store.create(Audio, filename='bulk2.wav', duration=0)
         keys = [a1.key, a2.key]
         self.store._cache.clear()
 
@@ -154,7 +154,10 @@ class TestStoreBinding(unittest.TestCase):
         import phraser
         self.assertTrue(hasattr(phraser, 'Store'))
         self.assertTrue(hasattr(phraser, 'UnboundStoreError'))
-        self.assertTrue(hasattr(phraser, 'open_store'))
+        self.assertFalse(
+            hasattr(phraser, 'open_store'),
+            'open_store should no longer be exported from phraser',
+        )
         self.assertFalse(
             hasattr(phraser, 'load_cache'),
             'load_cache should no longer be exported from phraser',

@@ -2,6 +2,7 @@ import random
 from progressbar import progressbar
 
 from phraser import models
+from phraser import Store
 
 
 
@@ -20,7 +21,7 @@ def generate_objects(store=None):
         list of Phrase objects (each with embedded words/syllables/phones)
     """
     if store is None:
-        store = models.open_store()
+        store = Store()
     phrase_objects = []
     time_cursor = 0.0
     all_objects = []
