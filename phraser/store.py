@@ -21,6 +21,10 @@ class UnboundStoreError(RuntimeError):
     pass
 
 
+class ClosedStoreError(RuntimeError):
+    pass
+
+
 class Store:
     """
     Barebones LMDB-backed store with:
@@ -43,6 +47,7 @@ class Store:
         self._classes_loaded = {}
         self.fraction = None
         self.db_saving_allowed = True
+        self.closed = False
         self._register_default_classes()
         if fraction is not None:
             self._preload_sampled_fraction(fraction)
@@ -168,6 +173,7 @@ class Store:
                           exists in database
         '''
         if not self.db_saving_allowed: return
+        self._ensure_open()
         self._bind(obj)
         key = key_helper.instance_to_key(obj)
         value = struct_value.pack_instance(obj)
@@ -187,6 +193,7 @@ class Store:
 
     def save_many(self, objs, overwrite = False, fail_gracefully = False):
         if not self.db_saving_allowed: return
+        self._ensure_open()
         start = time.time()
         objs = list(objs)
         for obj in objs:
@@ -228,6 +235,7 @@ class Store:
         '''load an object from LMDB by key.
         key: to load the object from the database.
         '''
+        self._ensure_open()
         try: return self._bind(self._cache[key])
         except KeyError: pass
         value = self.DB.load(key = key) 
@@ -246,6 +254,7 @@ class Store:
         garbage collection is disabled if loading more than 100,000 objects
         to speed up loading further
         '''
+        self._ensure_open()
         if len(keys) == 0: return []
         if len(keys) == 1: return [self.load(keys[0])]
         # preparation phase to return objects in same order as keys
@@ -300,17 +309,20 @@ class Store:
         Uses the label index written during save, so no full scan is needed.
         Example: store.label_to_instances("the", "Word")
         '''
+        self._ensure_open()
         keys = list(self.DB.label_to_segment_keys(label, object_type))
         instances = self.load_many(keys)
         return instances
 
     def delete(self, key):
         '''delete an object from LMDB by key'''
+        self._ensure_open()
         self.DB.delete(key = key)
         if key in self._cache: del self._cache[key]
 
     def delete_many(self, keys):
         '''delete many objects from LMDB by keys'''
+        self._ensure_open()
         self.DB.delete_many(keys = keys)
         for key in keys:
             if key in self._cache: del self._cache[key]
@@ -326,14 +338,17 @@ class Store:
         if not update:
             if hasattr(self, '_rank_to_keys_dict'):
                 return self._rank_to_keys_dict
+        self._ensure_open()
         d = self.DB.rank_to_keys_dict()
         self._rank_to_keys_dict = d
         return self._rank_to_keys_dict
 
     def all_keys(self):
+        self._ensure_open()
         return self.DB.all_keys()
 
     def all_links(self):
+        self._ensure_open()
         return self.DB.all_links()
 
     def preload_class_instances(self,cls = None, class_name = None):
@@ -383,6 +398,36 @@ class Store:
     def is_db_saving_allowed(self):
         '''return True if saving to LMDB is allowed'''
         return self.db_saving_allowed
+
+    def open(self):
+        '''(Re)open the underlying LMDB environment.
+        Use after close() to make the store usable again.
+        '''
+        self.DB.open()
+        self.closed = False
+
+    def close(self):
+        '''Close the underlying LMDB environment and clear the cache.
+        After closing, the store can no longer load or save objects.
+        '''
+        self.DB.close()
+        self._cache.clear()
+        self.closed = True
+
+    def is_open(self):
+        '''return True if the store's LMDB env is open'''
+        return not self.closed
+
+    def _ensure_open(self):
+        '''raise ClosedStoreError if the store has been closed'''
+        if self.closed:
+            raise ClosedStoreError(
+                'Store is closed. Call store.open() to reopen it.')
+
+    def __del__(self):
+        '''Close the LMDB environment when the store is garbage collected.'''
+        try: self.close()
+        except Exception: pass
             
             
 

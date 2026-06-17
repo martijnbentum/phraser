@@ -10,7 +10,7 @@ from . import query
 from . import struct_value
 from . import utils
 from .model_helper import EMPTY_ID
-from .store import UnboundStoreError
+from .store import ClosedStoreError, UnboundStoreError
 
 R= "\033[91m"
 G= "\033[92m"
@@ -470,6 +470,11 @@ class Segment:
             m = f'{name} is not bound to a Store. Create it with store=... '
             m += f'or Store.create_{name}().'
             raise UnboundStoreError(m)
+        if store.closed:
+            name = self.__class__.__name__
+            m = f'{name} is bound to a closed Store. '
+            m += 'Call store.open() to reopen it.'
+            raise ClosedStoreError(m)
         return store
 
     @classmethod
@@ -815,6 +820,11 @@ class Audio:
             m = f'{name} is not bound to a Store. Create it with store=... '
             m += f'or Store.create_{name}().'
             raise UnboundStoreError(m)
+        if store.closed:
+            name = self.__class__.__name__
+            m = f'{name} is bound to a closed Store. '
+            m += 'Call store.open() to reopen it.'
+            raise ClosedStoreError(m)
         return store
 
     @property
@@ -996,6 +1006,11 @@ class Speaker:
             m = f'{name} is not bound to a Store. Create it with store=... '
             m += f'or Store.create_{name}().'
             raise UnboundStoreError(m)
+        if store.closed:
+            name = self.__class__.__name__
+            m = f'{name} is bound to a closed Store. '
+            m += 'Call store.open() to reopen it.'
+            raise ClosedStoreError(m)
         return store
 
     @property

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 
-from phraser import Store, UnboundStoreError
+from phraser import ClosedStoreError, Store, UnboundStoreError
 from phraser.models import Audio, Phone, Phrase, Speaker, Syllable, Word
 from phraser.query import QuerySet
 
@@ -154,6 +154,7 @@ class TestStoreBinding(unittest.TestCase):
         import phraser
         self.assertTrue(hasattr(phraser, 'Store'))
         self.assertTrue(hasattr(phraser, 'UnboundStoreError'))
+        self.assertTrue(hasattr(phraser, 'ClosedStoreError'))
         self.assertFalse(
             hasattr(phraser, 'open_store'),
             'open_store should no longer be exported from phraser',
@@ -162,6 +163,87 @@ class TestStoreBinding(unittest.TestCase):
             hasattr(phraser, 'load_cache'),
             'load_cache should no longer be exported from phraser',
         )
+
+    # ------------------------------------------------------------------ #
+    # 10. Store close/open lifecycle
+    # ------------------------------------------------------------------ #
+
+    def _fresh_store(self):
+        """A throwaway store with its own temp dir (cleaned up after the test).
+
+        Lifecycle tests must not use the shared cls.store, since closing it
+        would break the env other tests in this class depend on.
+        """
+        tmpdir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
+        with redirect_stdout(io.StringIO()):
+            store = Store(path=tmpdir)
+        return store
+
+    def test_close_sets_state_and_clears_cache(self):
+        store = self._fresh_store()
+        store.create(Audio, filename='close.wav', duration=0)
+        self.assertTrue(store._cache, 'save should populate the cache')
+
+        store.close()
+
+        self.assertTrue(store.closed)
+        self.assertFalse(store.is_open())
+        self.assertEqual(store._cache, {})
+
+    def test_open_restores_usability(self):
+        store = self._fresh_store()
+        audio = store.create(Audio, filename='reopen.wav', duration=0)
+        key = audio.key
+
+        store.close()
+        store.open()
+
+        self.assertFalse(store.closed)
+        self.assertTrue(store.is_open())
+        loaded = store.load(key)
+        self.assertEqual(loaded.filename, 'reopen.wav')
+
+    def test_close_is_idempotent(self):
+        store = self._fresh_store()
+        store.close()
+        store.close()  # second close must not raise
+        self.assertTrue(store.closed)
+
+    def test_closed_store_raises_on_model_access(self):
+        store = self._fresh_store()
+        audio = store.create(Audio, filename='model.wav', duration=0)
+        store.close()
+
+        with self.assertRaises(ClosedStoreError):
+            _ = audio.store
+        with self.assertRaises(ClosedStoreError):
+            audio.save()
+        with self.assertRaises(ClosedStoreError):
+            _ = audio.exists_in_db
+        with self.assertRaises(ClosedStoreError):
+            _ = audio.phrases
+
+    def test_closed_store_raises_on_direct_api(self):
+        store = self._fresh_store()
+        audio = store.create(Audio, filename='direct.wav', duration=0)
+        key = audio.key
+        store.close()
+
+        with self.assertRaises(ClosedStoreError):
+            store.load(key)
+        with self.assertRaises(ClosedStoreError):
+            store.load_many([key])
+        with self.assertRaises(ClosedStoreError):
+            store.save(audio)
+        with self.assertRaises(ClosedStoreError):
+            store.save_many([audio])
+        with self.assertRaises(ClosedStoreError):
+            store.delete(key)
+        with self.assertRaises(ClosedStoreError):
+            store.delete_many([key])
+        with self.assertRaises(ClosedStoreError):
+            store.audios.get_or_none(filename='direct.wav')
 
 
 if __name__ == '__main__':
