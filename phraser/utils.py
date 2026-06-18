@@ -3,6 +3,7 @@ G= "\033[92m"
 B= "\033[94m"
 GR= "\033[90m"
 RE= "\033[0m"
+object_type_to_ljust_label={'Phrase':40, 'Word':15, 'Syllable':12, 'Phone':3}
 
 def pretty_print_object_dict(obj_dict):
     '''pretty print dict with red keys and aligned outline.
