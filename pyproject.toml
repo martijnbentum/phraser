@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phraser"
-version = "0.2.11"
+version = "0.2.12"
 description = "LMDB-backed phrase and segment tooling"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -31,6 +31,9 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["phraser", "scripts"]
+
+[tool.setuptools.package-data]
+phraser = ["data/*.json"]
 
 [dependency-groups]
 dev = [

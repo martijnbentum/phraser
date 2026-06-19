@@ -1,3 +1,4 @@
+from . import phone_features
 
 
 def assign_phrases_phone_positions(phrases, phone_types=None, update_database=True):
@@ -61,50 +62,18 @@ def check_consecutive_numbers(numbers):
     return True
 
 
-PHONE_TYPES = {
-    "aː": "vowel",
-    "b": "consonant",
-    "d": "consonant",
-    "eː": "vowel",
-    "f": "consonant",
-    "h": "consonant",
-    "i": "vowel",
-    "j": "consonant",
-    "k": "consonant",
-    "l": "consonant",
-    "m": "consonant",
-    "n": "consonant",
-    "oː": "vowel",
-    "p": "consonant",
-    "r": "consonant",
-    "s": "consonant",
-    "t": "consonant",
-    "u": "vowel",
-    "ui": "vowel",
-    "v": "consonant",
-    "w": "consonant",
-    "x": "consonant",
-    "y": "vowel",
-    "z": "consonant",
-    "øː": "vowel",
-    "ŋ": "consonant",
-    "œy": "vowel",
-    "œː": "vowel",
-    "ɑ": "vowel",
-    "ɑu": "vowel",
-    "ɔ": "vowel",
-    "ɔː": "vowel",
-    "ə": "vowel",
-    "ɛ": "vowel",
-    "ɛi": "vowel",
-    "ɛː": "vowel",
-    "ɡ": "consonant",
-    "ɣ": "consonant",
-    "ɪ": "vowel",
-    "ɲ": "consonant",
-    "ʃ": "consonant",
-    "ʒ": "consonant",
-    "ʏ": "vowel",
-    "": "other",
-    "(..)": "other",
-}
+OTHER_PHONE_LABELS = ('', '(..)')
+
+
+def load_phone_types():
+    '''Return {label: 'vowel'|'consonant'} from ipa_features.json, plus the
+    non-speech placeholder labels mapped to 'other'.'''
+    phone_types = {}
+    for label, info in phone_features.load_ipa_features().items():
+        phone_types[label] = info['type']
+    for label in OTHER_PHONE_LABELS:
+        phone_types[label] = 'other'
+    return phone_types
+
+
+PHONE_TYPES = load_phone_types()

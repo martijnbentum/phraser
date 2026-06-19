@@ -1,25 +1,11 @@
-import importlib.util
 import types
 import unittest
-from pathlib import Path
 
-MODULE_PATH = (Path(__file__).resolve().parents[1]
-               / 'phraser' / 'syllable_structure.py')
-
-
-def load_module():
-    spec = importlib.util.spec_from_file_location(
-        'syllable_structure_under_test', MODULE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+from phraser import syllable_structure as m
 
 
 def make_phone(label):
     return types.SimpleNamespace(label=label)
-
-
-m = load_module()
 
 
 class TestCheckConsecutiveNumbers(unittest.TestCase):

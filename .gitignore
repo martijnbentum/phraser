@@ -42,4 +42,5 @@ pip-wheel-metadata/
 AGENTS.md
 OLD/
 
-data/
+# repo-root runtime data only (lmdb, textgrids, audio); not phraser/data/ package data
+/data/

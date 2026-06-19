@@ -4,6 +4,7 @@ from ssh_audio_play import play
 
 from . import key_helper
 from . import model_helper
+from . import phone_features
 from . import query
 from . import struct_value
 from . import utils
@@ -673,6 +674,24 @@ class Syllable(Segment):
         """Return all phones in this syllable."""
         return self.children
 
+    def _phones_at(self, position):
+        return [p for p in self.phones if p.position == position]
+
+    @property
+    def onset(self):
+        '''Phones in the syllable onset (empty until positions assigned).'''
+        return self._phones_at('onset')
+
+    @property
+    def nucleus(self):
+        '''Phones in the syllable nucleus (empty until positions assigned).'''
+        return self._phones_at('nucleus')
+
+    @property
+    def coda(self):
+        '''Phones in the syllable coda (empty until positions assigned).'''
+        return self._phones_at('coda')
+
     @property
     def word(self):
         """Return the parent word of this syllable."""
@@ -684,20 +703,43 @@ class Syllable(Segment):
         return query.queryset_from_items(self.phones, self.store)
 
 class Phone(Segment):
-    METADATA_FIELDS = {'features'}
+    METADATA_FIELDS = {}
 
     phrase_id = EMPTY_ID
     phrase_start = 0
+    position_code = 9      # stored int: 1=onset 2=nucleus 3=coda, 9=unassigned
 
     _add_phrase = _add_phrase
 
     @property
-    def position_code(self):
-        if hasattr(self, 'position'):
-            if self.position == 'onset': return 1
-            if self.position == 'nucleus': return 2
-            if self.position == 'coda': return 3
-        return 9
+    def position(self):
+        '''Syllable position string from the stored position_code
+        ('unknown' if unassigned).'''
+        codes = {1: 'onset', 2: 'nucleus', 3: 'coda', 9: 'unknown'}
+        return codes.get(self.position_code, 'unknown')
+
+    @position.setter
+    def position(self, value):
+        codes = {'onset': 1, 'nucleus': 2, 'coda': 3}
+        self.position_code = codes.get(value, 9)
+
+    @property
+    def features(self):
+        '''Static IPA reference info for this phone's label (articulatory
+        descriptors + binary distinctive-feature matrix), or None if the
+        label is not a known IPA symbol.
+
+        NB: the binary distinctive-feature matrix is work in progress and
+        not fully verified - see phone_features. The 'type' field and
+        articulatory descriptors are reliable.'''
+        return phone_features.get_phone_features(self.label)
+
+    @property
+    def type(self):
+        '''Phone type ('vowel' or 'consonant') for this phone's label, or
+        None if the label is not a known IPA symbol.'''
+        info = phone_features.get_phone_features(self.label)
+        return info['type'] if info else None
 
     @property
     def syllable(self):
