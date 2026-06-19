@@ -129,12 +129,18 @@ class Segment:
     def label_index_key(self):
         return key_helper.instance_to_label_index_key(self)
 
-    def embedding(self, model_name, layer, collar=500, store=None):
+    def embedding(self, model_name, layer, collar=500, store=None,
+        fallback=False):
         '''Load the stored hidden-state Embedding for this segment.
 
         Uses the echoframe store bound to this segment's phraser store
         (via echoframe_store.attach_phraser_store), or an explicit
         store=... override. Returns an echoframe Embedding object.
+
+        fallback:  if nothing is stored for this segment and fallback=True,
+                   walk ancestors (e.g. phone -> syllable -> word -> phrase)
+                   and return the first ancestor embedding sliced to this
+                   segment as a SlicedEmbedding.
         '''
         store = store or getattr(self.store, 'echoframe_store', None)
         if store is None:
@@ -142,8 +148,26 @@ class Segment:
                 'no echoframe store bound; call '
                 'echoframe_store.attach_phraser_store(source_id, '
                 'phraser_store) or pass store=...')
-        return store.phraser_key_to_embedding(self.key, model_name, layer,
-            collar=collar)
+        try:
+            return store.phraser_key_to_embedding(self.key, model_name, layer,
+                collar=collar)
+        except ValueError:
+            if not fallback: raise
+        return self._ancestor_embedding(model_name, layer, collar, store)
+
+    def _ancestor_embedding(self, model_name, layer, collar, store):
+        '''Return the nearest ancestor's stored embedding sliced to this
+        segment, or raise if no ancestor has one.'''
+        for ancestor in self.iter_ancestors():
+            try:
+                parent = store.phraser_key_to_embedding(ancestor.key,
+                    model_name, layer, collar=collar)
+            except ValueError:
+                continue
+            return parent.sub_embedding(self)
+        raise ValueError(
+            f'no stored embedding for {self.object_type} or its ancestors '
+            f'(model_name={model_name}, layer={layer}, collar={collar})')
 
 
     @property
