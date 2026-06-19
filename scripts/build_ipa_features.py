@@ -142,7 +142,7 @@ def consonant_features(place, manner, voiced):
 
     labial = place in ('bilabial', 'labiodental', 'labial-velar')
     f['labial'] = '+' if labial else '-'
-    f['round'] = '-'
+    f['round'] = '+' if place == 'labial-velar' else '-'
     f['labiodental'] = '+' if place == 'labiodental' else ('-' if labial else '0')
 
     coronal = place in ('dental', 'alveolar', 'postalveolar', 'retroflex')
