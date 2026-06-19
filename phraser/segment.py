@@ -151,8 +151,13 @@ class Segment:
         try:
             return store.phraser_key_to_embedding(self.key, model_name, layer,
                 collar=collar)
-        except ValueError:
-            if not fallback: raise
+        except ValueError as e:
+            if not fallback:
+                raise ValueError(
+                    f'no stored embedding for {self.object_type} '
+                    f'(model_name={model_name}, layer={layer}, '
+                    f'collar={collar}); try fallback=True to use the '
+                    'nearest ancestor embedding') from e
         return self._ancestor_embedding(model_name, layer, collar, store)
 
     def _ancestor_embedding(self, model_name, layer, collar, store):

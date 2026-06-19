@@ -184,6 +184,36 @@ audio = Audio.objects.get(filename="example.wav")
 print(audio)
 ```
 
+### Access stored embeddings
+
+Segments (`Word`, `Syllable`, `Phone`, `Phrase`) can load their stored
+hidden-state embeddings from an [`echoframe`](https://github.com/martijnbentum/echoframe)
+store. Bind the echoframe store once with
+`echoframe_store.attach_phraser_store(source_id, phraser_store)`, then call
+`segment.embedding(...)`:
+
+```python
+# echoframe_store.attach_phraser_store('cgn-main', store) sets the binding
+
+word = store.words.get(label="hello")
+embedding = word.embedding("wav2vec2", layer=7)   # echoframe Embedding
+embedding.data                                    # the hidden states
+```
+
+`embedding(model_name, layer, collar=500, store=None, fallback=False)` uses the
+echoframe store bound to the segment's phraser store, or an explicit
+`store=...` override. When `fallback=True` and nothing is stored for the
+segment itself, it walks ancestors (e.g. `phone -> syllable -> word ->
+phrase`) and returns the nearest ancestor embedding sliced to the segment as a
+`SlicedEmbedding`:
+
+```python
+phone.embedding("wav2vec2", layer=7, fallback=True)   # sliced from an ancestor
+```
+
+This is a read-only accessor for already-stored hidden states; the
+compute-and-store path lives in `phraser.segment_embeddings`.
+
 ## Repository layout
 
 ```text
