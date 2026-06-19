@@ -129,6 +129,22 @@ class Segment:
     def label_index_key(self):
         return key_helper.instance_to_label_index_key(self)
 
+    def embedding(self, model_name, layer, collar=500, store=None):
+        '''Load the stored hidden-state Embedding for this segment.
+
+        Uses the echoframe store bound to this segment's phraser store
+        (via echoframe_store.attach_phraser_store), or an explicit
+        store=... override. Returns an echoframe Embedding object.
+        '''
+        store = store or getattr(self.store, 'echoframe_store', None)
+        if store is None:
+            raise UnboundStoreError(
+                'no echoframe store bound; call '
+                'echoframe_store.attach_phraser_store(source_id, '
+                'phraser_store) or pass store=...')
+        return store.phraser_key_to_embedding(self.key, model_name, layer,
+            collar=collar)
+
 
     @property
     def parent_class_name(self):
