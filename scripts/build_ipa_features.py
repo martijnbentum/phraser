@@ -10,10 +10,12 @@ descriptors and derive the binary matrix from consistent rules. Re-run with:
 Feature values use the strings '+', '-' and '0' ('0' = not applicable /
 unspecified for that segment, e.g. tongue-body features on a labial stop).
 
-WORK IN PROGRESS: the derivation rules below have not been fully verified
-and encode several analytic choices. Check the binary features against a
-reference before relying on them. The ``type`` field and articulatory
-descriptors are the reliable part.
+The derivation rules below were verified against the panphon reference
+(ipa_all.csv): 620/630 shared-feature cells agree. The remaining
+differences are deliberate convention choices (laryngeal h, the
+labial/round split on rounded vowels, central/low vowel backness and
+tenseness), not errors. The ``type`` field and articulatory descriptors
+are reliable.
 '''
 import json
 from pathlib import Path

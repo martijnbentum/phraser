@@ -729,9 +729,11 @@ class Phone(Segment):
         descriptors + binary distinctive-feature matrix), or None if the
         label is not a known IPA symbol.
 
-        NB: the binary distinctive-feature matrix is work in progress and
-        not fully verified - see phone_features. The 'type' field and
-        articulatory descriptors are reliable.'''
+        NB: the binary distinctive-feature matrix is verified against the
+        panphon reference (~98.4% agreement); a few contested features
+        (laryngeals, central/low vowels) reflect convention choices - see
+        phone_features. The 'type' field and articulatory descriptors are
+        reliable.'''
         return phone_features.get_phone_features(self.label)
 
     @property

@@ -5,6 +5,7 @@ from phraser import audio
 from phraser import force_align
 from phraser import locations
 from phraser import models
+from phraser import syllable_structure
 from phraser import utils
 
 db_save_state = None
@@ -182,13 +183,20 @@ def find_and_add_syllables_to_word(word, syllables, save_to_db=False):
         syl.add_parent(word, update_database = save_to_db)
     handle_db_save_option(store, revert=True)
 
-def find_and_add_phones_to_syllable(syllable, phones, save_to_db=False):
+def find_and_add_phones_to_syllable(syllable, phones, save_to_db=False,
+    assign_positions=True):
     store = syllable.store if save_to_db else None
     update_db_save_state(store)
     handle_db_save_option(store, save_to_db=save_to_db)
     phones = select_objecs_in_range(phones, syllable.start, syllable.end)
     for phone in phones:
         phone.add_parent(syllable, update_database = save_to_db)
+    if assign_positions:
+        try:
+            # in-memory; position_code is persisted by the later db save
+            syllable_structure.assign_positions_to_phones(phones)
+        except ValueError:
+            pass  # odd transcription -> leave phones at default ('unknown')
     handle_db_save_option(store, revert=True)
 
 

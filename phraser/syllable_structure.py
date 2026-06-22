@@ -25,17 +25,24 @@ def assign_phrase_phone_positions(phrase, phone_types=None, update_database=True
             store = phones[0].store
             store.save_many(phones, overwrite=True)
 
-def assign_phone_positions(syllable, phone_types=None, update_database=True):
-    '''Assign onset/nucleus/coda position to each phone in a syllable.
-    Raises ValueError if a phone label is unknown or vowels are not consecutive.'''
-    phones = syllable.phones
-    if not phones:return
+def assign_positions_to_phones(phones, phone_types=None):
+    '''Assign onset/nucleus/coda to an ordered list of phones in-memory
+    (no database write). Raises ValueError if a phone label is unknown or
+    vowels are not consecutive.'''
+    if not phones: return
     vowel_indices = phones_to_vowel_indices(phones, phone_types=phone_types)
     for i, phone in enumerate(phones):
         if not vowel_indices: phone.position = 'onset'
         elif i in vowel_indices: phone.position = 'nucleus'
         elif i < vowel_indices[0]: phone.position = 'onset'
         elif i > vowel_indices[-1]: phone.position = 'coda'
+
+def assign_phone_positions(syllable, phone_types=None, update_database=True):
+    '''Assign onset/nucleus/coda position to each phone in a syllable.
+    Raises ValueError if a phone label is unknown or vowels are not consecutive.'''
+    phones = syllable.phones
+    if not phones: return
+    assign_positions_to_phones(phones, phone_types=phone_types)
     if update_database:
         store = phones[0].store
         store.save_many(phones, overwrite=True)
