@@ -25,3 +25,7 @@ print(f"pre-commit: bumped version {current} -> {updated}")
 PY
 
 git add pyproject.toml
+
+# uv.lock is intentionally gitignored; keep it out of the working tree so a
+# stray `uv sync`/`uv run` cannot revert manually installed packages.
+rm -f uv.lock
