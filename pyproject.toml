@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phraser"
-version = "0.2.14"
+version = "0.2.15"
 description = "LMDB-backed phrase and segment tooling"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -27,6 +27,7 @@ dependencies = [
   "ssh-audio-play @ git+https://github.com/martijnbentum/ssh-audio-play.git",
   "webmaus @ git+https://github.com/martijnbentum/webmaus.git",
   "frame @ git+https://github.com/martijnbentum/frame.git",
+  "dutch-syllabifier @ git+https://github.com/martijnbentum/dutch-syllabifier.git",
 ]
 
 [tool.setuptools]
