@@ -1,35 +1,46 @@
 from . import model_helper
 from . import phone_features
 
+def assign_phone_positions(target, phone_types=None, update_database=True):
+    '''Assign onset/nucleus/coda to every phone under `target`.
 
-def assign_phrases_phone_positions(phrases, phone_types=None, update_database=True):
-    '''Assign onset/nucleus/coda positions to all phones across a list of phrases
-    with a single database write.'''
-    all_phones = []
-    for phrase in phrases:
-        assign_phrase_phone_positions(phrase, phone_types=phone_types,
-            update_database=False)
-        all_phones.extend(phrase.phones)
-    if update_database and all_phones:
-        store = all_phones[0].store
-        store.save_many(all_phones, overwrite=True)
+    target  a syllable, word, or phrase — or a list mixing any of these.
+            Words and phrases are expanded to their syllables; positions are
+            always assigned one syllable at a time, since the rule "onset*
+            nucleus+ coda*" only holds within a single syllable.
+    phone_types  optional {label: 'vowel'|'consonant'|'other'} mapping used to
+            locate the nucleus; defaults to the module-level PHONE_TYPES.
+    update_database  if True (default), persist every touched phone in one
+            batched write; if False, mutate phones in memory only.
 
-def assign_phrase_phone_positions(phrase, phone_types=None, update_database=True):
-    '''Assign onset/nucleus/coda positions to all phones in a phrase
-    with a single database write.'''
-    for syllable in phrase.syllables:
-        assign_phone_positions(syllable, phone_types=phone_types,
-            update_database=False)
-    if update_database:
-        phones = phrase.phones
-        if phones:
-            store = phones[0].store
-            store.save_many(phones, overwrite=True)
+    Returns `target`. Raises ValueError if a phone label is unknown or a
+    syllable's vowels are not consecutive.
+    '''
+    phones_to_save = []
+    for syllable in _object_to_syllables(target):
+        phones = syllable.phones
+        if not phones: continue
+        assign_syllable_positions_to_phones(phones, phone_types=phone_types)
+        phones_to_save.extend(phones)
+    if update_database and phones_to_save:
+        phones_to_save[0].store.save_many(phones_to_save, overwrite=True)
+    return target
 
-def assign_positions_to_phones(phones, phone_types=None):
-    '''Assign onset/nucleus/coda to an ordered list of phones in-memory
-    (no database write). Raises ValueError if a phone label is unknown or
-    vowels are not consecutive.'''
+def _object_to_syllables(target):
+    '''Flatten a syllable / word / phrase, or a list of them, to syllables.'''
+    items = target if isinstance(target, (list, tuple)) else [target]
+    syllables = []
+    for item in items:
+        if item.object_type == 'Syllable':
+            syllables.append(item)
+        else:                          # Word or Phrase
+            syllables.extend(item.syllables)
+    return syllables
+
+def assign_syllable_positions_to_phones(phones, phone_types=None):
+    '''Assign onset/nucleus/coda to an ordered list of phones from ONE syllable,
+    in-memory (no database write). Raises ValueError if a phone label is unknown
+    or vowels are not consecutive.'''
     if not phones: return
     vowel_indices = phones_to_vowel_indices(phones, phone_types=phone_types)
     for i, phone in enumerate(phones):
@@ -38,19 +49,10 @@ def assign_positions_to_phones(phones, phone_types=None):
         elif i < vowel_indices[0]: phone.position = 'onset'
         elif i > vowel_indices[-1]: phone.position = 'coda'
 
-def assign_phone_positions(syllable, phone_types=None, update_database=True):
-    '''Assign onset/nucleus/coda position to each phone in a syllable.
-    Raises ValueError if a phone label is unknown or vowels are not consecutive.'''
-    phones = syllable.phones
-    if not phones: return
-    assign_positions_to_phones(phones, phone_types=phone_types)
-    if update_database:
-        store = phones[0].store
-        store.save_many(phones, overwrite=True)
-
 def phones_to_vowel_indices(phones, phone_types=None):
     '''Return the indices of vowel phones in the list.
-    Raises ValueError if a label is missing from phone_types or vowels are not consecutive.'''
+    Raises ValueError if a label is missing from phone_types or vowels are not 
+    consecutive.'''
     pt = phone_types or PHONE_TYPES
     vowel_indices = [] 
     for i, p in enumerate(phones):
@@ -97,7 +99,7 @@ def apply_syllable_groups(syllables, groups, phone_types=None,
         for phone in group:                         # keep the stored pointer
             phone.parent_id = syllable.identifier   # consistent with the new
             phone.parent_start = syllable.start      # time window
-        assign_positions_to_phones(group, phone_types=phone_types)
+        assign_syllable_positions_to_phones(group, phone_types=phone_types)
         changed.append((syllable, old_key, group))
     for syllable in syllables:                      # drop stale child/parent
         for attr in ('_children', '_related', '_parent'):  # caches

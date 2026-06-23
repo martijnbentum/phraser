@@ -194,7 +194,7 @@ def find_and_add_phones_to_syllable(syllable, phones, save_to_db=False,
     if assign_positions:
         try:
             # in-memory; position_code is persisted by the later db save
-            syllable_structure.assign_positions_to_phones(phones)
+            syllable_structure.assign_syllable_positions_to_phones(phones)
         except ValueError:
             pass  # odd transcription -> leave phones at default ('unknown')
     handle_db_save_option(store, revert=True)
