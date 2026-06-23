@@ -724,7 +724,7 @@ class Phone(Segment):
         self.position_code = codes.get(value, 9)
 
     @property
-    def features(self):
+    def linguistic_features(self):
         '''Static IPA reference info for this phone's label (articulatory
         descriptors + binary distinctive-feature matrix), or None if the
         label is not a known IPA symbol.
@@ -742,6 +742,27 @@ class Phone(Segment):
         None if the label is not a known IPA symbol.'''
         info = phone_features.get_phone_features(self.label)
         return info['type'] if info else None
+
+    @property
+    def linguistic_features_vector(self):
+        '''Binary distinctive features as a numeric tuple (+1/-1/0, 0 = not
+        applicable) in linguistic_features_names order. Unknown labels give
+        an all-zero vector of the canonical length. Distinct from neural
+        embeddings (see ``embedding``).'''
+        return phone_features.get_feature_vector(self.label)
+
+    @property
+    def linguistic_features_names(self):
+        '''Canonical feature names, positionally aligned with
+        linguistic_features_vector.'''
+        return phone_features.FEATURE_ORDER
+
+    @property
+    def stress(self):
+        '''Suprasegmental stress for this phone, taken from its parent
+        syllable ('unstressed'/'primary'/'secondary'/'unknown').'''
+        syllable = self.syllable
+        return syllable.stress if syllable else 'unknown'
 
     @property
     def syllable(self):

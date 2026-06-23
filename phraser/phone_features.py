@@ -21,6 +21,23 @@ from importlib import resources
 DATA_PACKAGE = 'phraser.data'
 DATA_FILE = 'ipa_features.json'
 
+# Canonical, positional order of the binary distinctive features (Hayes 2009
+# style). This is the source of truth for feature-vector layout: position i
+# always means FEATURE_ORDER[i], so it must not be reordered. The build
+# script imports this same list when generating the JSON.
+FEATURE_ORDER = (
+    'syllabic', 'long',
+    'consonantal', 'sonorant', 'continuant', 'delayed_release',
+    'approximant', 'nasal',
+    'voice', 'spread_glottis', 'constricted_glottis',
+    'labial', 'round', 'labiodental',
+    'coronal', 'anterior', 'distributed', 'strident', 'lateral',
+    'dorsal', 'high', 'low', 'front', 'back', 'tense',
+)
+
+# Numeric mapping for the feature-vector form. '0' (not applicable) maps to 0.
+_VALUE_MAP = {'+': 1, '-': -1, '0': 0}
+
 
 @lru_cache(maxsize=1)
 def load_ipa_features():
@@ -34,3 +51,16 @@ def get_phone_features(label):
     '''Return the reference info dict for an IPA symbol, or None if the
     symbol is unknown (e.g. '' or '(..)' placeholders).'''
     return load_ipa_features().get(label)
+
+
+@lru_cache(maxsize=None)
+def get_feature_vector(label):
+    '''Return the binary distinctive features as a numeric tuple in
+    FEATURE_ORDER, with +1/-1/0 (0 = not applicable). Unknown labels yield
+    an all-zero vector of the canonical length so every phone has the same
+    shape.'''
+    info = get_phone_features(label)
+    if info is None:
+        return (0,) * len(FEATURE_ORDER)
+    features = info['features']
+    return tuple(_VALUE_MAP[features[name]] for name in FEATURE_ORDER)

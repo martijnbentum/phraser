@@ -20,18 +20,9 @@ are reliable.
 import json
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parents[1] / 'phraser' / 'data' / 'ipa_features.json'
+from phraser.phone_features import FEATURE_ORDER
 
-# Ordered list of binary features (Hayes 2009 style).
-FEATURE_ORDER = [
-    'syllabic', 'stress', 'long',
-    'consonantal', 'sonorant', 'continuant', 'delayed_release',
-    'approximant', 'nasal',
-    'voice', 'spread_glottis', 'constricted_glottis',
-    'labial', 'round', 'labiodental',
-    'coronal', 'anterior', 'distributed', 'strident', 'lateral',
-    'dorsal', 'high', 'low', 'front', 'back', 'tense',
-]
+OUT = Path(__file__).resolve().parents[1] / 'phraser' / 'data' / 'ipa_features.json'
 
 # (symbol, place, manner, voiced) ; manner/place names drive the rules below.
 CONSONANTS = [
@@ -117,7 +108,6 @@ DIPHTHONGS = [
 def consonant_features(place, manner, voiced):
     f = {k: '-' for k in FEATURE_ORDER}
     f['syllabic'] = '-'
-    f['stress'] = '0'
     f['long'] = '-'
     f['tense'] = '0'
 
@@ -179,7 +169,6 @@ def consonant_features(place, manner, voiced):
 def vowel_features(height, backness, rounded, is_long, tense):
     f = {k: '-' for k in FEATURE_ORDER}
     f['syllabic'] = '+'
-    f['stress'] = '0'
     f['long'] = '+' if is_long else '-'
     f['consonantal'] = '-'
     f['sonorant'] = '+'

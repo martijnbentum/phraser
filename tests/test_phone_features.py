@@ -56,19 +56,47 @@ class TestGetPhoneFeatures(unittest.TestCase):
         self.assertIsNone(phone_features.get_phone_features('nope'))
 
 
+class TestFeatureVector(unittest.TestCase):
+    def test_length_matches_feature_order(self):
+        v = phone_features.get_feature_vector('p')
+        self.assertEqual(len(v), len(phone_features.FEATURE_ORDER))
+
+    def test_values_are_numeric(self):
+        for value in phone_features.get_feature_vector('p'):
+            self.assertIn(value, (-1, 0, 1))
+
+    def test_positionally_aligned_with_names(self):
+        v = phone_features.get_feature_vector('p')
+        named = dict(zip(phone_features.FEATURE_ORDER, v))
+        self.assertEqual(named['voice'], -1)
+        self.assertEqual(named['consonantal'], 1)
+
+    def test_unknown_label_is_zero_vector(self):
+        v = phone_features.get_feature_vector('')
+        self.assertEqual(v, (0,) * len(phone_features.FEATURE_ORDER))
+
+    def test_returns_tuple_and_is_cached(self):
+        self.assertIsInstance(phone_features.get_feature_vector('p'), tuple)
+        self.assertIs(phone_features.get_feature_vector('p'),
+                      phone_features.get_feature_vector('p'))
+
+    def test_feature_order_has_no_stress(self):
+        self.assertNotIn('stress', phone_features.FEATURE_ORDER)
+
+
 class TestPhoneProperty(unittest.TestCase):
     def test_features_not_persisted_metadata(self):
-        self.assertNotIn('features', Phone.METADATA_FIELDS)
+        self.assertNotIn('linguistic_features', Phone.METADATA_FIELDS)
 
     def test_property_resolves_by_label(self):
         phone = types.SimpleNamespace(label='aː')
-        info = Phone.features.fget(phone)
+        info = Phone.linguistic_features.fget(phone)
         self.assertEqual(info['type'], 'vowel')
         self.assertEqual(info['length'], 'long')
 
     def test_property_none_for_unknown_label(self):
         phone = types.SimpleNamespace(label='')
-        self.assertIsNone(Phone.features.fget(phone))
+        self.assertIsNone(Phone.linguistic_features.fget(phone))
 
     def test_type_property(self):
         consonant = types.SimpleNamespace(label='p')
@@ -77,6 +105,16 @@ class TestPhoneProperty(unittest.TestCase):
         self.assertEqual(Phone.type.fget(consonant), 'consonant')
         self.assertEqual(Phone.type.fget(vowel), 'vowel')
         self.assertIsNone(Phone.type.fget(unknown))
+
+    def test_linguistic_features_vector_property(self):
+        phone = types.SimpleNamespace(label='p')
+        self.assertEqual(Phone.linguistic_features_vector.fget(phone),
+                         phone_features.get_feature_vector('p'))
+
+    def test_linguistic_features_names_property(self):
+        phone = types.SimpleNamespace(label='p')
+        self.assertEqual(Phone.linguistic_features_names.fget(phone),
+                         phone_features.FEATURE_ORDER)
 
 
 if __name__ == '__main__':
