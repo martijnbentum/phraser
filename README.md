@@ -214,6 +214,51 @@ phone.embedding("wav2vec2", layer=7, fallback=True)   # sliced from an ancestor
 This is a read-only accessor for already-stored hidden states; the
 compute-and-store path lives in `phraser.segment_embeddings`.
 
+### Access phone linguistic features
+
+A `Phone` exposes static IPA reference data, derived purely from its label
+(no audio, distinct from the neural `embedding(...)` above). The data lives
+in `phraser/data/ipa_features.json` and is regenerated with
+`python -m scripts.build_ipa_features`.
+
+```python
+from phraser import Phone
+
+phone = Phone(label="p", start=0, end=100, save=False)
+
+phone.type                       # 'consonant' (or 'vowel'), None if unknown
+phone.linguistic_features        # full reference dict: type, place, manner,
+                                 # voicing, and the 'features' sub-dict
+phone.linguistic_features["place"]   # 'bilabial'
+```
+
+For the binary distinctive-feature matrix as a numeric vector (Hayes-style,
+`+1 / -1 / 0`, where `0` = not applicable):
+
+```python
+phone.linguistic_features_vector   # tuple of +1/-1/0 in canonical order
+phone.linguistic_features_names    # feature names, positionally aligned
+
+dict(zip(phone.linguistic_features_names, phone.linguistic_features_vector))
+# {'syllabic': -1, 'consonantal': 1, 'voice': -1, ...}
+```
+
+`linguistic_features_vector` covers only the distinctive-feature matrix (the
+`features` sub-dict), not the articulatory descriptors. Both
+`linguistic_features` and `linguistic_features_vector` return `None` for an
+unknown label (e.g. `''` or `'(..)'` placeholders).
+
+Stress is **not** part of this matrix - it is suprasegmental and lives on the
+syllable. `Phone.stress` reads it from the parent syllable, so every phone in
+the syllable (including consonants) reports the same value:
+
+```python
+phone.stress   # 'unstressed' / 'primary' / 'secondary' / 'unknown'
+```
+
+The underlying helpers (`get_phone_features`, `get_feature_vector`,
+`FEATURE_ORDER`) live in `phraser.phone_features`.
+
 ## Repository layout
 
 ```text
