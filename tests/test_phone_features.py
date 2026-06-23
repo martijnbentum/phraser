@@ -3,7 +3,7 @@ import unittest
 
 from phraser import phone_features
 from phraser.segment import Phone
-from phraser.syllable_structure import PHONE_TYPES
+from phraser.phone_types import PHONE_TYPES
 
 
 class TestLoadIpaFeatures(unittest.TestCase):
