@@ -745,10 +745,11 @@ class Phone(Segment):
 
     @property
     def linguistic_features_vector(self):
-        '''Binary distinctive features as a numeric tuple (+1/-1/0, 0 = not
-        applicable) in linguistic_features_names order. Unknown labels give
-        an all-zero vector of the canonical length. Distinct from neural
-        embeddings (see ``embedding``).'''
+        '''The binary distinctive-feature matrix of ``linguistic_features``
+        (its ``features`` sub-dict, not the articulatory descriptors) as a
+        numeric tuple (+1/-1/0, 0 = not applicable) in
+        linguistic_features_names order, or None for an unknown label.
+        Distinct from neural embeddings (see ``embedding``).'''
         return phone_features.get_feature_vector(self.label)
 
     @property
@@ -759,8 +760,10 @@ class Phone(Segment):
 
     @property
     def stress(self):
-        '''Suprasegmental stress for this phone, taken from its parent
-        syllable ('unstressed'/'primary'/'secondary'/'unknown').'''
+        '''Suprasegmental stress for this phone, derived from its parent
+        syllable ('unstressed'/'primary'/'secondary'/'unknown'). It is a
+        syllable-level property, so every phone in the syllable - including
+        consonants - reports the same value.'''
         syllable = self.syllable
         return syllable.stress if syllable else 'unknown'
 

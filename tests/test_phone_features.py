@@ -71,9 +71,10 @@ class TestFeatureVector(unittest.TestCase):
         self.assertEqual(named['voice'], -1)
         self.assertEqual(named['consonantal'], 1)
 
-    def test_unknown_label_is_zero_vector(self):
-        v = phone_features.get_feature_vector('')
-        self.assertEqual(v, (0,) * len(phone_features.FEATURE_ORDER))
+    def test_unknown_label_is_none(self):
+        self.assertIsNone(phone_features.get_feature_vector(''))
+        self.assertIsNone(phone_features.get_feature_vector('(..)'))
+        self.assertIsNone(phone_features.get_feature_vector('nope'))
 
     def test_returns_tuple_and_is_cached(self):
         self.assertIsInstance(phone_features.get_feature_vector('p'), tuple)
@@ -82,6 +83,15 @@ class TestFeatureVector(unittest.TestCase):
 
     def test_feature_order_has_no_stress(self):
         self.assertNotIn('stress', phone_features.FEATURE_ORDER)
+
+    def test_feature_order_matches_json_keys(self):
+        '''Every entry's feature keys must equal FEATURE_ORDER exactly, or
+        get_feature_vector would KeyError / misalign for that symbol.'''
+        expected = set(phone_features.FEATURE_ORDER)
+        self.assertEqual(len(expected), len(phone_features.FEATURE_ORDER),
+                         'FEATURE_ORDER has duplicate names')
+        for label, info in phone_features.load_ipa_features().items():
+            self.assertEqual(set(info['features']), expected, label)
 
 
 class TestPhoneProperty(unittest.TestCase):

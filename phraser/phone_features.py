@@ -13,6 +13,11 @@ errors - e.g. laryngeal h (sonorant/consonantal/spread_glottis), the
 labial-vs-round split on rounded vowels, and the backness/tenseness of
 central and low vowels. Treat those contested features with care; the
 ``type`` field (vowel/consonant) and articulatory descriptors are reliable.
+
+(The ``stress`` feature was since removed from the matrix - it is
+suprasegmental and lives on the syllable, not the label. It was a constant
+``0`` and not part of the panphon comparison, so the figure above is
+unaffected.)
 '''
 import json
 from functools import lru_cache
@@ -55,12 +60,12 @@ def get_phone_features(label):
 
 @lru_cache(maxsize=None)
 def get_feature_vector(label):
-    '''Return the binary distinctive features as a numeric tuple in
-    FEATURE_ORDER, with +1/-1/0 (0 = not applicable). Unknown labels yield
-    an all-zero vector of the canonical length so every phone has the same
-    shape.'''
+    '''Return the binary distinctive-feature matrix (i.e. the ``features``
+    sub-dict, not the full reference info) as a numeric tuple in
+    FEATURE_ORDER, with +1/-1/0 (0 = not applicable). Returns None for
+    unknown labels, mirroring get_phone_features.'''
     info = get_phone_features(label)
     if info is None:
-        return (0,) * len(FEATURE_ORDER)
+        return None
     features = info['features']
     return tuple(_VALUE_MAP[features[name]] for name in FEATURE_ORDER)

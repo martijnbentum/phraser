@@ -16,6 +16,11 @@ differences are deliberate convention choices (laryngeal h, the
 labial/round split on rounded vowels, central/low vowel backness and
 tenseness), not errors. The ``type`` field and articulatory descriptors
 are reliable.
+
+The ``stress`` feature was since removed from the matrix - it is
+suprasegmental and lives on the syllable, not the label. It was a constant
+``0`` and not part of the panphon comparison, so the figure above is
+unaffected.
 '''
 import json
 from pathlib import Path
