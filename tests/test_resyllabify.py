@@ -21,7 +21,7 @@ from contextlib import redirect_stdout
 from phraser import Store
 from phraser import textgrid_loader as tgl
 from phraser.models import Audio, Phone, Syllable, Word
-from phraser.syllable_structure import resyllabify_word
+from phraser.resyllabifier import resyllabify_word
 
 
 # given segmentation: syllable [start, end] -> phones it should hold by time
