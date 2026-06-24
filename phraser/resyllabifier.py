@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from . import model_helper
 from .syllable_structure import assign_syllable_positions_to_phones
 
@@ -9,74 +11,20 @@ def apply_syllable_groups(syllables, groups, phone_types=None,
     groups           list of phone lists: the SAME phone objects regrouped
                      (e.g. dutch_syllabifier.resyllabify_phones(word.phones))
     update_database  if True, persist the change in one batched write; default
-                     False, mutating the objects in memory only (nothing is
-                     written).
+                     False, mutating the objects in memory only.
 
-    Repartitions phones among the existing syllables: retimes each syllable to
-    span its new phones, relabels it from those phones (' '.join of their
-    labels) so .label stays in sync with the new grouping, relinks every phone's
-    stored parent pointer, and reassigns onset/nucleus/coda. Returns the mutated
-    syllables. Raises ValueError on a length mismatch or an empty group.
-
-    When update_database is True, the stale label-index entry for each syllable's
-    old label/key is removed and the new one written, so a label lookup never
-    resolves to a moved-or-relabelled syllable's old form.
+    Each syllable is retimed and relabelled to span its new phones; with
+    update_database the rows and the moved label-index entries are persisted.
+    Returns the mutated syllables. Raises ValueError on a length mismatch or an
+    empty group.
     '''
     if len(syllables) != len(groups):
         raise ValueError('syllable count does not match group count')
-    changed = []
-    for syllable, group in zip(syllables, groups):
-        if not group:
-            raise ValueError('cannot assign an empty phone group')
-        old_key = syllable.key
-        old_label_index_key = syllable.label_index_key  # OLD label + OLD key
-        syllable.start = min(p.start for p in group)
-        syllable.end = max(p.end for p in group)
-        syllable.label = ' '.join(p.label for p in group)  # keep label in sync
-        for phone in group:                         # keep the stored pointer
-            phone.parent_id = syllable.identifier   # consistent with the new
-            phone.parent_start = syllable.start      # time window
-        assign_syllable_positions_to_phones(group, phone_types=phone_types)
-        # Refill the navigation caches to the new grouping rather than dropping
-        # them. Both views then agree in memory without a write: the time-scan
-        # (syllable.phones via _children) and the stored parent pointer
-        # (phone.parent via _parent). Dropping instead would force phone.parent
-        # to re-resolve through store.load(parent_key) at the moved syllable's
-        # new key -- absent from the cache and disk until update_database=True.
-        # These caches hold object references, so they survive a later re-key.
-        sid = syllable.speaker_id
-        syllable._children = [p for p in group if p.speaker_id == sid]
-        syllable._related = [p for p in group if p.speaker_id != sid]
-        for phone in group:
-            phone._parent = syllable
-        changed.append((syllable, old_key, old_label_index_key, group))
-    if update_database and changed:
-        store = syllables[0].store
-        segments = []
-        for syllable, old_key, old_label_index_key, group in changed:
-            _mark_syllable_write(syllable, old_key)
-            for phone in group:
-                phone._save_status = 'save'         # own key is stable
-            segments.append(syllable)
-            segments.extend(group)
-        model_helper.write_changes_to_db(segments, store)
-        # save() wrote each syllable's NEW label-index entry; drop the stale OLD
-        # ones (old label and/or old key), but never one we just rewrote
-        # identically (a syllable whose label and key both stayed put).
-        new_links = {syllable.label_index_key for syllable, *_ in changed}
-        stale = [old for _, _, old, _ in changed if old not in new_links]
-        store.DB.delete_many_label_index_links(stale)
+    retimed = [_retime_syllable(syllable, phones, phone_types)
+        for syllable, phones in zip(syllables, groups)]
+    if update_database and retimed:
+        _save_changed_objects_to_store(retimed, syllables[0].store)
     return syllables
-
-
-def _mark_syllable_write(syllable, old_key):
-    '''Flag a retimed syllable for the right write path: 'update' when its key
-    changed (start moved), otherwise a plain overwrite 'save'.'''
-    if syllable.key != old_key:
-        syllable._save_status = 'update'
-        syllable._old_key = old_key
-    else:
-        syllable._save_status = 'save'
 
 
 def resyllabify_word(word, phone_types=None, update_database=False):
@@ -93,3 +41,87 @@ def resyllabify_word(word, phone_types=None, update_database=False):
     apply_syllable_groups(word.syllables, result.suggested_groups,
         phone_types=phone_types, update_database=update_database)
     return True
+
+
+# ----------------------------- helpers below ------------------------------
+
+def _retime_syllable(syllable, phones, phone_types):
+    '''Rewrite one syllable to span `phones`: retime, relabel, repoint each
+    phone's stored parent, assign onset/nucleus/coda, and refresh the in-memory
+    caches. Returns a _Retimed holding the pre-mutation keys for persistence.'''
+    if not phones:
+        raise ValueError('cannot assign an empty phone group')
+    record = _Retimed(syllable, syllable.key, syllable.label_index_key, phones)
+    syllable.start = min(p.start for p in phones)
+    syllable.end = max(p.end for p in phones)
+    syllable.label = ' '.join(p.label for p in phones)
+    for phone in phones:
+        phone.parent_id = syllable.identifier
+        phone.parent_start = syllable.start
+    assign_syllable_positions_to_phones(phones, phone_types=phone_types)
+    _refresh_syllable_phone_caches(syllable, phones)
+    return record
+
+
+def _refresh_syllable_phone_caches(syllable, phones):
+    '''Point the syllable<->phone navigation caches at the new grouping in
+    memory, so the time-scan (syllable.phones) and the stored parent pointer
+    (phone.parent) agree before the moved syllable's new key is ever written.'''
+    sid = syllable.speaker_id
+    syllable._children = [p for p in phones if p.speaker_id == sid]
+    syllable._related = [p for p in phones if p.speaker_id != sid]
+    for phone in phones:
+        phone._parent = syllable
+
+
+def _save_changed_objects_to_store(retimed, store):
+    '''Write each retimed syllable and its phones, then drop the label-index
+    entries no syllable occupies any more.
+    retimed   list of _Retimed records from _retime_syllable.
+
+    Both the syllable (new start/end/label, hence possibly a new key) and its
+    phones (repointed parent_id/parent_start) changed, so both are written.
+    '''
+    segments = []
+    for r in retimed:
+        _flag_syllable_write_path(r.syllable, r.old_key)
+        for phone in r.phones:
+            phone._save_status = 'save'         # own key is stable
+        segments.append(r.syllable)
+        segments.extend(r.phones)
+    model_helper.write_changes_to_db(segments, store)
+    store.DB.delete_many_label_index_links(_collect_stale_label_links(retimed))
+
+
+def _collect_stale_label_links(retimed):
+    '''Old label-index keys no syllable uses after the rewrite (save() wrote the
+    new ones). A syllable whose label and key were unchanged keeps its entry.
+    retimed   list of _Retimed records from _retime_syllable.'''
+    new_links = {r.syllable.label_index_key for r in retimed}
+    stale = []
+    for r in retimed:
+        if r.old_label_index_key not in new_links:
+            stale.append(r.old_label_index_key)
+    return stale
+
+
+def _flag_syllable_write_path(syllable, old_key):
+    '''Pick how the retimed syllable is written: 'update' (delete old key, save
+    new) when its start moved and changed the key, else a plain overwrite
+    'save'.'''
+    if syllable.key != old_key:
+        syllable._save_status = 'update'
+        syllable._old_key = old_key
+    else:
+        syllable._save_status = 'save'
+
+
+@dataclass
+class _Retimed:
+    '''A syllable whose boundaries were rewritten, with what persisting it needs:
+    its OLD main key and OLD label-index key (captured before mutation) and the
+    phones now in it.'''
+    syllable: object
+    old_key: bytes
+    old_label_index_key: bytes
+    phones: list
