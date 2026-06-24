@@ -240,7 +240,7 @@ class DB:
 
     def delete(self, key, db_name = 'main'):
         db = self.db[db_name]
-        if not self.key_exists(key): return
+        if not self.key_exists(key, db_name = db_name): return
         with self.env.begin(write=True) as txn:
             txn.delete(key, db = db)
 
@@ -294,8 +294,20 @@ class DB:
 
     def write_many_label_index_links(self, links):
         values = [b''] * len(links)
-        self.write_many(links, values, db_name = 'label_segment', 
+        self.write_many(links, values, db_name = 'label_segment',
             overwrite = True)
+
+    def delete_label_index_link(self, link):
+        '''Remove one label-index entry (db 'label_segment'). Mirror of
+        write_label_index_link. Idempotent: a missing key is a no-op.'''
+        self.delete(link, db_name = 'label_segment')
+
+    def delete_many_label_index_links(self, links):
+        '''Remove many label-index entries in one batched write
+        (db 'label_segment'). Mirror of write_many_label_index_links; delegates
+        to delete_many, which writes on the named db directly and does not
+        consult key_exists.'''
+        self.delete_many(links, db_name = 'label_segment')
 
     def delete_speaker_audio_link(self, speaker, audio):
         link = key_helper.speaker_audio_link(speaker, audio)
