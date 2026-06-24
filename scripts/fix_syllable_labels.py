@@ -2,9 +2,8 @@
 
 A phraser Syllable resolves its .phones by a time-range scan over its
 [start, end] window, independent of the stored .label string. After phones are
-regrouped (e.g. resyllabifier.apply_syllable_groups retimes syllables and
-relinks phones but never rewrites the syllable .label) a syllable can keep a
-stale label -- label "r u" while .phones is [r, u, t].
+regrouped or re-parented without the syllable's .label being rewritten, a
+syllable can keep a stale label -- label "r u" while .phones is [r, u, t].
 
 Each syllable is judged on its own; no word/phrase hierarchy is walked.
 

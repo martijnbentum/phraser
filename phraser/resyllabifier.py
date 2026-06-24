@@ -1,127 +1,136 @@
+import copy
 from dataclasses import dataclass
 
-from . import model_helper
+from . import key_helper
 from .syllable_structure import assign_syllable_positions_to_phones
 
 
-def apply_syllable_groups(syllables, groups, phone_types=None,
+def apply_new_syllable_boundaries(word, phone_groups, phone_types=None,
         update_database=False):
-    '''Rewrite syllable boundaries from a new phone grouping.
-    syllables        existing Syllable objects, in order (e.g. word.syllables)
-    groups           list of phone lists: the SAME phone objects regrouped
-                     (e.g. dutch_syllabifier.resyllabify_phones(word.phones))
-    update_database  if True, persist the change in one batched write; default
-                     False, mutating the objects in memory only.
+    '''Rebuild a word's syllables from a new phone grouping (resyllabification).
+    word             the Word whose syllables are being re-segmented
+    phone_groups     list of phone lists: the SAME phone objects regrouped
+    update_database  if True, persist; else mutate in memory only.
 
-    Each syllable is retimed and relabelled to span its new phones; with
-    update_database the rows and the moved label-index entries are persisted.
-    Returns the mutated syllables. Raises ValueError on a length mismatch or an
-    empty group.
+    Resyllabification moves consonants between onset and coda but never adds or
+    drops a nucleus, so the count is invariant and new[i] is old[i]'s nucleus
+    with moved boundaries. Each new syllable is a COPY of its old one (carrying
+    stress_code/tone/speaker/... unchanged) under a fresh id; the word's child
+    cache is repointed at them and — with update_database — the old rows and
+    their label-index entries are deleted.
+    Returns the new syllables. Raises ValueError on a multi-speaker word or a
+    count mismatch.
     '''
-    if len(syllables) != len(groups):
-        raise ValueError('syllable count does not match group count')
-    retimed = [_retime_syllable(syllable, phones, phone_types)
-        for syllable, phones in zip(syllables, groups)]
-    if update_database and retimed:
-        _save_changed_objects_to_store(retimed, syllables[0].store)
-    return syllables
+    _assert_single_speaker(word)
+    old_syllables = word.syllables
+    if len(old_syllables) != len(phone_groups):
+        raise ValueError('resyllabification must preserve the syllable count: '
+            f'{len(old_syllables)} syllables vs {len(phone_groups)} groups')
+    new_syllables = []
+    for old_syllable, phones in zip(old_syllables, phone_groups):
+        new_syllables.append(_rebuild_syllable(old_syllable, phones, phone_types))
+    word._children, word._related = new_syllables, []   # pair is load-bearing
+    if update_database:
+        _save_new_syllables(new_syllables)
+        _delete_old_syllables(old_syllables)
+    return new_syllables
+
+
+@dataclass
+class ResyllabifyOutcome:
+    '''What resyllabify_word saw and did.
+    result   the analyse_word Result -- the PRE-rewrite analysis (its `current`
+             is the old boundaries, the diagnosis of what was wrong).
+    applied  whether the boundaries were actually rewritten.
+    '''
+    result: object
+    applied: bool
+
+    @property
+    def ok(self):
+        '''True if the word's boundaries are correct after this call: either
+        they were already correct, or we applied the maximal-onset rewrite.'''
+        return self.result.ok or self.applied
+
+    @property
+    def count_mismatch(self):
+        '''Stored syllable count differs from the suggested count, so the 1:1
+        rewrite could not be applied. None-safe.'''
+        c, s = self.result.current, self.result.suggested
+        return c is not None and s is not None and len(c) != len(s)
 
 
 def resyllabify_word(word, phone_types=None, update_database=False):
     '''Re-segment a word's syllables by the Maximal Onset Principle, if needed.
-    update_database  if True, persist the rewrite; default False (in memory).
+    Returns a ResyllabifyOutcome with the analysis and whether it was applied.
 
-    Returns True if boundaries were rewritten, False if already correct or the
-    word could not be analysed (unknown phone / no nucleus).
+    Boundaries are rewritten only when the word is analysable, its current split
+    is wrong, and the syllable count is preserved (the 1:1 copy invariant). A
+    count change is reported via outcome.count_mismatch and left unapplied
+    rather than raising.
     '''
     from dutch_syllabifier import analyse_word
     result = analyse_word(word)
-    if result.ok or result.suggested_groups is None:
-        return False
-    apply_syllable_groups(word.syllables, result.suggested_groups,
-        phone_types=phone_types, update_database=update_database)
-    return True
+    applied = False
+    if not result.ok and result.suggested_groups is not None \
+            and len(word.syllables) == len(result.suggested_groups):
+        apply_new_syllable_boundaries(word, result.suggested_groups,
+            phone_types=phone_types, update_database=update_database)
+        applied = True
+    return ResyllabifyOutcome(result=result, applied=applied)
 
 
 # ----------------------------- helpers below ------------------------------
 
-def _retime_syllable(syllable, phones, phone_types):
-    '''Rewrite one syllable to span `phones`: retime, relabel, repoint each
-    phone's stored parent, assign onset/nucleus/coda, and refresh the in-memory
-    caches. Returns a _Retimed holding the pre-mutation keys for persistence.'''
-    if not phones:
-        raise ValueError('cannot assign an empty phone group')
-    record = _Retimed(syllable, syllable.key, syllable.label_index_key, phones)
+def _assert_single_speaker(word):
+    '''Resyllabification works one word at a time, so the word, its syllables
+    and their phones must all share one speaker. Raise if they do not.'''
+    speaker_ids = {word.speaker_id}
+    for syllable in word.syllables:
+        speaker_ids.add(syllable.speaker_id)
+        for phone in syllable.phones:
+            speaker_ids.add(phone.speaker_id)
+    if len(speaker_ids) > 1:
+        raise ValueError('word, syllables and phones must share one speaker; '
+            f'found {len(speaker_ids)} speaker ids')
+
+
+def _rebuild_syllable(old_syllable, phones, phone_types):
+    '''Copy old_syllable onto `phones`: a fresh-id clone carrying every field
+    unchanged except label/start/end, with those phones repointed at it and
+    onset/nucleus/coda reassigned. The stale loaded `_key` is dropped so the new
+    key recomputes from the new id and start.'''
+    syllable = copy.copy(old_syllable)
+    syllable.identifier = key_helper.make_identifier()
+    syllable.label = ' '.join(p.label for p in phones)
     syllable.start = min(p.start for p in phones)
     syllable.end = max(p.end for p in phones)
-    syllable.label = ' '.join(p.label for p in phones)
+    if hasattr(syllable, '_key'):
+        del syllable._key
     for phone in phones:
         phone.parent_id = syllable.identifier
         phone.parent_start = syllable.start
-    assign_syllable_positions_to_phones(phones, phone_types=phone_types)
-    _refresh_syllable_phone_caches(syllable, phones)
-    return record
-
-
-def _refresh_syllable_phone_caches(syllable, phones):
-    '''Point the syllable<->phone navigation caches at the new grouping in
-    memory, so the time-scan (syllable.phones) and the stored parent pointer
-    (phone.parent) agree before the moved syllable's new key is ever written.'''
-    sid = syllable.speaker_id
-    syllable._children = [p for p in phones if p.speaker_id == sid]
-    syllable._related = [p for p in phones if p.speaker_id != sid]
-    for phone in phones:
         phone._parent = syllable
+    assign_syllable_positions_to_phones(phones, phone_types=phone_types)
+    syllable._children, syllable._related = phones, []
+    return syllable
 
 
-def _save_changed_objects_to_store(retimed, store):
-    '''Write each retimed syllable and its phones, then drop the label-index
-    entries no syllable occupies any more.
-    retimed   list of _Retimed records from _retime_syllable.
-
-    Both the syllable (new start/end/label, hence possibly a new key) and its
-    phones (repointed parent_id/parent_start) changed, so both are written.
-    '''
-    segments = []
-    for r in retimed:
-        _flag_syllable_write_path(r.syllable, r.old_key)
-        for phone in r.phones:
-            phone._save_status = 'save'         # own key is stable
-        segments.append(r.syllable)
-        segments.extend(r.phones)
-    model_helper.write_changes_to_db(segments, store)
-    store.DB.delete_many_label_index_links(_collect_stale_label_links(retimed))
+def _save_new_syllables(new_syllables):
+    '''Persist the new syllables (fresh keys, so plain saves write their
+    label-index links) and their repointed phones.'''
+    store = new_syllables[0].store
+    for syllable in new_syllables:
+        syllable.save()
+        store.save_many(syllable.phones, overwrite=True)
 
 
-def _collect_stale_label_links(retimed):
-    '''Old label-index keys no syllable uses after the rewrite (save() wrote the
-    new ones). A syllable whose label and key were unchanged keeps its entry.
-    retimed   list of _Retimed records from _retime_syllable.'''
-    new_links = {r.syllable.label_index_key for r in retimed}
-    stale = []
-    for r in retimed:
-        if r.old_label_index_key not in new_links:
-            stale.append(r.old_label_index_key)
-    return stale
-
-
-def _flag_syllable_write_path(syllable, old_key):
-    '''Pick how the retimed syllable is written: 'update' (delete old key, save
-    new) when its start moved and changed the key, else a plain overwrite
-    'save'.'''
-    if syllable.key != old_key:
-        syllable._save_status = 'update'
-        syllable._old_key = old_key
-    else:
-        syllable._save_status = 'save'
-
-
-@dataclass
-class _Retimed:
-    '''A syllable whose boundaries were rewritten, with what persisting it needs:
-    its OLD main key and OLD label-index key (captured before mutation) and the
-    phones now in it.'''
-    syllable: object
-    old_key: bytes
-    old_label_index_key: bytes
-    phones: list
+def _delete_old_syllables(old_syllables):
+    '''Drop the old syllable rows and their label-index entries. The old objects
+    were never mutated, so their cached key and computed label-index key still
+    address the original rows.'''
+    store = old_syllables[0].store
+    keys = [s.key for s in old_syllables]
+    store.delete_many(keys)
+    links = [s.label_index_key for s in old_syllables]
+    store.DB.delete_many_label_index_links(links)
