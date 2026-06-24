@@ -13,9 +13,14 @@ def apply_syllable_groups(syllables, groups, phone_types=None,
                      written).
 
     Repartitions phones among the existing syllables: retimes each syllable to
-    span its new phones, relinks every phone's stored parent pointer, and
-    reassigns onset/nucleus/coda. Returns the mutated syllables.
-    Raises ValueError on a length mismatch or an empty group.
+    span its new phones, relabels it from those phones (' '.join of their
+    labels) so .label stays in sync with the new grouping, relinks every phone's
+    stored parent pointer, and reassigns onset/nucleus/coda. Returns the mutated
+    syllables. Raises ValueError on a length mismatch or an empty group.
+
+    When update_database is True, the stale label-index entry for each syllable's
+    old label/key is removed and the new one written, so a label lookup never
+    resolves to a moved-or-relabelled syllable's old form.
     '''
     if len(syllables) != len(groups):
         raise ValueError('syllable count does not match group count')
@@ -24,25 +29,43 @@ def apply_syllable_groups(syllables, groups, phone_types=None,
         if not group:
             raise ValueError('cannot assign an empty phone group')
         old_key = syllable.key
+        old_label_index_key = syllable.label_index_key  # OLD label + OLD key
         syllable.start = min(p.start for p in group)
         syllable.end = max(p.end for p in group)
+        syllable.label = ' '.join(p.label for p in group)  # keep label in sync
         for phone in group:                         # keep the stored pointer
             phone.parent_id = syllable.identifier   # consistent with the new
             phone.parent_start = syllable.start      # time window
         assign_syllable_positions_to_phones(group, phone_types=phone_types)
-        changed.append((syllable, old_key, group))
-    for syllable in syllables:                      # drop stale child/parent
-        for attr in ('_children', '_related', '_parent'):  # caches
-            syllable.__dict__.pop(attr, None)
+        # Refill the navigation caches to the new grouping rather than dropping
+        # them. Both views then agree in memory without a write: the time-scan
+        # (syllable.phones via _children) and the stored parent pointer
+        # (phone.parent via _parent). Dropping instead would force phone.parent
+        # to re-resolve through store.load(parent_key) at the moved syllable's
+        # new key -- absent from the cache and disk until update_database=True.
+        # These caches hold object references, so they survive a later re-key.
+        sid = syllable.speaker_id
+        syllable._children = [p for p in group if p.speaker_id == sid]
+        syllable._related = [p for p in group if p.speaker_id != sid]
+        for phone in group:
+            phone._parent = syllable
+        changed.append((syllable, old_key, old_label_index_key, group))
     if update_database and changed:
+        store = syllables[0].store
         segments = []
-        for syllable, old_key, group in changed:
+        for syllable, old_key, old_label_index_key, group in changed:
             _mark_syllable_write(syllable, old_key)
             for phone in group:
                 phone._save_status = 'save'         # own key is stable
             segments.append(syllable)
             segments.extend(group)
-        model_helper.write_changes_to_db(segments, syllables[0].store)
+        model_helper.write_changes_to_db(segments, store)
+        # save() wrote each syllable's NEW label-index entry; drop the stale OLD
+        # ones (old label and/or old key), but never one we just rewrote
+        # identically (a syllable whose label and key both stayed put).
+        new_links = {syllable.label_index_key for syllable, *_ in changed}
+        stale = [old for _, _, old, _ in changed if old not in new_links]
+        store.DB.delete_many_label_index_links(stale)
     return syllables
 
 
