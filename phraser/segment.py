@@ -542,8 +542,7 @@ class Segment:
 
 
 class Phrase(Segment):
-    METADATA_FIELDS = {'filename','language', 'speech_style',
-        'channel_index', 'overlap','version'}
+    METADATA_FIELDS = {'filename', 'overlap'}
     filename = ''
 
     @property
@@ -612,8 +611,7 @@ class Phrase(Segment):
 
 
 class Word(Segment):
-    METADATA_FIELDS = {'pos', 'overlap', 'sos',
-        'eos','freq', 'ipa'}
+    METADATA_FIELDS = {'overlap', 'ipa'}
     ipa = ''
 
     @property
@@ -654,7 +652,7 @@ def _add_phrase(self, phrase, update_database = True):
 
 
 class Syllable(Segment):
-    METADATA_FIELDS = {'stress_code', 'tone'}
+    METADATA_FIELDS = {'stress_code'}
     phrase_id = EMPTY_ID
     phrase_start = 0
     stress_code = 9

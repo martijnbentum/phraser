@@ -15,8 +15,8 @@ def apply_new_syllable_boundaries(word, phone_groups, phone_types=None,
     Resyllabification moves consonants between onset and coda but never adds or
     drops a nucleus, so the count is invariant and new[i] is old[i]'s nucleus
     with moved boundaries. Each new syllable is a COPY of its old one (carrying
-    stress_code/tone/speaker/... unchanged) under a fresh id; the word's child
-    cache is repointed at them and — with update_database — the old rows and
+    persisted metadata and speaker links unchanged) under a fresh id; the word's
+    child cache is repointed at them and — with update_database — the old rows and
     their label-index entries are deleted.
     Returns the new syllables. Raises ValueError on a multi-speaker word or a
     count mismatch.

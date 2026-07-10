@@ -20,8 +20,8 @@ under test are:
     count-mismatch words.
 #6  apply_new_syllable_boundaries guards its invariants for direct callers: it
     raises on a syllable-count mismatch and on a multi-speaker word.
-#7  because new syllables are copies, per-syllable metadata (stress_code/tone)
-    carries over unchanged.
+#7  because new syllables are copies, persisted per-syllable metadata
+    (stress_code) carries over unchanged.
 
 The main test word is "april": ɑ p r ɪ l, given (wrong) as  ɑp | rɪl, which the
 Maximal Onset Principle re-segments to  ɑ | p r ɪ l (the p moves to the onset of
@@ -301,7 +301,8 @@ class TestApplyGuards(unittest.TestCase):
 
 
 class TestMetadataCarryOver(unittest.TestCase):
-    '''#7: new syllables are copies, so per-syllable metadata rides along.'''
+    '''#7: new syllables are copies, so persisted per-syllable metadata rides
+    along.'''
 
     def setUp(self):
         self._tmpdir = tempfile.mkdtemp()
@@ -314,16 +315,14 @@ class TestMetadataCarryOver(unittest.TestCase):
             self.store.close()
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
-    def test_stress_and_tone_preserved_per_syllable(self):
+    def test_stress_preserved_per_syllable(self):
         old = sorted(self.word.syllables, key=lambda s: s.start)
         for i, syllable in enumerate(old):
             syllable.stress_code = 10 + i
-            syllable.tone = 20 + i
         resyllabify_word(self.word, update_database=False)
         new = sorted(self.word.syllables, key=lambda s: s.start)
         # new[i] is a copy of old[i] (same nucleus), so its metadata is carried
         self.assertEqual([s.stress_code for s in new], [10, 11])
-        self.assertEqual([s.tone for s in new], [20, 21])
 
 
 if __name__ == '__main__':

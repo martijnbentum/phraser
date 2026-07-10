@@ -150,7 +150,7 @@ def _build_word(phrase, old, syllables, cursor):
         if syllables else (cursor, cursor))
     word = models.Word(store=phrase.store, save=False, label=old.label,
         start=start, end=end)
-    for field, value in old.__dict__.items():           # carry ipa/pos/freq/...
+    for field, value in old.__dict__.items():           # carry persisted metadata
         if field in models.Word.METADATA_FIELDS:        # set ones only (skips the
             setattr(word, field, value)                 # derived 'overlap' property)
     word._children, word._related = syllables, []
