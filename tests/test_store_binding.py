@@ -115,6 +115,17 @@ class TestStoreBinding(unittest.TestCase):
         self.assertEqual(loaded.filename, 'slr_test.wav')
         self.assertIs(loaded._store, self.store)
 
+    def test_word_ipa_round_trips_through_storage(self):
+        word = self.store.create(
+            Word, label='test', start=600, end=700, ipa='t ɛ s t')
+        key = word.key
+        self.store._cache.clear()
+
+        loaded = self.store.load(key)
+
+        self.assertEqual(loaded.ipa, 't ɛ s t')
+        self.assertFalse(hasattr(loaded, 'ipa_label'))
+
     # ------------------------------------------------------------------ #
     # 8. load_many uses the bulk DB results — DB.load() must not be called
     #    inside the loop (regression for the load_many bug fix)

@@ -23,7 +23,7 @@ def pack_audio(instance):
     '''
 
     layout = LAYOUTS['audio']
-    flags = 1 if instance.has_extra() else 0
+    flags = 0
     fixed = {
         'version': VERSION,
         'flags': flags,
@@ -54,7 +54,7 @@ def pack_phrase(instance):
     instance: Phrase instance with fields matching phrase layout
     '''
     layout = LAYOUTS['phrase']
-    flags = 1 if instance.has_extra() else 0
+    flags = 0
     fixed = {
         'version': VERSION,
         'flags': flags,
@@ -83,7 +83,7 @@ def pack_word(instance):
     instance: Word instance with fields matching word layout
     '''
     layout = LAYOUTS['word']
-    flags = 1 if instance.has_extra() else 0
+    flags = 0
     fixed = {
         'version': VERSION,
         'flags': flags,
@@ -115,7 +115,7 @@ def pack_syllable(instance):
     instance: Syllable instance with fields matching syllable layout
     '''
     layout = LAYOUTS['syllable']
-    flags = 1 if instance.has_extra() else 0
+    flags = 0
     fixed = {
         'version': VERSION,
         'flags': flags,
@@ -147,7 +147,7 @@ def pack_phone(instance):
     instance: Phone instance with fields matching phone layout
     '''
     layout = LAYOUTS['phone']
-    flags = 1 if instance.has_extra() else 0
+    flags = 0
     fixed = {
         'version': VERSION,
         'flags': flags,
@@ -179,7 +179,7 @@ def pack_speaker(instance):
     instance: Speaker instance with fields matching speaker layout
     '''
     layout = LAYOUTS['speaker']
-    flags = 1 if instance.has_extra() else 0
+    flags = 0
     fixed = {
         'version': VERSION,
         'flags': flags,
@@ -367,7 +367,7 @@ def word_layout():
     for name in 'speaker_id parent_id'.split():
         fixed_specs.append({'name': name, 'kind': 'bytes', 'n_bytes': 8})
     variable_specs = []
-    for name in 'label ipa_label'.split():
+    for name in 'label ipa'.split():
         variable_specs.append({'name': name, 'kind': 'str', 'bits': 16})
     return build_layout(fixed_specs=fixed_specs, variable_specs=variable_specs)
 
@@ -485,4 +485,3 @@ LAYOUTS = {
     'phone': phone_layout(),
 }
     
-
