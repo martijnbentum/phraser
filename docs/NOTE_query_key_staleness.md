@@ -1,4 +1,4 @@
-# Query Key Staleness
+# Query Key Snapshots And Store Phases
 
 ## Context
 
@@ -9,17 +9,27 @@ list of keys for that class.
 Those keys are currently initialized from `Store.rank_to_keys_dict()`, which is
 itself a cached scan of LMDB keys grouped by class rank.
 
-## Problem
+## Intended Behavior
 
-After `Store.save()`, `Store.save_many()`, `Store.delete()`, or
-`Store.delete_many()`, there can be multiple stale views of key state:
+For now, writing/building a database and querying/using a database are treated
+as distinct phases.
+
+During a write phase, `Store.save()`, `Store.save_many()`, `Store.delete()`, and
+`Store.delete_many()` update LMDB and the object cache, but they do not keep all
+query key snapshots live. In particular, these views can be stale after writes:
 
 - `Data.keys` on query roots
 - `Store._rank_to_keys_dict`
 - loaded objects in `Store._cache`
 
-Updating every view on every write is possible, but it adds bookkeeping and
-creates another source of complexity.
+This is intentional. Updating every view on every write is possible, but it adds
+bookkeeping and creates another source of complexity. Loader/build scripts should
+finish their writes first, then call `Store.refresh_query_roots()` or reopen the
+store before relying on store-level query roots such as `store.words`.
+
+Direct key loads and freshly scanned label-index lookups are separate from this
+query-root snapshot policy, but loaded model objects may still carry their own
+relationship caches. Treat refresh/reopen as the boundary before analysis.
 
 ## Options Considered
 
@@ -62,7 +72,7 @@ refactor.
 
 ## Decision For Now
 
-Accept staleness for now.
+Keep query roots as phase snapshots.
 
 Do not add a key registry, do not derive `rank_to_keys_dict()` from query roots,
 and do not add `deleted_keys`/`active_keys`.

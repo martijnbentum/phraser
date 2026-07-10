@@ -31,6 +31,10 @@ class Store:
     - safe caching
     - no nested pickles
     - resolver for parent, children, speaker, audio
+
+    Query roots such as store.words are snapshots for the read/query phase.
+    Write/build first, then call refresh_query_roots() or reopen the store
+    before relying on store-level query roots.
     """
 
     def __init__(self, path = locations.cgn_lmdb, fraction = None,
@@ -136,8 +140,9 @@ class Store:
 
     def refresh_query_roots(self):
         '''Invalidate the cached rank-to-keys dict and re-attach query roots.
-        Call after adding or removing objects to ensure queries see the
-        updated db.
+        This is the explicit boundary between a write/build phase and a
+        read/query phase. Saves and deletes intentionally do not update query
+        roots live.
         '''
         if hasattr(self, '_rank_to_keys_dict'):
             del self._rank_to_keys_dict

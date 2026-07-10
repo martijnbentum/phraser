@@ -161,6 +161,30 @@ phrase.add_audio(audio, update_database=False)
 word.add_parent(phrase, update_database=False)
 ```
 
+### Convert TextGrid annotations
+
+TextGrid conversion is store-bound staging. Pass a `Store` even when
+`save_to_db=False`: that mode suppresses individual constructor/link writes so
+the loader can build all `Phrase`, `Word`, `Syllable`, and `Phone` objects in
+memory and batch-save them later.
+
+```python
+from phraser import Store
+from phraser import textgrid_loader
+
+store = Store("/path/to/lmdb")
+items = textgrid_loader.textgrid_filename_to_database_objects(
+    "example.TextGrid",
+    audio=audio,
+    speaker=speaker,
+    save_to_db=False,
+    store=store,
+)
+
+textgrid_loader.save_items_to_db(items, store=store)
+store.refresh_query_roots()
+```
+
 ### Query loaded objects
 
 ```python

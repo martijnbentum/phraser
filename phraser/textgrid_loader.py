@@ -15,6 +15,18 @@ def require_store(store=None, items=None):
     if items: return items[0].store
     raise ValueError('store is required')
 
+def require_textgrid_store(store=None):
+    '''TextGrid conversion builds store-bound staging objects.
+
+    save_to_db=False only suppresses individual writes so callers can batch-save
+    later; it does not mean unbound object construction.
+    '''
+    if store is not None: return store
+    m = 'store is required for TextGrid conversion; save_to_db=False stages '
+    m += 'store-bound objects without individual writes, then callers can '
+    m += 'batch-save them later'
+    raise ValueError(m)
+
 def load_textgrid(filename):
     """Load a TextGrid file and return the TextGrid object."""
     tg = TextGrid.fromFile(filename)
@@ -30,10 +42,16 @@ def save_items_to_db(items, store=None):
 def textgrid_filename_to_database_objects(textgrid_filename, offset = 0, 
     audio = None, speaker = None, save_to_db=False, overwrite = False, 
     multiple_speakers = None, store=None):
+    '''Build store-bound objects from a TextGrid.
+
+    save_to_db=False is staging mode: objects are bound to `store`, individual
+    constructor/link writes are suppressed, and a later `save_items_to_db()` can
+    persist them in one batch.
+    '''
     if store is None:
-        if audio is not None: store = audio.store
-        elif speaker is not None: store = speaker.store
-        elif save_to_db: store = require_store(store)
+        if audio is not None: store = getattr(audio, '_store', None)
+        elif speaker is not None: store = getattr(speaker, '_store', None)
+    store = require_textgrid_store(store)
     no_overlap_code = utils.overlap_dict[False]
     tg = load_textgrid(textgrid_filename)
     words = list(textgrid_to_words(tg, offset, store=store))
@@ -70,7 +88,7 @@ def words_to_phrase(words, textgrid_filename, store=None):
     return phrase 
 
 def textgrid_to_words(tg, offset = 0, save_to_db=False, store=None):
-    if save_to_db: store = require_store(store)
+    store = require_textgrid_store(store)
     update_db_save_state(store)
     handle_db_save_option(store, save_to_db=save_to_db)
     names = tg.getNames()
@@ -88,7 +106,7 @@ def textgrid_to_words(tg, offset = 0, save_to_db=False, store=None):
     handle_db_save_option(store, revert=True)
 
 def textgrid_to_syllables(tg, offset = 0, save_to_db=False, store=None):
-    if save_to_db: store = require_store(store)
+    store = require_textgrid_store(store)
     update_db_save_state(store)
     handle_db_save_option(store, save_to_db=save_to_db)
     names = tg.getNames()
@@ -102,7 +120,7 @@ def textgrid_to_syllables(tg, offset = 0, save_to_db=False, store=None):
 
 def textgrid_to_phones(tg, offset = 0, save_to_db=False, store=None):
     
-    if save_to_db: store = require_store(store)
+    store = require_textgrid_store(store)
     update_db_save_state(store)
     handle_db_save_option(store, save_to_db=save_to_db)
     names = tg.getNames()
@@ -115,26 +133,33 @@ def textgrid_to_phones(tg, offset = 0, save_to_db=False, store=None):
     handle_db_save_option(store, revert=True)
 
 
+def copy_kwargs(kwargs=None):
+    if kwargs is None: return {}
+    return dict(kwargs)
+
 def interval_to_word(ort_interval, ipa_interval = None, offset = 0, 
-    kwargs = {}, store=None):
+    kwargs = None, store=None):
+    kwargs = copy_kwargs(kwargs)
     if ipa_interval: 
         kwargs['ipa'] = ipa_interval.mark
     word = interval_to_database_object(ort_interval, models.Word, 
         offset, kwargs, store=store)
     return word
         
-def interval_to_syllable(syl_interval, offset = 0, kwargs = {}, store=None):
+def interval_to_syllable(syl_interval, offset = 0, kwargs = None, store=None):
     syllable = interval_to_database_object(syl_interval, models.Syllable, 
     offset, kwargs, store=store)
     return syllable
 
-def interval_to_phone(phone_interval, offset = 0, kwargs = {}, store=None):
+def interval_to_phone(phone_interval, offset = 0, kwargs = None, store=None):
     phone = interval_to_database_object(phone_interval, models.Phone, 
     offset, kwargs, store=store)
     return phone
 
-def interval_to_database_object(interval, model_class, offset = 0, kwargs={},
+def interval_to_database_object(interval, model_class, offset = 0, kwargs=None,
     store=None):
+    kwargs = copy_kwargs(kwargs)
+    store = require_textgrid_store(store)
     start = utils.seconds_to_miliseconds(interval.minTime + offset)
     end = utils.seconds_to_miliseconds(interval.maxTime + offset)
     o = model_class(start=start, end=end, label=interval.mark, store=store,
@@ -232,10 +257,11 @@ def load_single_audio_textgrid_to_db(audio_filename, textgrid_filename,
     if save_to_db: save_items_to_db(db_objects, store=store)
     return db_objects
 
-def audio_filename_to_db_object(audio_filename, save_to_db = False, kwargs={},
+def audio_filename_to_db_object(audio_filename, save_to_db = False, kwargs=None,
     store=None):
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
+    kwargs = copy_kwargs(kwargs)
     audio_info = audio.audio_info(audio_filename)
     if audio_info.keys() & kwargs.keys():
         m = 'WARNING: Conflicting keys in audio info and kwargs: '
