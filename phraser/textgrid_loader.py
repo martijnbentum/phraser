@@ -46,6 +46,13 @@ def validate_interval_times_match(left, right, left_name, right_name, index):
     m += 'must have matching start/end times.'
     raise ValueError(m)
 
+def validate_textgrid_overwrite(overwrite):
+    if not overwrite: return
+    m = 'overwrite=True is not supported for TextGrid imports; imports '
+    m += 'create fresh object identifiers and cannot overwrite previous '
+    m += 'imports by key'
+    raise ValueError(m)
+
 def load_textgrid(filename):
     """Load a TextGrid file and return the TextGrid object."""
     tg = TextGrid.fromFile(filename)
@@ -67,6 +74,7 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset = 0,
     constructor/link writes are suppressed, and a later `save_items_to_db()` can
     persist them in one batch.
     '''
+    validate_textgrid_overwrite(overwrite)
     if store is None:
         if audio is not None: store = getattr(audio, '_store', None)
         elif speaker is not None: store = getattr(speaker, '_store', None)

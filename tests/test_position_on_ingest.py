@@ -89,6 +89,14 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
             list(textgrid_loader.textgrid_to_words(MiniTextGrid(),
                 save_to_db=False, store=None))
 
+    def test_textgrid_overwrite_option_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'overwrite=True'):
+            textgrid_loader.textgrid_filename_to_database_objects(
+                'does-not-need-to-exist.TextGrid',
+                overwrite=True,
+                store=self.store,
+            )
+
     def test_missing_word_tier_raises_value_error(self):
         tg = MiniTextGrid(names=['KAN-MAU'], tiers=[Tier([interval('t')])])
 
