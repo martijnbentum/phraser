@@ -97,6 +97,38 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                 store=self.store,
             )
 
+    def test_batch_loader_requires_audio_and_textgrid_lengths_to_match(self):
+        with self.assertRaisesRegex(ValueError,
+            'audio_filenames.*textgrid_filenames'):
+            textgrid_loader.load_audios_textgrids_to_db(
+                ['one.wav', 'two.wav'],
+                ['one.TextGrid'],
+                speakers=None,
+                save_to_db=False,
+                store=self.store,
+            )
+
+    def test_batch_loader_requires_speaker_length_to_match(self):
+        with self.assertRaisesRegex(ValueError, 'textgrid_filenames.*speakers'):
+            textgrid_loader.load_audios_textgrids_to_db(
+                ['one.wav'],
+                ['one.TextGrid'],
+                speakers=['speaker-one', 'speaker-two'],
+                save_to_db=False,
+                store=self.store,
+            )
+
+    def test_speaker_batch_loader_requires_audio_and_textgrid_lengths_to_match(self):
+        with self.assertRaisesRegex(ValueError,
+            'audio_filenames.*textgrid_filenames'):
+            textgrid_loader.load_speaker_audios_textgrids_to_db(
+                'speaker-one',
+                ['one.wav', 'two.wav'],
+                ['one.TextGrid'],
+                save_to_db=False,
+                store=self.store,
+            )
+
     def test_missing_word_tier_raises_value_error(self):
         tg = MiniTextGrid(names=['KAN-MAU'], tiers=[Tier([interval('t')])])
 

@@ -53,6 +53,12 @@ def validate_textgrid_overwrite(overwrite):
     m += 'imports by key'
     raise ValueError(m)
 
+def validate_sequence_lengths_match(left_name, left, right_name, right):
+    if len(left) == len(right): return
+    m = f'{left_name} and {right_name} must have matching lengths; '
+    m += f'got {len(left)} and {len(right)}.'
+    raise ValueError(m)
+
 def load_textgrid(filename):
     """Load a TextGrid file and return the TextGrid object."""
     tg = TextGrid.fromFile(filename)
@@ -298,9 +304,11 @@ def load_audios_textgrids_to_db(audio_filenames, textgrid_filenames, speakers,
     save_to_db = True, store=None):
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
-    assert len(audio_filenames) == len(textgrid_filenames) 
+    validate_sequence_lengths_match('audio_filenames', audio_filenames,
+        'textgrid_filenames', textgrid_filenames)
     if speakers is not None:
-        assert len(textgrid_filenames) == len(speakers)
+        validate_sequence_lengths_match('textgrid_filenames',
+            textgrid_filenames, 'speakers', speakers)
     db_objects = []
     for i in progressbar(range(len(audio_filenames))):
         audio_filename = audio_filenames[i]
@@ -318,7 +326,8 @@ def load_speaker_audios_textgrids_to_db(speaker, audio_filenames,
     textgrid_filenames, save_to_db = True, store=None):
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
-    assert len(audio_filenames) == len(textgrid_filenames)
+    validate_sequence_lengths_match('audio_filenames', audio_filenames,
+        'textgrid_filenames', textgrid_filenames)
     speakers = [speaker] * len(audio_filenames)
     db_objects = load_audios_textgrids_to_db(
         audio_filenames, textgrid_filenames, speakers,
