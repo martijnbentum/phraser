@@ -71,7 +71,8 @@ class Segment:
         if self.object_type != other.object_type:
             return False
         if self.object_type == 'Phrase':
-            return self.filename == other.filename
+            return (self.audio_id, self.speaker_id, self.start) == (
+                other.audio_id, other.speaker_id, other.start)
         for field in self.IDENTITY_FIELDS:
             if getattr(self, field) != getattr(other, field):
                 return False
@@ -79,7 +80,7 @@ class Segment:
 
     def __hash__(self):
         if self.object_type == 'Phrase':
-            return hash(self.filename)
+            return hash((self.audio_id, self.speaker_id, self.start))
         values = tuple(getattr(self, field) for field in self.IDENTITY_FIELDS)
         return hash(values)
 

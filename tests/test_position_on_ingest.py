@@ -6,6 +6,7 @@ from contextlib import redirect_stdout
 from types import SimpleNamespace
 
 from phraser import Store
+from phraser import models
 from phraser import textgrid_loader
 from phraser.segment import Phone, Syllable
 
@@ -71,6 +72,19 @@ class MiniTextGrid:
 
     def getNames(self):
         return self.names
+
+
+def make_textgrid_items(store, audio_id=None, speaker_id=None, start=100,
+    end=300, label='old phrase', filename='old.TextGrid'):
+    if audio_id is None: audio_id = b'\x01' * 8
+    if speaker_id is None: speaker_id = b'\x02' * 8
+    phrase = models.Phrase(label=label, start=start, end=end,
+        audio_id=audio_id, speaker_id=speaker_id, filename=filename,
+        store=store, save=False)
+    word = models.Word(label=label.split()[0], start=start, end=start + 100,
+        audio_id=audio_id, speaker_id=speaker_id, store=store, save=False)
+    word.add_parent(phrase, update_database=False)
+    return [word, phrase]
 
 
 class TestTextGridStoreBoundStaging(unittest.TestCase):
@@ -203,6 +217,103 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
 
         self.assertEqual(word_one.ipa, 'w ʌ n')
         self.assertEqual(word_two.ipa, '')
+
+    def test_save_textgrid_items_append_does_not_check_existing(self):
+        old_items = make_textgrid_items(self.store)
+        new_items = make_textgrid_items(self.store, label='new phrase',
+            filename='new.TextGrid')
+        textgrid_loader.save_textgrid_items(old_items, store=self.store)
+
+        action = textgrid_loader.save_textgrid_items(new_items,
+            store=self.store, existing='append')
+        phrase_keys = list(self.store.DB.audio_id_to_child_keys(
+            old_items[-1].audio_id, 'Phrase'))
+
+        self.assertEqual(action, 'added')
+        self.assertEqual(len(phrase_keys), 2)
+
+    def test_save_textgrid_items_add_missing_skips_existing(self):
+        old_items = make_textgrid_items(self.store)
+        new_items = make_textgrid_items(self.store, label='new phrase',
+            filename='new.TextGrid')
+        textgrid_loader.save_textgrid_items(old_items, store=self.store)
+
+        action = textgrid_loader.save_textgrid_items(new_items,
+            store=self.store, existing='add_missing')
+
+        self.assertEqual(action, 'skipped')
+        self.assertFalse(self.store.DB.key_exists(new_items[-1].key))
+
+    def test_save_textgrid_items_replace_swaps_matching_phrase_tree(self):
+        old_items = make_textgrid_items(self.store)
+        new_items = make_textgrid_items(self.store, label='new phrase',
+            filename='new.TextGrid')
+        old_keys = [item.key for item in old_items]
+        old_label_index_keys = textgrid_loader.items_to_label_index_keys(
+            old_items)
+        textgrid_loader.save_textgrid_items(old_items, store=self.store)
+
+        action = textgrid_loader.save_textgrid_items(new_items,
+            store=self.store, existing='replace')
+
+        self.assertEqual(action, 'replaced')
+        for key in old_keys:
+            self.assertFalse(self.store.DB.key_exists(key))
+        for key in old_label_index_keys:
+            self.assertFalse(self.store.DB.key_exists(key,
+                db_name='label_segment'))
+        for item in new_items:
+            self.assertTrue(self.store.DB.key_exists(item.key))
+
+    def test_save_textgrid_items_replace_requires_existing_match(self):
+        items = make_textgrid_items(self.store)
+
+        with self.assertRaisesRegex(ValueError, 'replace requires'):
+            textgrid_loader.save_textgrid_items(items, store=self.store,
+                existing='replace')
+
+    def test_save_textgrid_items_upsert_adds_or_replaces(self):
+        add_items = make_textgrid_items(self.store, start=100)
+        replace_items = make_textgrid_items(self.store, start=100,
+            label='replacement', filename='replacement.TextGrid')
+
+        add_action = textgrid_loader.save_textgrid_items(add_items,
+            store=self.store, existing='upsert')
+        replace_action = textgrid_loader.save_textgrid_items(replace_items,
+            store=self.store, existing='upsert')
+
+        self.assertEqual(add_action, 'added')
+        self.assertEqual(replace_action, 'replaced')
+        self.assertFalse(self.store.DB.key_exists(add_items[-1].key))
+        self.assertTrue(self.store.DB.key_exists(replace_items[-1].key))
+
+    def test_save_textgrid_items_existence_check_requires_audio(self):
+        items = make_textgrid_items(self.store, audio_id=b'\x00' * 8)
+
+        with self.assertRaisesRegex(ValueError, 'audio_id'):
+            textgrid_loader.save_textgrid_items(items, store=self.store,
+                existing='add_missing')
+
+    def test_save_textgrid_items_multiple_matches_raise(self):
+        audio_id = b'\x03' * 8
+        first = make_textgrid_items(self.store, audio_id=audio_id)
+        second = make_textgrid_items(self.store, audio_id=audio_id,
+            filename='duplicate.TextGrid')
+        incoming = make_textgrid_items(self.store, audio_id=audio_id,
+            filename='incoming.TextGrid')
+        textgrid_loader.save_textgrid_items(first, store=self.store)
+        textgrid_loader.save_textgrid_items(second, store=self.store)
+
+        with self.assertRaisesRegex(ValueError, 'multiple matching phrases'):
+            textgrid_loader.save_textgrid_items(incoming, store=self.store,
+                existing='replace')
+
+    def test_save_textgrid_items_rejects_unknown_policy(self):
+        items = make_textgrid_items(self.store)
+
+        with self.assertRaisesRegex(ValueError, 'existing must be one of'):
+            textgrid_loader.save_textgrid_items(items, store=self.store,
+                existing='unknown')
 
 
 if __name__ == '__main__':

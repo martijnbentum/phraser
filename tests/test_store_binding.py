@@ -50,6 +50,39 @@ class TestStoreBinding(unittest.TestCase):
             with self.subTest(class_name=class_name):
                 self.assertIs(obj._store, self.store)
 
+    def test_phrase_equality_uses_audio_speaker_start(self):
+        audio_id = b'\x01' * 8
+        speaker_id = b'\x02' * 8
+        left = Phrase(label='old text', start=100, end=200,
+            audio_id=audio_id, speaker_id=speaker_id, filename='old.TextGrid',
+            save=False)
+        right = Phrase(label='new text', start=100, end=250,
+            audio_id=audio_id, speaker_id=speaker_id, filename='new.TextGrid',
+            save=False)
+
+        self.assertEqual(left, right)
+        self.assertEqual(hash(left), hash(right))
+
+    def test_phrase_equality_differs_by_identity_fields(self):
+        audio_id = b'\x01' * 8
+        speaker_id = b'\x02' * 8
+        phrase = Phrase(label='text', start=100, end=200,
+            audio_id=audio_id, speaker_id=speaker_id, filename='same.TextGrid',
+            save=False)
+
+        cases = [
+            Phrase(label='text', start=100, end=200, audio_id=b'\x03' * 8,
+                speaker_id=speaker_id, filename='same.TextGrid', save=False),
+            Phrase(label='text', start=100, end=200, audio_id=audio_id,
+                speaker_id=b'\x04' * 8, filename='same.TextGrid', save=False),
+            Phrase(label='text', start=101, end=200, audio_id=audio_id,
+                speaker_id=speaker_id, filename='same.TextGrid', save=False),
+        ]
+
+        for other in cases:
+            with self.subTest(other=other):
+                self.assertNotEqual(phrase, other)
+
     # ------------------------------------------------------------------ #
     # 3. Direct constructor with store= binds without using the factory
     # ------------------------------------------------------------------ #
