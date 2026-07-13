@@ -53,15 +53,24 @@ class Tier(list):
     pass
 
 
+def interval(mark, min_time=0, max_time=1):
+    return SimpleNamespace(mark=mark, minTime=min_time, maxTime=max_time)
+
+
 class MiniTextGrid:
-    def __init__(self):
-        self.tiers = [
-            Tier([SimpleNamespace(mark='test', minTime=0, maxTime=1)]),
-            Tier([SimpleNamespace(mark='t ɛ s t', minTime=0, maxTime=1)]),
-        ]
+    def __init__(self, names=None, tiers=None):
+        if names is None:
+            names = ['ORT-MAU', 'KAN-MAU']
+        if tiers is None:
+            tiers = [
+                Tier([interval('test')]),
+                Tier([interval('t ɛ s t')]),
+            ]
+        self.names = names
+        self.tiers = tiers
 
     def getNames(self):
-        return ['ORT-MAU', 'KAN-MAU']
+        return self.names
 
 
 class TestTextGridStoreBoundStaging(unittest.TestCase):
@@ -79,6 +88,40 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'store is required'):
             list(textgrid_loader.textgrid_to_words(MiniTextGrid(),
                 save_to_db=False, store=None))
+
+    def test_missing_word_tier_raises_value_error(self):
+        tg = MiniTextGrid(names=['KAN-MAU'], tiers=[Tier([interval('t')])])
+
+        with self.assertRaisesRegex(ValueError, "ORT-MAU.*words"):
+            list(textgrid_loader.textgrid_to_words(tg, store=self.store))
+
+    def test_missing_syllable_tier_raises_value_error(self):
+        with self.assertRaisesRegex(ValueError, "MAS.*syllables"):
+            list(textgrid_loader.textgrid_to_syllables(MiniTextGrid(),
+                store=self.store))
+
+    def test_missing_phone_tier_raises_value_error(self):
+        with self.assertRaisesRegex(ValueError, "MAU.*phones"):
+            list(textgrid_loader.textgrid_to_phones(MiniTextGrid(),
+                store=self.store))
+
+    def test_word_and_ipa_tier_lengths_must_match(self):
+        tg = MiniTextGrid(tiers=[
+            Tier([interval('one'), interval('two', 1, 2)]),
+            Tier([interval('w ʌ n')]),
+        ])
+
+        with self.assertRaisesRegex(ValueError, 'matching interval counts'):
+            list(textgrid_loader.textgrid_to_words(tg, store=self.store))
+
+    def test_word_and_ipa_interval_times_must_match(self):
+        tg = MiniTextGrid(tiers=[
+            Tier([interval('one', 0, 1)]),
+            Tier([interval('w ʌ n', 0.1, 1)]),
+        ])
+
+        with self.assertRaisesRegex(ValueError, 'matching start/end times'):
+            list(textgrid_loader.textgrid_to_words(tg, store=self.store))
 
     def test_save_to_db_false_stages_store_bound_objects_without_writing(self):
         before = len(self.store.DB.all_keys())

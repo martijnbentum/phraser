@@ -27,6 +27,25 @@ def require_textgrid_store(store=None):
     m += 'batch-save them later'
     raise ValueError(m)
 
+def get_textgrid_tier(tg, names, tier_name, object_type):
+    if tier_name in names:
+        return tg.tiers[names.index(tier_name)]
+    m = f"TextGrid must contain '{tier_name}' tier for {object_type}."
+    raise ValueError(m)
+
+def validate_tier_lengths_match(left, right, left_name, right_name):
+    if len(left) == len(right): return
+    m = f"TextGrid tiers '{left_name}' and '{right_name}' must have "
+    m += f"matching interval counts; got {len(left)} and {len(right)}."
+    raise ValueError(m)
+
+def validate_interval_times_match(left, right, left_name, right_name, index):
+    if left.minTime == right.minTime and left.maxTime == right.maxTime:
+        return
+    m = f"TextGrid tiers '{left_name}' and '{right_name}' interval {index} "
+    m += 'must have matching start/end times.'
+    raise ValueError(m)
+
 def load_textgrid(filename):
     """Load a TextGrid file and return the TextGrid object."""
     tg = TextGrid.fromFile(filename)
@@ -92,15 +111,13 @@ def textgrid_to_words(tg, offset = 0, save_to_db=False, store=None):
     update_db_save_state(store)
     handle_db_save_option(store, save_to_db=save_to_db)
     names = tg.getNames()
-    assert 'ORT-MAU' in names, "TextGrid must contain 'ORT-MAU' tier for words."
-    assert 'KAN-MAU' in names, "TextGrid must contain 'KAN-MAU' tier for words."
-    ort_mau = tg.tiers[names.index('ORT-MAU')]
-    kan_mau = tg.tiers[names.index('KAN-MAU')]
+    ort_mau = get_textgrid_tier(tg, names, 'ORT-MAU', 'words')
+    kan_mau = get_textgrid_tier(tg, names, 'KAN-MAU', 'words')
+    validate_tier_lengths_match(ort_mau, kan_mau, 'ORT-MAU', 'KAN-MAU')
     
     for index, (ort, ipa) in enumerate(zip(ort_mau, kan_mau)):
         if ort.mark == '': continue
-        assert ort.minTime == ipa.minTime and ort.maxTime == ipa.maxTime, \
-            "ORT-MAU and KAN-MAU tiers must have matching intervals."
+        validate_interval_times_match(ort, ipa, 'ORT-MAU', 'KAN-MAU', index)
         yield interval_to_word(ort, ipa, offset=offset, store=store)  
             
     handle_db_save_option(store, revert=True)
@@ -110,8 +127,7 @@ def textgrid_to_syllables(tg, offset = 0, save_to_db=False, store=None):
     update_db_save_state(store)
     handle_db_save_option(store, save_to_db=save_to_db)
     names = tg.getNames()
-    assert 'MAS' in names, "TextGrid must contain 'MAS' tier for syllables."
-    syllables = tg.tiers[names.index('MAS')]
+    syllables = get_textgrid_tier(tg, names, 'MAS', 'syllables')
     
     for syl in syllables:
         if syl.mark == '<p:>': continue
@@ -124,8 +140,7 @@ def textgrid_to_phones(tg, offset = 0, save_to_db=False, store=None):
     update_db_save_state(store)
     handle_db_save_option(store, save_to_db=save_to_db)
     names = tg.getNames()
-    assert 'MAU' in names, "TextGrid must contain 'MAU' tier for phones."
-    phones= tg.tiers[names.index('MAU')]
+    phones = get_textgrid_tier(tg, names, 'MAU', 'phones')
     
     for phone in phones:
         if phone.mark == '(...)': continue
