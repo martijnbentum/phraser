@@ -4,6 +4,7 @@ import shutil
 import tempfile
 from contextlib import redirect_stdout
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from phraser import Store
 from phraser import models
@@ -87,6 +88,11 @@ def make_textgrid_items(store, audio_id=None, speaker_id=None, start=100,
     return [word, phrase]
 
 
+def make_audio(store, filename='one.wav', save=True):
+    return models.Audio(filename=filename, duration=1000, n_channels=1,
+        sample_rate=16000, store=store, save=save)
+
+
 class TestTextGridStoreBoundStaging(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.mkdtemp()
@@ -142,6 +148,103 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                 save_to_db=False,
                 store=self.store,
             )
+
+    def test_single_loader_existing_policy_requires_audio_object(self):
+        with self.assertRaisesRegex(ValueError, 'audio is required'):
+            textgrid_loader.load_single_audio_textgrid_to_db(
+                'one.wav',
+                'one.TextGrid',
+                save_to_db=True,
+                store=self.store,
+                existing='replace',
+            )
+
+    def test_single_loader_existing_policy_requires_stored_audio(self):
+        audio = make_audio(self.store, save=False)
+
+        with self.assertRaisesRegex(ValueError, 'already exist'):
+            textgrid_loader.load_single_audio_textgrid_to_db(
+                'one.wav',
+                'one.TextGrid',
+                save_to_db=True,
+                store=self.store,
+                existing='replace',
+                audio=audio,
+            )
+
+    def test_single_loader_existing_policy_requires_same_store_audio(self):
+        other_tmpdir = tempfile.mkdtemp()
+        other_store = None
+        try:
+            with redirect_stdout(io.StringIO()):
+                other_store = Store(path=other_tmpdir)
+            audio = make_audio(other_store)
+
+            with self.assertRaisesRegex(ValueError, 'same Store'):
+                textgrid_loader.load_single_audio_textgrid_to_db(
+                    'one.wav',
+                    'one.TextGrid',
+                    save_to_db=True,
+                    store=self.store,
+                    existing='replace',
+                    audio=audio,
+                )
+        finally:
+            if other_store is not None:
+                with redirect_stdout(io.StringIO()):
+                    other_store.close()
+            shutil.rmtree(other_tmpdir, ignore_errors=True)
+
+    def test_batch_loader_existing_policy_requires_audios(self):
+        with self.assertRaisesRegex(ValueError, 'audio is required'):
+            textgrid_loader.load_audios_textgrids_to_db(
+                ['one.wav'],
+                ['one.TextGrid'],
+                speakers=None,
+                save_to_db=True,
+                store=self.store,
+                existing='upsert',
+            )
+
+    def test_batch_loader_existing_policy_rejects_missing_audio_items(self):
+        audio = make_audio(self.store)
+
+        with self.assertRaisesRegex(ValueError, 'audios\\[1\\]'):
+            textgrid_loader.load_audios_textgrids_to_db(
+                ['one.wav', 'two.wav'],
+                ['one.TextGrid', 'two.TextGrid'],
+                speakers=None,
+                save_to_db=True,
+                store=self.store,
+                existing='upsert',
+                audios=[audio, None],
+            )
+
+    def test_append_loader_with_stored_audio_does_not_resave_audio(self):
+        audio = make_audio(self.store)
+        saved_audio_count = self.store.save_key_counter[audio.key]
+
+        def make_items(textgrid_filename, audio=None, speaker=None,
+            save_to_db=False, store=None, **kwargs):
+            return make_textgrid_items(store, audio_id=audio.identifier,
+                filename=textgrid_filename)
+
+        with patch.object(textgrid_loader,
+            'textgrid_filename_to_database_objects', side_effect=make_items):
+            db_objects = textgrid_loader.load_single_audio_textgrid_to_db(
+                'one.wav',
+                'one.TextGrid',
+                save_to_db=True,
+                store=self.store,
+                existing='append',
+                audio=audio,
+            )
+
+        self.assertIs(db_objects[0], audio)
+        self.assertEqual(self.store.save_key_counter[audio.key],
+            saved_audio_count)
+        for item in db_objects[1:]:
+            self.assertTrue(self.store.DB.key_exists(item.key))
 
     def test_missing_word_tier_raises_value_error(self):
         tg = MiniTextGrid(names=['KAN-MAU'], tiers=[Tier([interval('t')])])

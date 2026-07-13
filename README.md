@@ -181,9 +181,14 @@ items = textgrid_loader.textgrid_filename_to_database_objects(
     store=store,
 )
 
-textgrid_loader.save_items_to_db(items, store=store)
+textgrid_loader.save_textgrid_items(items, store=store, existing="append")
 store.refresh_query_roots()
 ```
+
+`save_textgrid_items()` supports `existing="append"`, `"add_missing"`,
+`"replace"`, and `"upsert"`. Policies other than `"append"` run an existence
+check using phrase identity `(audio_id, speaker_id, start)` and require an
+existing `Audio` object.
 
 ### Query loaded objects
 

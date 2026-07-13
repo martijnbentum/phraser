@@ -66,10 +66,6 @@ def load_textgrid(filename):
     tg = TextGrid.fromFile(filename)
     return tg
 
-def save_items_to_db(items, store=None):
-    store = require_store(store, items)
-    store.save_many(items)
-
 def save_textgrid_items(items, store=None, existing='append'):
     '''Persist staged TextGrid items according to an existence policy.
 
@@ -90,7 +86,7 @@ def save_textgrid_items(items, store=None, existing='append'):
     by Phrase equality: `(audio_id, speaker_id, start)`. Multiple matches raise
     ValueError. The function returns `added`, `skipped`, or `replaced`.
     '''
-    validate_textgrid_existing_policy(existing)
+    validate_textgrid_existing_mode(existing)
     items = list(items)
     store = require_store(store, items)
     if existing == 'append':
@@ -114,10 +110,41 @@ def save_textgrid_items(items, store=None, existing='append'):
     store.save_many(items)
     return 'added'
 
-def validate_textgrid_existing_policy(existing):
+def validate_textgrid_existing_mode(existing):
     if existing in TEXTGRID_EXISTING_POLICIES: return
     values = ', '.join(sorted(TEXTGRID_EXISTING_POLICIES))
     raise ValueError(f'existing must be one of: {values}')
+
+def validate_textgrid_audio(audio, existing, store=None, save_to_db=True):
+    validate_textgrid_existing_mode(existing)
+    if not save_to_db: return
+    if existing == 'append':
+        if audio is None: return
+        if store is None: return
+        if getattr(audio, '_store', None) is store: return
+        raise ValueError('audio must be bound to the same Store')
+    m = 'audio is required when existing requires an existence check; '
+    if audio is None:
+        m += f'got existing={existing!r}'
+        raise ValueError(m)
+    if store is None:
+        raise ValueError('store is required to validate textgrid audio')
+    if getattr(audio, '_store', None) is not store:
+        raise ValueError('audio must be bound to the same Store')
+    if store.DB.key_exists(audio.key): return
+    raise ValueError('audio must already exist in the Store')
+
+def validate_textgrid_audios(audios, existing, store=None, save_to_db=True):
+    if audios is None:
+        validate_textgrid_audio(None, existing, store=store,
+            save_to_db=save_to_db)
+        return
+    for i, audio in enumerate(audios):
+        try:
+            validate_textgrid_audio(audio, existing, store=store,
+                save_to_db=save_to_db)
+        except ValueError as e:
+            raise ValueError(f'audios[{i}]: {e}') from e
 
 def require_single_textgrid_phrase(items):
     phrases = get_phrases_from_items(items)
@@ -168,8 +195,8 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset = 0,
     '''Build store-bound objects from a TextGrid.
 
     save_to_db=False is staging mode: objects are bound to `store`, individual
-    constructor/link writes are suppressed, and a later `save_items_to_db()` can
-    persist them in one batch.
+    constructor/link writes are suppressed, and a later `save_textgrid_items()`
+    can persist them in one batch.
     '''
     validate_textgrid_overwrite(overwrite)
     if store is None:
@@ -303,9 +330,12 @@ def find_and_add_phones_to_syllable(syllable, phones, save_to_db=False,
 
 def load_single_audio_and_transcription_to_db(audio_filename, text = None, 
     speaker = None,textgrid_filename = None, do_force_align = False, 
-    save_to_db = True, textgrid_output_dir = None, store=None):
+    save_to_db = True, textgrid_output_dir = None, store=None,
+    existing='append', audio=None):
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
+    validate_textgrid_audio(audio, existing, store=store,
+        save_to_db=save_to_db)
     if textgrid_filename is None and not do_force_align:
         m = f'Either a TextGrid filename must be provided '
         m += f'or force alignment must be requested.'
@@ -318,19 +348,26 @@ def load_single_audio_and_transcription_to_db(audio_filename, text = None,
         textgrid_filename = o['output_file']
     db_objects = load_single_audio_textgrid_to_db(audio_filename, 
         textgrid_filename, speaker = speaker, save_to_db = save_to_db,
-        store=store)
+        store=store, existing=existing, audio=audio)
     return db_objects
 
 def load_single_audio_textgrid_to_db(audio_filename, textgrid_filename,
-    speaker = None, save_to_db = True, store=None):
+    speaker = None, save_to_db = True, store=None, existing='append',
+    audio=None):
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
-    audio_object = audio_filename_to_db_object(
-        audio_filename, save_to_db=False, store=store)
+    validate_textgrid_audio(audio, existing, store=store,
+        save_to_db=save_to_db)
+    if audio is None:
+        audio = audio_filename_to_db_object(
+            audio_filename, save_to_db=False, store=store)
     items = textgrid_filename_to_database_objects(textgrid_filename,
-        audio=audio_object, speaker=speaker, save_to_db=False, store=store)
-    db_objects = [audio_object] + items
-    if save_to_db: save_items_to_db(db_objects, store=store)
+        audio=audio, speaker=speaker, save_to_db=False, store=store)
+    db_objects = [audio] + items
+    if save_to_db:
+        if existing == 'append' and not store.DB.key_exists(audio.key):
+            store.save(audio)
+        save_textgrid_items(items, store=store, existing=existing)
     return db_objects
 
 def audio_filename_to_db_object(audio_filename, save_to_db = False, kwargs=None,
@@ -348,9 +385,14 @@ def audio_filename_to_db_object(audio_filename, save_to_db = False, kwargs=None,
     return audio_object
 
 def load_audios_textgrids_to_db(audio_filenames, textgrid_filenames, speakers, 
-    save_to_db = True, store=None):
+    save_to_db = True, store=None, existing='append', audios=None):
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
+    if audios is not None:
+        validate_sequence_lengths_match('textgrid_filenames',
+            textgrid_filenames, 'audios', audios)
+    validate_textgrid_audios(audios, existing, store=store,
+        save_to_db=save_to_db)
     validate_sequence_lengths_match('audio_filenames', audio_filenames,
         'textgrid_filenames', textgrid_filenames)
     if speakers is not None:
@@ -363,22 +405,29 @@ def load_audios_textgrids_to_db(audio_filenames, textgrid_filenames, speakers,
         if speakers is not None:
             speaker = speakers[i]
         else: speaker = None
+        if audios is not None:
+            audio_object = audios[i]
+        else: audio_object = None
         objs = load_single_audio_textgrid_to_db(
             audio_filename, textgrid_filename, speaker = speaker,
-            save_to_db = save_to_db, store=store)
+            save_to_db = save_to_db, store=store, existing=existing,
+            audio=audio_object)
         db_objects.extend(objs)
     return db_objects
     
 def load_speaker_audios_textgrids_to_db(speaker, audio_filenames, 
-    textgrid_filenames, save_to_db = True, store=None):
+    textgrid_filenames, save_to_db = True, store=None, existing='append',
+    audios=None):
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
+    validate_textgrid_audios(audios, existing, store=store,
+        save_to_db=save_to_db)
     validate_sequence_lengths_match('audio_filenames', audio_filenames,
         'textgrid_filenames', textgrid_filenames)
     speakers = [speaker] * len(audio_filenames)
     db_objects = load_audios_textgrids_to_db(
         audio_filenames, textgrid_filenames, speakers,
-        save_to_db = save_to_db, store=store)
+        save_to_db = save_to_db, store=store, existing=existing, audios=audios)
     return db_objects
     
 def get_phrases_from_items(items):
