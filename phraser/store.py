@@ -50,7 +50,6 @@ class Store:
         self.verbose = verbose
         self._classes_loaded = {}
         self.fraction = None
-        self.db_saving_allowed = True
         self.closed = False
         self._register_default_classes()
         if fraction is not None:
@@ -177,7 +176,6 @@ class Store:
         fail_gracefully : if True, print a message and skip saving if object
                           exists in database
         '''
-        if not self.db_saving_allowed: return
         self._ensure_open()
         self._bind(obj)
         key = key_helper.instance_to_key(obj)
@@ -197,7 +195,6 @@ class Store:
         self._handle_label_links([obj])
 
     def save_many(self, objs, overwrite = False, fail_gracefully = False):
-        if not self.db_saving_allowed: return
         self._ensure_open()
         start = time.time()
         objs = list(objs)
@@ -383,26 +380,6 @@ class Store:
         d['Phrase'] = phrases
         for key in self.CLASS_MAP.keys():
             if key in d: self._classes_loaded[key] = True
-
-    def turn_on_db_saving(self):
-        '''allow saving to LMDB'''
-        self.enable_writes()
-
-    def turn_off_db_saving(self):
-        '''disallow saving to LMDB'''
-        self.disable_writes()
-
-    def enable_writes(self):
-        '''Allow saving to LMDB.'''
-        self.db_saving_allowed = True
-
-    def disable_writes(self):
-        '''Disallow saving to LMDB.'''
-        self.db_saving_allowed = False
-
-    def is_db_saving_allowed(self):
-        '''return True if saving to LMDB is allowed'''
-        return self.db_saving_allowed
 
     def open(self):
         '''(Re)open the underlying LMDB environment.

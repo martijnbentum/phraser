@@ -87,7 +87,7 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
     def test_textgrid_conversion_requires_store_even_when_not_saving(self):
         with self.assertRaisesRegex(ValueError, 'store is required'):
             list(textgrid_loader.textgrid_to_words(MiniTextGrid(),
-                save_to_db=False, store=None))
+                store=None))
 
     def test_textgrid_overwrite_option_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'overwrite=True'):
@@ -166,13 +166,31 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
     def test_save_to_db_false_stages_store_bound_objects_without_writing(self):
         before = len(self.store.DB.all_keys())
         words = list(textgrid_loader.textgrid_to_words(MiniTextGrid(),
-            save_to_db=False, store=self.store))
+            store=self.store))
         after = len(self.store.DB.all_keys())
 
         self.assertEqual(len(words), 1)
         self.assertIs(words[0].store, self.store)
         self.assertEqual((before, after), (0, 0))
-        self.assertTrue(self.store.is_db_saving_allowed())
+
+    def test_low_level_word_generator_does_not_accept_save_to_db(self):
+        with self.assertRaises(TypeError):
+            list(textgrid_loader.textgrid_to_words(MiniTextGrid(),
+                save_to_db=True, store=self.store))
+
+    def test_low_level_syllable_generator_does_not_accept_save_to_db(self):
+        tg = MiniTextGrid(names=['MAS'], tiers=[Tier([interval('syl')])])
+
+        with self.assertRaises(TypeError):
+            list(textgrid_loader.textgrid_to_syllables(tg,
+                save_to_db=True, store=self.store))
+
+    def test_low_level_phone_generator_does_not_accept_save_to_db(self):
+        tg = MiniTextGrid(names=['MAU'], tiers=[Tier([interval('t')])])
+
+        with self.assertRaises(TypeError):
+            list(textgrid_loader.textgrid_to_phones(tg,
+                save_to_db=True, store=self.store))
 
     def test_interval_to_word_does_not_reuse_previous_ipa(self):
         ort_one = SimpleNamespace(mark='one', minTime=0, maxTime=1)

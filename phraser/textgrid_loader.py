@@ -8,8 +8,6 @@ from phraser import models
 from phraser import syllable_structure
 from phraser import utils
 
-db_save_state = None
-
 def require_store(store=None, items=None):
     if store is not None: return store
     if items: return items[0].store
@@ -18,11 +16,11 @@ def require_store(store=None, items=None):
 def require_textgrid_store(store=None):
     '''TextGrid conversion builds store-bound staging objects.
 
-    save_to_db=False only suppresses individual writes so callers can batch-save
-    later; it does not mean unbound object construction.
+    Staging suppresses individual writes so callers can batch-save later; it
+    does not mean unbound object construction.
     '''
     if store is not None: return store
-    m = 'store is required for TextGrid conversion; save_to_db=False stages '
+    m = 'store is required for TextGrid conversion; staging builds '
     m += 'store-bound objects without individual writes, then callers can '
     m += 'batch-save them later'
     raise ValueError(m)
@@ -66,10 +64,7 @@ def load_textgrid(filename):
 
 def save_items_to_db(items, store=None):
     store = require_store(store, items)
-    update_db_save_state(store)
-    handle_db_save_option(store, save_to_db=True)
     store.save_many(items)
-    handle_db_save_option(store, revert=True)
 
 def textgrid_filename_to_database_objects(textgrid_filename, offset = 0, 
     audio = None, speaker = None, save_to_db=False, overwrite = False, 
@@ -120,10 +115,8 @@ def words_to_phrase(words, textgrid_filename, store=None):
         word.add_parent(phrase, update_database = False)
     return phrase 
 
-def textgrid_to_words(tg, offset = 0, save_to_db=False, store=None):
+def textgrid_to_words(tg, offset = 0, *, store=None):
     store = require_textgrid_store(store)
-    update_db_save_state(store)
-    handle_db_save_option(store, save_to_db=save_to_db)
     names = tg.getNames()
     ort_mau = get_textgrid_tier(tg, names, 'ORT-MAU', 'words')
     kan_mau = get_textgrid_tier(tg, names, 'KAN-MAU', 'words')
@@ -133,33 +126,25 @@ def textgrid_to_words(tg, offset = 0, save_to_db=False, store=None):
         if ort.mark == '': continue
         validate_interval_times_match(ort, ipa, 'ORT-MAU', 'KAN-MAU', index)
         yield interval_to_word(ort, ipa, offset=offset, store=store)  
-            
-    handle_db_save_option(store, revert=True)
 
-def textgrid_to_syllables(tg, offset = 0, save_to_db=False, store=None):
+def textgrid_to_syllables(tg, offset = 0, *, store=None):
     store = require_textgrid_store(store)
-    update_db_save_state(store)
-    handle_db_save_option(store, save_to_db=save_to_db)
     names = tg.getNames()
     syllables = get_textgrid_tier(tg, names, 'MAS', 'syllables')
     
     for syl in syllables:
         if syl.mark == '<p:>': continue
         yield interval_to_syllable(syl, offset=offset, store=store)
-    handle_db_save_option(store, revert=True)
 
-def textgrid_to_phones(tg, offset = 0, save_to_db=False, store=None):
+def textgrid_to_phones(tg, offset = 0, *, store=None):
     
     store = require_textgrid_store(store)
-    update_db_save_state(store)
-    handle_db_save_option(store, save_to_db=save_to_db)
     names = tg.getNames()
     phones = get_textgrid_tier(tg, names, 'MAU', 'phones')
     
     for phone in phones:
         if phone.mark == '(...)': continue
         yield interval_to_phone(phone, offset=offset, store=store)
-    handle_db_save_option(store, revert=True)
 
 
 def copy_kwargs(kwargs=None):
@@ -191,35 +176,9 @@ def interval_to_database_object(interval, model_class, offset = 0, kwargs=None,
     store = require_textgrid_store(store)
     start = utils.seconds_to_miliseconds(interval.minTime + offset)
     end = utils.seconds_to_miliseconds(interval.maxTime + offset)
-    o = model_class(start=start, end=end, label=interval.mark, store=store,
-        **kwargs)
+    o = model_class(start=start, end=end, label=interval.mark, save=False,
+        store=store, **kwargs)
     return o
-    
-def handle_db_save_option(store, save_to_db = None, revert = None):
-    global db_save_state
-    if store is None: return
-    if save_to_db is None and revert is None:return
-    if revert:
-        if db_save_state:
-            turn_on_db_saving(store)
-        else:
-            turn_off_db_saving(store)
-    elif save_to_db is not None:
-        if save_to_db:
-            turn_on_db_saving(store)
-        else:
-            turn_off_db_saving(store)
-        
-def update_db_save_state(store):
-    global db_save_state
-    if store is None: return
-    db_save_state = store.is_db_saving_allowed()
-
-def turn_off_db_saving(store):
-    store.disable_writes()
-
-def turn_on_db_saving(store):
-    store.enable_writes()
 
 def select_objecs_in_range(objects, start, end):
     selected = []
@@ -229,19 +188,12 @@ def select_objecs_in_range(objects, start, end):
     return selected
 
 def find_and_add_syllables_to_word(word, syllables, save_to_db=False):
-    store = word.store if save_to_db else None
-    update_db_save_state(store)
-    handle_db_save_option(store, save_to_db=save_to_db)
     syllables = select_objecs_in_range(syllables, word.start, word.end)
     for syl in syllables:
         syl.add_parent(word, update_database = save_to_db)
-    handle_db_save_option(store, revert=True)
 
 def find_and_add_phones_to_syllable(syllable, phones, save_to_db=False,
     assign_positions=True):
-    store = syllable.store if save_to_db else None
-    update_db_save_state(store)
-    handle_db_save_option(store, save_to_db=save_to_db)
     phones = select_objecs_in_range(phones, syllable.start, syllable.end)
     for phone in phones:
         phone.add_parent(syllable, update_database = save_to_db)
@@ -251,7 +203,6 @@ def find_and_add_phones_to_syllable(syllable, phones, save_to_db=False,
             syllable_structure.assign_syllable_positions_to_phones(phones)
         except ValueError:
             pass  # odd transcription -> leave phones at default ('unknown')
-    handle_db_save_option(store, revert=True)
 
 
 def load_single_audio_and_transcription_to_db(audio_filename, text = None, 

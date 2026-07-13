@@ -25,19 +25,20 @@ def generate_objects(store=None):
     phrase_objects = []
     time_cursor = 0.0
     all_objects = []
-    store.disable_writes()
-    print(f'store saving is {store.is_db_saving_allowed()}')
+    speaker_audio_links = []
 
     for speaker_name in progressbar(SPEAKER_NAMES):
-        speaker = models.Speaker(speaker_name, store=store)
+        speaker = models.Speaker(speaker_name, store=store, save=False)
         all_objects.append(speaker)
     
         for i, text in enumerate(PHRASES):
             # Audio + Speaker
             filename = f"utt_{i:04d}.wav"
-            audio = models.Audio(filename, duration=8.0, store=store)
+            audio = models.Audio(filename, duration=8.0, store=store,
+                save=False)
             all_objects.append(audio)
-            audio.add_speaker(speaker)
+            audio.add_speaker(speaker, update_database=False)
+            speaker_audio_links.append((speaker, audio))
 
             words = text.split()
             ph_start = time_cursor
@@ -45,10 +46,11 @@ def generate_objects(store=None):
 
             # ------------------- Create Phrase -------------------
             phrase = models.Phrase(text, start=ph_start, end=ph_end,
-                store=store)
+                store=store, save=False)
             all_objects.append(phrase)
             phrase.add_audio(audio, update_database=False, propagate=False)
-            phrase.add_speaker(speaker)
+            phrase.add_speaker(speaker, update_database=False,
+                propagate=False)
 
             # -------------------- Add WORDS -----------------------
             w_cursor = ph_start
@@ -62,9 +64,9 @@ def generate_objects(store=None):
                 w_cursor = w_end + 0.05
 
                 word_obj = models.Word(word, start=w_start, end=w_end,
-                    store=store)
+                    store=store, save=False)
                 all_objects.append(word_obj)
-                phrase.add_child(word_obj)
+                phrase.add_child(word_obj, update_database=False)
 
                 # ---------------- SYLLABLES ---------------------
                 syl_dur = (w_end - w_start) / len(sylls)
@@ -76,8 +78,8 @@ def generate_objects(store=None):
                     s_cursor += syl_dur
 
                     syl_obj = models.Syllable(syl, start=s_start, end=s_end,
-                        store=store)
-                    word_obj.add_child(syl_obj)
+                        store=store, save=False)
+                    word_obj.add_child(syl_obj, update_database=False)
                     all_objects.append(syl_obj)
 
                     # ---------------- PHONES --------------------
@@ -91,8 +93,8 @@ def generate_objects(store=None):
                         ph_cursor += ph_dur
 
                         phone_obj = models.Phone(ph, start=p_start,
-                            end=p_end, store=store)
-                        syl_obj.add_child(phone_obj)
+                            end=p_end, store=store, save=False)
+                        syl_obj.add_child(phone_obj, update_database=False)
                         all_objects.append(phone_obj)
 
             phrase_objects.append(phrase)
@@ -100,9 +102,9 @@ def generate_objects(store=None):
 
     
     print(f'generated total objects:', len(all_objects))
-    store.enable_writes()
-    print(f'store saving is {store.is_db_saving_allowed()}')
     store.save_many(all_objects)
+    for speaker, audio in speaker_audio_links:
+        store.DB.write_speaker_audio_link(speaker, audio)
 
     return phrase_objects
 

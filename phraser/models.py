@@ -56,8 +56,8 @@ class Audio:
                 raise ValueError('duration should be in milliseconds and should be int')
             setattr(self, k, v)
 
-    def add_speaker(self, speaker):
-        speaker.add_audio(self)
+    def add_speaker(self, speaker, update_database=True):
+        speaker.add_audio(self, update_database=update_database)
 
     def has_extra(self):
         if hasattr(self, 'extra') and self.extra:
@@ -222,11 +222,12 @@ class Speaker:
     def __contains__(self, key):
         return hasattr(self, key) or key in self.extra
 
-    def add_audio(self, audio):
+    def add_audio(self, audio, update_database=True):
         if not hasattr(self, '_audios'): self._audios = []
         if audio not in self._audios:
             self._audios.append(audio)
-        self.store.DB.write_speaker_audio_link(self, audio)
+        if update_database:
+            self.store.DB.write_speaker_audio_link(self, audio)
 
     def has_extra(self):
         if hasattr(self, 'extra') and self.extra:

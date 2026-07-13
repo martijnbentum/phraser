@@ -1,20 +1,20 @@
 # TextGrid Loader Cleanup
 
-## Generator Write State
+## TextGrid Staging Writes
 
-`textgrid_to_words()`, `textgrid_to_syllables()`, and `textgrid_to_phones()`
-temporarily change `Store.db_saving_allowed` through the module-global
-`db_save_state`.
+TextGrid conversion stages objects by constructing `Phrase`, `Word`,
+`Syllable`, and `Phone` instances with `save=False`, then writing through
+`save_items_to_db()` when persistence is requested.
 
-The main loader path currently exhausts these generators with `list(...)`, so
-the write state is restored in normal TextGrid ingestion. Direct callers can
-still partially consume a generator or hit an exception before the trailing
-restore call runs. In that case, store writes can remain disabled unexpectedly.
+The low-level generators `textgrid_to_words()`, `textgrid_to_syllables()`, and
+`textgrid_to_phones()` are staging-only and do not accept a `save_to_db`
+argument. Callers should use `save_items_to_db()` or
+`textgrid_filename_to_database_objects(..., save_to_db=True)` to persist staged
+objects.
 
-When this is fixed, prefer a local state guard instead of the module global.
-For generator safety, restore the previous write state before yielding each
-object, or use a `try/finally` shape that reliably restores state when the
-generator is closed.
+This avoids mutating store-wide write state during conversion. Partial generator
+consumption and exceptions therefore cannot leave the store in a different write
+state.
 
 ## Future Replace Existing Imports
 
