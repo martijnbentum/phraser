@@ -117,6 +117,14 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                 store=self.store,
             )
 
+    def test_textgrid_converter_does_not_accept_save_to_db(self):
+        with self.assertRaises(TypeError):
+            textgrid_loader.textgrid_filename_to_database_objects(
+                'does-not-need-to-exist.TextGrid',
+                save_to_db=True,
+                store=self.store,
+            )
+
     def test_batch_loader_requires_audio_and_textgrid_lengths_to_match(self):
         with self.assertRaisesRegex(ValueError,
             'audio_filenames.*textgrid_filenames'):
@@ -240,11 +248,34 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                 audio=audio,
             )
 
-        self.assertIs(db_objects[0], audio)
+        self.assertNotIn(audio, db_objects)
         self.assertEqual(self.store.save_key_counter[audio.key],
             saved_audio_count)
-        for item in db_objects[1:]:
+        for item in db_objects:
             self.assertTrue(self.store.DB.key_exists(item.key))
+
+    def test_add_missing_loader_returns_no_objects_when_skipped(self):
+        audio = make_audio(self.store)
+        old_items = make_textgrid_items(self.store, audio_id=audio.identifier)
+        textgrid_loader.save_textgrid_items(old_items, store=self.store)
+
+        def make_items(textgrid_filename, audio=None, speaker=None,
+            save_to_db=False, store=None, **kwargs):
+            return make_textgrid_items(store, audio_id=audio.identifier,
+                label='new phrase', filename=textgrid_filename)
+
+        with patch.object(textgrid_loader,
+            'textgrid_filename_to_database_objects', side_effect=make_items):
+            db_objects = textgrid_loader.load_single_audio_textgrid_to_db(
+                'one.wav',
+                'new.TextGrid',
+                save_to_db=True,
+                store=self.store,
+                existing='add_missing',
+                audio=audio,
+            )
+
+        self.assertEqual(db_objects, [])
 
     def test_missing_word_tier_raises_value_error(self):
         tg = MiniTextGrid(names=['KAN-MAU'], tiers=[Tier([interval('t')])])
@@ -261,6 +292,24 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "MAU.*phones"):
             list(textgrid_loader.textgrid_to_phones(MiniTextGrid(),
                 store=self.store))
+
+    def test_empty_word_intervals_raise_value_error(self):
+        tg = MiniTextGrid(
+            names=['ORT-MAU', 'KAN-MAU', 'MAS', 'MAU'],
+            tiers=[
+                Tier([interval('')]),
+                Tier([interval('')]),
+                Tier([]),
+                Tier([]),
+            ],
+        )
+
+        with patch.object(textgrid_loader, 'load_textgrid', return_value=tg):
+            with self.assertRaisesRegex(ValueError, 'non-empty word interval'):
+                textgrid_loader.textgrid_filename_to_database_objects(
+                    'empty.TextGrid',
+                    store=self.store,
+                )
 
     def test_word_and_ipa_tier_lengths_must_match(self):
         tg = MiniTextGrid(tiers=[

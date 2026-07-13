@@ -70,7 +70,7 @@ def save_textgrid_items(items, store=None, existing='append'):
     '''Persist staged TextGrid items according to an existence policy.
 
     `items` should be the staged objects returned by
-    `textgrid_filename_to_database_objects(..., save_to_db=False)`.
+    `textgrid_filename_to_database_objects(...)`.
 
     Supported `existing` values:
     - `append`: no existence check; save staged items directly. Use when the
@@ -190,13 +190,13 @@ def items_to_label_index_keys(items):
     return label_index_keys
 
 def textgrid_filename_to_database_objects(textgrid_filename, offset = 0, 
-    audio = None, speaker = None, save_to_db=False, overwrite = False, 
-    multiple_speakers = None, store=None):
+    audio = None, speaker = None, overwrite = False, multiple_speakers = None,
+    store=None):
     '''Build store-bound objects from a TextGrid.
 
-    save_to_db=False is staging mode: objects are bound to `store`, individual
-    constructor/link writes are suppressed, and a later `save_textgrid_items()`
-    can persist them in one batch.
+    This is staging mode: objects are bound to `store`, individual
+    constructor/link writes are suppressed, and `save_textgrid_items()` persists
+    them later.
     '''
     validate_textgrid_overwrite(overwrite)
     if store is None:
@@ -210,6 +210,10 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset = 0,
     phones = list(textgrid_to_phones(tg, offset, store=store))
     phrase = words_to_phrase(words, textgrid_filename = textgrid_filename,
         store=store)  
+    if phrase is None:
+        m = 'TextGrid must contain at least one non-empty word interval; '
+        m += f'got {textgrid_filename!r}'
+        raise ValueError(m)
     for phone in phones:
         phone._add_phrase(phrase, update_database = False)
     for syllable in syllables:
@@ -222,7 +226,6 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset = 0,
         item.add_audio(audio, update_database = False, propagate = False)
         item.add_speaker(speaker, update_database = False, propagate = False)
         if multiple_speakers is False: item.overlap_code = no_overlap_code
-    if save_to_db: save_textgrid_items(items, store=store, existing='append')
     return items
          
 def words_to_phrase(words, textgrid_filename, store=None):
@@ -332,6 +335,10 @@ def load_single_audio_and_transcription_to_db(audio_filename, text = None,
     speaker = None,textgrid_filename = None, do_force_align = False, 
     save_to_db = True, textgrid_output_dir = None, store=None,
     existing='append', audio=None):
+    '''Load a transcription, optionally force-aligning first.
+
+    Returns the same object list as `load_single_audio_textgrid_to_db()`.
+    '''
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
     validate_textgrid_audio(audio, existing, store=store,
@@ -354,6 +361,13 @@ def load_single_audio_and_transcription_to_db(audio_filename, text = None,
 def load_single_audio_textgrid_to_db(audio_filename, textgrid_filename,
     speaker = None, save_to_db = True, store=None, existing='append',
     audio=None):
+    '''Load one audio/TextGrid pair.
+
+    When `save_to_db=False`, returns staged objects: audio plus TextGrid items.
+    When `save_to_db=True`, returns only objects written by this call. A
+    pre-existing `audio` is not returned because it was not written. If
+    `existing='add_missing'` skips an existing phrase, returns an empty list.
+    '''
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
     validate_textgrid_audio(audio, existing, store=store,
@@ -362,12 +376,16 @@ def load_single_audio_textgrid_to_db(audio_filename, textgrid_filename,
         audio = audio_filename_to_db_object(
             audio_filename, save_to_db=False, store=store)
     items = textgrid_filename_to_database_objects(textgrid_filename,
-        audio=audio, speaker=speaker, save_to_db=False, store=store)
+        audio=audio, speaker=speaker, store=store)
     db_objects = [audio] + items
     if save_to_db:
+        stored_objects = []
         if existing == 'append' and not store.DB.key_exists(audio.key):
             store.save(audio)
-        save_textgrid_items(items, store=store, existing=existing)
+            stored_objects.append(audio)
+        action = save_textgrid_items(items, store=store, existing=existing)
+        if action != 'skipped': stored_objects.extend(items)
+        return stored_objects
     return db_objects
 
 def audio_filename_to_db_object(audio_filename, save_to_db = False, kwargs=None,
@@ -386,6 +404,10 @@ def audio_filename_to_db_object(audio_filename, save_to_db = False, kwargs=None,
 
 def load_audios_textgrids_to_db(audio_filenames, textgrid_filenames, speakers, 
     save_to_db = True, store=None, existing='append', audios=None):
+    '''Load audio/TextGrid pairs.
+
+    Returns the concatenated object lists from `load_single_audio_textgrid_to_db()`.
+    '''
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
     if audios is not None:
@@ -418,6 +440,10 @@ def load_audios_textgrids_to_db(audio_filenames, textgrid_filenames, speakers,
 def load_speaker_audios_textgrids_to_db(speaker, audio_filenames, 
     textgrid_filenames, save_to_db = True, store=None, existing='append',
     audios=None):
+    '''Load audio/TextGrid pairs for one speaker.
+
+    Returns the same object list as `load_audios_textgrids_to_db()`.
+    '''
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
     validate_textgrid_audios(audios, existing, store=store,

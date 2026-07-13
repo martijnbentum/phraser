@@ -6,11 +6,10 @@ TextGrid conversion stages objects by constructing `Phrase`, `Word`,
 `Syllable`, and `Phone` instances with `save=False`, then writing through
 `save_textgrid_items()` when TextGrid-aware persistence is requested.
 
-The low-level generators `textgrid_to_words()`, `textgrid_to_syllables()`, and
-`textgrid_to_phones()` are staging-only and do not accept a `save_to_db`
-argument. Callers should use `save_textgrid_items()` or
-`textgrid_filename_to_database_objects(..., save_to_db=True)` to persist staged
-objects.
+The low-level generators `textgrid_to_words()`, `textgrid_to_syllables()`,
+`textgrid_to_phones()`, and `textgrid_filename_to_database_objects()` are
+staging-only and do not accept a `save_to_db` argument. Callers should use
+`save_textgrid_items()` or a high-level loader to persist staged objects.
 
 This avoids mutating store-wide write state during conversion. Partial generator
 consumption and exceptions therefore cannot leave the store in a different write
@@ -35,6 +34,12 @@ Existence checks are audio-scoped and match `Phrase` objects by
 `Audio` object for `add_missing`, `replace`, and `upsert`; creating a fresh
 `Audio` from a filename would produce a new `audio_id` and cannot match previous
 imports.
+
+Replacement is not atomic yet. `replace` and the replacement path of `upsert`
+delete the old phrase tree and then save the staged items. If the save fails
+after deletion, the old phrase tree is already gone. Fixing this properly needs
+a lower-level write path that deletes old keys and writes new values in one LMDB
+write transaction.
 
 ## CGN Import Note
 

@@ -167,7 +167,7 @@ def ort_info_to_db_items(ort_info, speaker = None, audio = None, store=None):
     offset = ort_info['start_time']
     multiple_speakers = len(ort_info['speaker_ids_audio']) > 1
     db_items=load_to_db.textgrid_filename_to_database_objects(textgrid_filename,
-        offset = offset, audio = audio, speaker = speaker, save_to_db = False,
+        offset = offset, audio = audio, speaker = speaker,
         multiple_speakers = multiple_speakers, store=store)
     return db_items
 

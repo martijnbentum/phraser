@@ -163,10 +163,10 @@ word.add_parent(phrase, update_database=False)
 
 ### Convert TextGrid annotations
 
-TextGrid conversion is store-bound staging. Pass a `Store` even when
-`save_to_db=False`: that mode suppresses individual constructor/link writes so
-the loader can build all `Phrase`, `Word`, `Syllable`, and `Phone` objects in
-memory and batch-save them later.
+TextGrid conversion is store-bound staging. Pass a `Store`: conversion
+suppresses individual constructor/link writes so the loader can build all
+`Phrase`, `Word`, `Syllable`, and `Phone` objects in memory and batch-save them
+later.
 
 ```python
 from phraser import Store
@@ -177,7 +177,6 @@ items = textgrid_loader.textgrid_filename_to_database_objects(
     "example.TextGrid",
     audio=audio,
     speaker=speaker,
-    save_to_db=False,
     store=store,
 )
 
