@@ -341,8 +341,15 @@ class Segment:
             model_helper.write_changes_to_db(all_segments, self.store)
 
     def _apply_speaker_id(self, speaker_id):
+        if not hasattr(self, '_save_status'):
+            self._save_status = None
         if self.speaker_id == speaker_id: return
         self.speaker_id = speaker_id
+        cached_speaker = getattr(self, '_speaker', None)
+        if cached_speaker is not None:
+            if cached_speaker.identifier != speaker_id:
+                del self._speaker
+        self._save_status = 'save'
 
 
     # ------------------ hierarchy helpers ------------------

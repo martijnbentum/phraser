@@ -159,6 +159,38 @@ class TestStoreBinding(unittest.TestCase):
         self.assertEqual(loaded.ipa, 't ɛ s t')
         self.assertFalse(hasattr(loaded, 'ipa_label'))
 
+    def test_loaded_add_speaker_persists(self):
+        store = self._fresh_store()
+        self.addCleanup(store.close)
+        old_speaker = store.create(Speaker, name='old', dataset='test')
+        new_speaker = store.create(Speaker, name='new', dataset='test')
+        phrase = store.create(Phrase, label='speaker test', start=0, end=100,
+            speaker_id=old_speaker.identifier, filename='test.TextGrid')
+        key = phrase.key
+        store._cache.clear()
+
+        loaded = store.load(key)
+        loaded.add_speaker(old_speaker, propagate=False)
+        loaded.add_speaker(new_speaker, propagate=False)
+        store._cache.clear()
+        reloaded = store.load(key)
+
+        self.assertEqual(reloaded.speaker_id, new_speaker.identifier)
+
+    def test_apply_speaker_id_invalidates_stale_speaker_cache(self):
+        store = self._fresh_store()
+        self.addCleanup(store.close)
+        old_speaker = store.create(Speaker, name='old-cache', dataset='test')
+        new_speaker = store.create(Speaker, name='new-cache', dataset='test')
+        phrase = store.create(Phrase, label='cache test', start=0, end=100,
+            speaker_id=old_speaker.identifier, filename='test.TextGrid')
+        phrase._speaker = old_speaker
+
+        phrase._apply_speaker_id(new_speaker.identifier)
+
+        self.assertFalse(hasattr(phrase, '_speaker'))
+        self.assertEqual(phrase._save_status, 'save')
+
     # ------------------------------------------------------------------ #
     # 8. load_many uses the bulk DB results — DB.load() must not be called
     #    inside the loop (regression for the load_many bug fix)
