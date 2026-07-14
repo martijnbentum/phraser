@@ -168,6 +168,10 @@ class Store:
     def _bind(self, obj):
         return self.attach(obj)
 
+    def _validate_for_save(self, obj):
+        validate = getattr(obj, '_validate_for_save', None)
+        if validate is not None: validate()
+
     def save(self, obj, overwrite = False, fail_gracefully = False):
         '''save an object to LMDB.
         overwrite: if True, overwrite existing object with same key.
@@ -177,6 +181,7 @@ class Store:
                           exists in database
         '''
         self._ensure_open()
+        self._validate_for_save(obj)
         self._bind(obj)
         key = key_helper.instance_to_key(obj)
         value = struct_value.pack_instance(obj)
@@ -185,8 +190,11 @@ class Store:
         try: self.DB.write(key = key, value = value, overwrite = overwrite)
             
         except KeyError as e:
-            if fail_gracefully: print(fail_message)
+            if fail_gracefully:
+                print(fail_message)
+                return
             else: raise e
+        obj._key = key
         self._cache[key] = obj
         self.save_counter[obj.object_type] += 1
         if key not in self.save_key_counter:
@@ -198,6 +206,8 @@ class Store:
         self._ensure_open()
         start = time.time()
         objs = list(objs)
+        for obj in objs:
+            self._validate_for_save(obj)
         for obj in objs:
             self._bind(obj)
         itk = key_helper.instance_to_key
@@ -217,6 +227,8 @@ class Store:
             else: raise e
 
         # print('succes', time.time() - start)
+        for obj, key in zip(objs, keys):
+            obj._key = key
         cache_update = {key: obj for key, obj in zip(keys, objs)}
         self._cache.update(cache_update)
         for key in cache_update.keys():
@@ -331,6 +343,7 @@ class Store:
 
     def update(self, old_key, obj):
         '''delete old_key and save obj with new key'''
+        self._validate_for_save(obj)
         self.delete(old_key)
         self.save(obj, overwrite=True)
         if old_key in self._cache: del self._cache[old_key]

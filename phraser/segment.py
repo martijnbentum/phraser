@@ -27,7 +27,7 @@ class Segment:
     def __init__(self, label = None, start = None, end = None,
         parent_id=EMPTY_ID, audio_id= EMPTY_ID,
         speaker_id= EMPTY_ID, parent_start = 0,
-        save = True, overwrite = False, store = None, **kwargs):
+        save = False, overwrite = False, store = None, **kwargs):
 
         self.object_type = self.__class__.__name__
         self.label = label
@@ -296,6 +296,21 @@ class Segment:
         self.store.save(self, overwrite=overwrite,
             fail_gracefully=fail_gracefully)
 
+    def _validate_for_save(self):
+        if self.audio_id == EMPTY_ID:
+            message = f'{self.object_type} cannot be saved without audio; '
+            message += 'assign audio before saving.'
+            raise ValueError(message)
+        self._validate_audio_assignment(self.audio_id)
+
+    def _validate_audio_assignment(self, audio_id):
+        if not hasattr(self, '_key'): return
+        stored_audio_id = key_helper.key_to_audio_identifier(self._key)
+        if stored_audio_id == audio_id: return
+        message = f'{self.object_type}.audio_id cannot change after '
+        message += 'persistence; assign audio before saving.'
+        raise ValueError(message)
+
     def add_audio(self, audio = None, audio_id = None, update_database = True,
         propagate = True):
         ''' Link this segment (and by default its family) to an Audio object.
@@ -305,24 +320,32 @@ class Segment:
             return
         if audio is not None:
             audio_id = audio.identifier
-            self._audio = audio
-        all_segments = [self]
-        # family starts with self
-        if propagate: all_segments += list(self.iter_family())[1:]
+        if propagate:
+            affected_segments = list(self.iter_family())
+        else: affected_segments = [self]
 
-        for segment in all_segments:
+        for segment in affected_segments:
+            segment._validate_audio_assignment(audio_id)
+
+        for segment in affected_segments:
             segment._apply_audio_id(audio_id)
 
+        if audio is not None:
+            self._audio = audio
+
         if update_database:
-            model_helper.write_changes_to_db(all_segments, self.store)
+            model_helper.write_changes_to_db(affected_segments, self.store)
 
     def _apply_audio_id(self, audio_id):
-        old_key = self.key
-        self.audio_id= audio_id
-        new_key = self.key
-        if old_key != new_key:
-            self._save_status = 'update'
-        self._old_key = old_key
+        if not hasattr(self, '_save_status'):
+            self._save_status = None
+        if self.audio_id == audio_id: return
+        self.audio_id = audio_id
+        cached_audio = getattr(self, '_audio', None)
+        if cached_audio is not None:
+            if cached_audio.identifier != audio_id:
+                del self._audio
+        self._save_status = 'save'
 
     def add_speaker(self, speaker = None, speaker_id = None,
         update_database = True, propagate = True):
@@ -520,25 +543,6 @@ class Segment:
             m += 'Call store.open() to reopen it.'
             raise ClosedStoreError(m)
         return store
-
-    @classmethod
-    def get_or_create(cls, **kwargs):
-        try: store = kwargs.pop('store')
-        except KeyError:
-            raise UnboundStoreError(
-                f'{cls.__name__}.get_or_create() requires store=...')
-        lookup = {k: kwargs[k] for k in cls.IDENTITY_FIELDS if k in kwargs}
-        if not lookup:
-            raise ValueError('No identity fields provided')
-        missing = [k for k in cls.IDENTITY_FIELDS if k not in kwargs]
-        if missing:
-            raise ValueError(f'Missing identity fields: {missing}')
-        query_root = store.query_for_class(cls)
-        instance = query_root.get_or_none(**lookup)
-        if instance is None:
-            instance = store.create(cls, **kwargs)
-            return instance, True
-        return instance, False
 
     @property
     def exists_in_db(self):

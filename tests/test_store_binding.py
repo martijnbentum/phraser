@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 
+from phraser import key_helper
 from phraser import ClosedStoreError, Store, UnboundStoreError
 from phraser.models import Audio, Phone, Phrase, Speaker, Syllable, Word
 from phraser.query import QuerySet
@@ -91,6 +92,12 @@ class TestStoreBinding(unittest.TestCase):
         word = Word(label='ctor', start=0, end=100, store=self.store, save=False)
         self.assertIs(word._store, self.store)
 
+    def test_segment_constructor_stages_by_default(self):
+        word = Word(label='staged', start=0, end=100, store=self.store,
+            audio_id=b'\x01' * 8)
+
+        self.assertFalse(self.store.DB.key_exists(word.key))
+
     # ------------------------------------------------------------------ #
     # 4. Unbound objects raise UnboundStoreError on DB operations
     # ------------------------------------------------------------------ #
@@ -106,32 +113,6 @@ class TestStoreBinding(unittest.TestCase):
 
         with self.assertRaises(UnboundStoreError):
             _ = word.exists_in_db
-
-    # ------------------------------------------------------------------ #
-    # 5. get_or_create without store= raises UnboundStoreError
-    # ------------------------------------------------------------------ #
-
-    def test_get_or_create_requires_store(self):
-        with self.assertRaises(UnboundStoreError):
-            Word.get_or_create(label='no_store', start=0, end=100, audio_key=None)
-
-    # ------------------------------------------------------------------ #
-    # 6. get_or_create returns the existing object when identity fields match
-    # ------------------------------------------------------------------ #
-
-    def test_get_or_create_uses_store_query_root(self):
-        self.store.create(Word, label='preexist', start=400, end=500)
-        # Refresh the word query root's key list from the live environment.
-        self.store.words._data._get_keys(update=True)
-
-        found, created = Word.get_or_create(
-            label='preexist', start=400, end=500,
-            audio_key=None,
-            store=self.store,
-        )
-
-        self.assertFalse(created)
-        self.assertEqual(found.label, 'preexist')
 
     # ------------------------------------------------------------------ #
     # 7. save → cache-clear → load preserves data and rebinds to store
@@ -150,7 +131,8 @@ class TestStoreBinding(unittest.TestCase):
 
     def test_word_ipa_round_trips_through_storage(self):
         word = self.store.create(
-            Word, label='test', start=600, end=700, ipa='t ɛ s t')
+            Word, label='test', start=600, end=700, ipa='t ɛ s t',
+            audio_id=b'\x01' * 8, save=True)
         key = word.key
         self.store._cache.clear()
 
@@ -165,7 +147,8 @@ class TestStoreBinding(unittest.TestCase):
         old_speaker = store.create(Speaker, name='old', dataset='test')
         new_speaker = store.create(Speaker, name='new', dataset='test')
         phrase = store.create(Phrase, label='speaker test', start=0, end=100,
-            speaker_id=old_speaker.identifier, filename='test.TextGrid')
+            audio_id=b'\x01' * 8, speaker_id=old_speaker.identifier,
+            filename='test.TextGrid', save=True)
         key = phrase.key
         store._cache.clear()
 
@@ -183,13 +166,107 @@ class TestStoreBinding(unittest.TestCase):
         old_speaker = store.create(Speaker, name='old-cache', dataset='test')
         new_speaker = store.create(Speaker, name='new-cache', dataset='test')
         phrase = store.create(Phrase, label='cache test', start=0, end=100,
-            speaker_id=old_speaker.identifier, filename='test.TextGrid')
+            audio_id=b'\x01' * 8, speaker_id=old_speaker.identifier,
+            filename='test.TextGrid', save=True)
         phrase._speaker = old_speaker
 
         phrase._apply_speaker_id(new_speaker.identifier)
 
         self.assertFalse(hasattr(phrase, '_speaker'))
         self.assertEqual(phrase._save_status, 'save')
+
+    def test_save_rejects_segment_without_audio(self):
+        store = self._fresh_store()
+        self.addCleanup(store.close)
+        word = store.create(Word, label='missing audio', start=0, end=100)
+
+        with self.assertRaisesRegex(ValueError, 'cannot be saved without audio'):
+            word.save()
+
+        self.assertFalse(hasattr(word, '_key'))
+        self.assertFalse(store.DB.key_exists(word.key))
+
+    def test_save_many_validates_all_segments_before_writing(self):
+        store = self._fresh_store()
+        self.addCleanup(store.close)
+        valid = store.create(Word, label='valid', start=0, end=100,
+            audio_id=b'\x01' * 8)
+        invalid = store.create(Word, label='invalid', start=100, end=200)
+
+        with self.assertRaisesRegex(ValueError, 'cannot be saved without audio'):
+            store.save_many([valid, invalid])
+
+        self.assertFalse(store.DB.key_exists(valid.key))
+        self.assertFalse(store.DB.key_exists(invalid.key))
+
+    def test_update_validates_before_deleting_old_record(self):
+        store = self._fresh_store()
+        self.addCleanup(store.close)
+        word = store.create(Word, label='update', start=0, end=100,
+            audio_id=b'\x01' * 8, save=True)
+        old_key = word.key
+        word.audio_id = b'\x00' * 8
+
+        with self.assertRaisesRegex(ValueError, 'cannot be saved without audio'):
+            store.update(old_key, word)
+
+        self.assertTrue(store.DB.key_exists(old_key))
+
+    def test_persisted_segment_audio_cannot_change(self):
+        store = self._fresh_store()
+        self.addCleanup(store.close)
+        old_audio = store.create(Audio, filename='old.wav', duration=1000)
+        new_audio = store.create(Audio, filename='new.wav', duration=1000)
+        phrase = store.create(Phrase, label='audio test', start=0, end=100,
+            audio_id=old_audio.identifier, filename='test.TextGrid', save=True)
+        old_key = phrase.key
+
+        with self.assertRaisesRegex(ValueError, 'cannot change after persistence'):
+            phrase.add_audio(new_audio, update_database=False, propagate=False)
+
+        self.assertEqual(phrase.audio_id, old_audio.identifier)
+        self.assertTrue(store.DB.key_exists(old_key))
+
+    def test_save_rejects_direct_persisted_audio_change(self):
+        store = self._fresh_store()
+        self.addCleanup(store.close)
+        phrase = store.create(Phrase, label='direct change', start=0, end=100,
+            audio_id=b'\x01' * 8, filename='test.TextGrid', save=True)
+        old_key = phrase.key
+        phrase.audio_id = b'\x02' * 8
+
+        with self.assertRaisesRegex(ValueError, 'cannot change after persistence'):
+            phrase.save()
+
+        self.assertTrue(store.DB.key_exists(old_key))
+        self.assertFalse(store.DB.key_exists(
+            key_helper.instance_to_key(phrase)))
+
+    def test_staged_segment_audio_can_change(self):
+        store = self._fresh_store()
+        self.addCleanup(store.close)
+        old_audio = store.create(Audio, filename='staged-old.wav', duration=1000)
+        new_audio = store.create(Audio, filename='staged-new.wav', duration=1000)
+        phrase = store.create(Phrase, label='staged audio', start=0, end=100,
+            filename='test.TextGrid')
+
+        phrase.add_audio(old_audio, update_database=False, propagate=False)
+        phrase.add_audio(new_audio, update_database=False, propagate=False)
+        phrase.save()
+
+        self.assertEqual(phrase.audio_id, new_audio.identifier)
+        self.assertEqual(phrase._key, key_helper.instance_to_key(phrase))
+        self.assertTrue(store.DB.key_exists(phrase.key))
+
+    def test_save_many_sets_persisted_key(self):
+        store = self._fresh_store()
+        self.addCleanup(store.close)
+        phrase = store.create(Phrase, label='batch', start=0, end=100,
+            audio_id=b'\x01' * 8, filename='test.TextGrid')
+
+        store.save_many([phrase])
+
+        self.assertEqual(phrase._key, key_helper.instance_to_key(phrase))
 
     # ------------------------------------------------------------------ #
     # 8. load_many uses the bulk DB results — DB.load() must not be called
