@@ -70,12 +70,15 @@ def syllabify_phrase(phrase, phone_types=None):
     syls_by_word = _bucket_by_nucleus(syllables, phone_word)
 
     new_words, cursor = [], phrase.start
-    # snapshot: add_parent caches each new word on the phrase mid-loop
-    for old in list(phrase.words):
-        word = _build_word(phrase, old, syls_by_word.get(old.identifier, []), cursor)
+    for old_word in phrase.words:
+        word = _rebuild_word(phrase, old_word,
+            syls_by_word.get(old_word.identifier, []), cursor)
         cursor = word.end                               # next empty word sits here
         new_words.append(word)
-    phrase._children, phrase._related = new_words, []   # load-bearing: not on disk
+    # drop the old layer in one step; the empty caches also stop
+    # _cache_child from re-merging the persisted children via child_keys
+    phrase._children, phrase._related = [], []
+    phrase.add_children(new_words)
     return new_words
 
 
@@ -120,11 +123,14 @@ def syllabify_phones(phones, max_pause=500, phone_types=None):
         filename = phone_word[run[0].identifier].phrase.filename   # provenance
         phrase = _build_phrase(run, store, filename)        # shell: span/audio/speaker
         cursor, words = phrase.start, []
-        for old in _words_in_order(run, phone_word):       # incl. emptied words
-            word = _build_word(phrase, old, syls_by_word.get(old.identifier, []), cursor)
+        for old_word in _words_in_order(run, phone_word):  # incl. emptied words
+            word = _rebuild_word(phrase, old_word,
+                syls_by_word.get(old_word.identifier, []), cursor)
             cursor = word.end
             words.append(word)
-        phrase._children, phrase._related = words, []
+        # seed empty caches first: child_keys scans the persisted range
+        phrase._children, phrase._related = [], []
+        phrase.add_children(words)
         phrase.label = ' '.join(w.label for w in words)
         new_phrases.append(phrase)
     return new_phrases
@@ -143,22 +149,22 @@ def _build_syllable(store, group, phone_types):
     return syllable
 
 
-def _build_word(phrase, old, syllables, cursor):
-    '''Fresh Word for lexical word `old`, sized to its syllables. A word that
-    lost all its phones collapses to a zero-width span at `cursor` (the previous
-    word's new end -- the point its phones vacated, where its neighbours meet).'''
+def _rebuild_word(phrase, old_word, syllables, cursor):
+    '''Fresh UNLINKED Word replacing `old_word`, sized to its syllables; the
+    caller wires it to the phrase (add_children). A word that lost all its
+    phones collapses to a zero-width span at `cursor` (the previous word's new
+    end -- the point its phones vacated, where its neighbours meet).'''
     start, end = ((min(s.start for s in syllables), max(s.end for s in syllables))
         if syllables else (cursor, cursor))
-    word = models.Word(store=phrase.store, save=False, label=old.label,
-        start=start, end=end, audio_id=old.audio_id,
-        speaker_id=old.speaker_id)
-    for field, value in old.__dict__.items():           # carry persisted metadata
+    word = models.Word(store=phrase.store, label=old_word.label,
+        start=start, end=end, audio_id=old_word.audio_id,
+        speaker_id=old_word.speaker_id)
+    for field, value in old_word.__dict__.items():      # carry persisted metadata
         if field in models.Word.METADATA_FIELDS:        # set ones only (skips the
             setattr(word, field, value)                 # derived 'overlap' property)
     word._children, word._related = syllables, []
-    word.add_parent(phrase)
     for syllable in syllables:
-        syllable.add_parent(word)     # inherits the phrase from word
+        syllable.add_parent(word)
     return word
 
 
