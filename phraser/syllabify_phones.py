@@ -135,7 +135,8 @@ def _build_syllable(store, group, phone_types):
     assigned. Not yet wired to a word/phrase -- the caller owns that.'''
     syllable = models.Syllable(store=store, save=False,
         label=' '.join(p.label for p in group),
-        start=min(p.start for p in group), end=max(p.end for p in group))
+        start=min(p.start for p in group), end=max(p.end for p in group),
+        audio_id=group[0].audio_id, speaker_id=group[0].speaker_id)
     syllable._children, syllable._related = group, []   # fill before wiring
     for phone in group: phone.add_parent(syllable)
     assign_syllable_positions_to_phones(group, phone_types=phone_types)
@@ -149,7 +150,8 @@ def _build_word(phrase, old, syllables, cursor):
     start, end = ((min(s.start for s in syllables), max(s.end for s in syllables))
         if syllables else (cursor, cursor))
     word = models.Word(store=phrase.store, save=False, label=old.label,
-        start=start, end=end)
+        start=start, end=end, audio_id=old.audio_id,
+        speaker_id=old.speaker_id)
     for field, value in old.__dict__.items():           # carry persisted metadata
         if field in models.Word.METADATA_FIELDS:        # set ones only (skips the
             setattr(word, field, value)                 # derived 'overlap' property)

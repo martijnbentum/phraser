@@ -46,11 +46,9 @@ def generate_objects(store=None):
 
             # ------------------- Create Phrase -------------------
             phrase = models.Phrase(text, start=ph_start, end=ph_end,
+                audio_id=audio.identifier, speaker_id=speaker.identifier,
                 store=store, save=False)
             all_objects.append(phrase)
-            phrase.add_audio(audio, update_database=False, propagate=False)
-            phrase.add_speaker(speaker, update_database=False,
-                propagate=False)
 
             # -------------------- Add WORDS -----------------------
             w_cursor = ph_start
@@ -64,7 +62,8 @@ def generate_objects(store=None):
                 w_cursor = w_end + 0.05
 
                 word_obj = models.Word(word, start=w_start, end=w_end,
-                    store=store, save=False)
+                    audio_id=audio.identifier,
+                    speaker_id=speaker.identifier, store=store, save=False)
                 all_objects.append(word_obj)
                 phrase.add_child(word_obj)
 
@@ -78,7 +77,9 @@ def generate_objects(store=None):
                     s_cursor += syl_dur
 
                     syl_obj = models.Syllable(syl, start=s_start, end=s_end,
-                        store=store, save=False)
+                        audio_id=audio.identifier,
+                        speaker_id=speaker.identifier, store=store,
+                        save=False)
                     word_obj.add_child(syl_obj)
                     all_objects.append(syl_obj)
 
@@ -93,7 +94,9 @@ def generate_objects(store=None):
                         ph_cursor += ph_dur
 
                         phone_obj = models.Phone(ph, start=p_start,
-                            end=p_end, store=store, save=False)
+                            end=p_end, audio_id=audio.identifier,
+                            speaker_id=speaker.identifier, store=store,
+                            save=False)
                         syl_obj.add_child(phone_obj)
                         all_objects.append(phone_obj)
 
