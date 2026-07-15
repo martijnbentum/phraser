@@ -163,12 +163,11 @@ def _build_word(phrase, old, syllables, cursor):
 def _build_phrase(run, store, filename):
     '''Fresh Phrase sized to the run, carrying audio/speaker from it and the
     given filename for provenance. Has no parent (top-level), so audio/speaker
-    are set explicitly; the words built under it inherit them via add_parent.'''
+    are set at construction; the words built under it inherit them via
+    add_parent.'''
     phrase = models.Phrase(store=store, save=False, label='',
-        start=run[0].start, end=run[-1].end, filename=filename)
-    phrase.add_audio(audio_id=run[0].audio_id, update_database=False, propagate=False)
-    phrase.add_speaker(speaker_id=run[0].speaker_id, update_database=False,
-        propagate=False)
+        start=run[0].start, end=run[-1].end, filename=filename,
+        audio_id=run[0].audio_id, speaker_id=run[0].speaker_id)
     return phrase
 
 

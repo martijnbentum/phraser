@@ -205,11 +205,19 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset = 0,
     store = require_textgrid_store(store)
     no_overlap_code = utils.overlap_dict[False]
     tg = load_textgrid(textgrid_filename)
-    words = list(textgrid_to_words(tg, offset, store=store))
-    syllables = list(textgrid_to_syllables(tg, offset, store=store))
-    phones = list(textgrid_to_phones(tg, offset, store=store))
+    # segments are born with their identity; a later pass no longer
+    # attaches audio/speaker (step toward mandatory constructor params)
+    identity = {}
+    if audio is not None: identity['audio_id'] = audio.identifier
+    if speaker is not None: identity['speaker_id'] = speaker.identifier
+    words = list(textgrid_to_words(tg, offset, store=store,
+        kwargs=identity))
+    syllables = list(textgrid_to_syllables(tg, offset, store=store,
+        kwargs=identity))
+    phones = list(textgrid_to_phones(tg, offset, store=store,
+        kwargs=identity))
     phrase = words_to_phrase(words, textgrid_filename = textgrid_filename,
-        store=store)  
+        store=store, kwargs=identity)
     if phrase is None:
         m = 'TextGrid must contain at least one non-empty word interval; '
         m += f'got {textgrid_filename!r}'
@@ -227,55 +235,58 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset = 0,
         if item.parent_id != EMPTY_ID: continue
         item._add_phrase(phrase, update_database=False)
     items = words + syllables + phones + [phrase]
-    for item in items:
-        item.add_audio(audio, update_database = False, propagate = False)
-        item.add_speaker(speaker, update_database = False, propagate = False)
-        if multiple_speakers is False: item.overlap_code = no_overlap_code
+    if multiple_speakers is False:
+        for item in items:
+            item.overlap_code = no_overlap_code
     return items
          
-def words_to_phrase(words, textgrid_filename, store=None):
+def words_to_phrase(words, textgrid_filename, store=None, kwargs=None):
     words = list(words)
     if not words:
         return None
+    kwargs = copy_kwargs(kwargs)
     start = words[0].start
     end = words[-1].end
     label = ' '.join([word.label for word in words])
-    phrase = models.Phrase(start=start, end=end, label=label, 
-        filename =textgrid_filename, save = False, store=store)
+    phrase = models.Phrase(start=start, end=end, label=label,
+        filename =textgrid_filename, save = False, store=store, **kwargs)
     for word in words:
         word.add_parent(phrase)
-    return phrase 
+    return phrase
 
-def textgrid_to_words(tg, offset = 0, *, store=None):
+def textgrid_to_words(tg, offset = 0, *, store=None, kwargs=None):
     store = require_textgrid_store(store)
     names = tg.getNames()
     ort_mau = get_textgrid_tier(tg, names, 'ORT-MAU', 'words')
     kan_mau = get_textgrid_tier(tg, names, 'KAN-MAU', 'words')
     validate_tier_lengths_match(ort_mau, kan_mau, 'ORT-MAU', 'KAN-MAU')
-    
+
     for index, (ort, ipa) in enumerate(zip(ort_mau, kan_mau)):
         if ort.mark == '': continue
         validate_interval_times_match(ort, ipa, 'ORT-MAU', 'KAN-MAU', index)
-        yield interval_to_word(ort, ipa, offset=offset, store=store)  
+        yield interval_to_word(ort, ipa, offset=offset, kwargs=kwargs,
+            store=store)
 
-def textgrid_to_syllables(tg, offset = 0, *, store=None):
+def textgrid_to_syllables(tg, offset = 0, *, store=None, kwargs=None):
     store = require_textgrid_store(store)
     names = tg.getNames()
     syllables = get_textgrid_tier(tg, names, 'MAS', 'syllables')
-    
+
     for syl in syllables:
         if syl.mark == '<p:>': continue
-        yield interval_to_syllable(syl, offset=offset, store=store)
+        yield interval_to_syllable(syl, offset=offset, kwargs=kwargs,
+            store=store)
 
-def textgrid_to_phones(tg, offset = 0, *, store=None):
-    
+def textgrid_to_phones(tg, offset = 0, *, store=None, kwargs=None):
+
     store = require_textgrid_store(store)
     names = tg.getNames()
     phones = get_textgrid_tier(tg, names, 'MAU', 'phones')
-    
+
     for phone in phones:
         if phone.mark == '(...)': continue
-        yield interval_to_phone(phone, offset=offset, store=store)
+        yield interval_to_phone(phone, offset=offset, kwargs=kwargs,
+            store=store)
 
 
 def copy_kwargs(kwargs=None):

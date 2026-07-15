@@ -63,9 +63,14 @@ graph that had to be kept in sync with the objects' own caches.
 3. ~~**`store.save_phrase_trees(phrases)`**~~ — done (requires explicit
    speaker, rejects duplicate `(audio_id, speaker_id, start)` in the
    batch, flattens via `items`, writes through `save_many`).
-4. **Loader migration** — TextGrid loader and `syllabify_phones` no
-   longer need their explicit `_add_phrase` calls (linking inherits the
-   phrase now); remove them and verify with the loader tests.
+4. ~~**Loader migration**~~ — done. The TextGrid loader links top-down
+   so phrase refs inherit at `add_parent` time; explicit `_add_phrase`
+   calls removed from the loader and `syllabify_phones` (orphan
+   phones/syllables, e.g. pauses outside every syllable, keep phrase
+   refs via a loader fallback — decided 2026-07-15). Loaders also pass
+   `audio_id`/`speaker_id` at construction instead of a later
+   `add_audio`/`add_speaker` pass — prep for making identity mandatory
+   constructor params (decided direction: enforce after step 5).
 5. **model_helper cleanup** (after step 4):
    - `fix_references` — zero callers already, delete;
    - `write_changes_to_db` + `_save_status` — the `'update'` branch is
