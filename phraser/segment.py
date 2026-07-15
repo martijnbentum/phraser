@@ -22,8 +22,6 @@ class Segment:
     Base time-aligned segment with a unique ID and parent/child links.
     '''
     allowed_child_type = []# subclasses override
-    parent_class = None# subclasses override; None means no parent (Phrase)
-    stores_phrase_link = False# True for Syllable/Phone (stored phrase_id)
     overlap_code = 9
 
     def __init__(self, label = None, start = None, end = None,
@@ -176,12 +174,12 @@ class Segment:
 
     @property
     def parent_class_name(self):
-        if self.parent_class is None: return None
+        if self.object_type == 'Phrase': return None
         return self.parent_class.__name__
 
     @property
     def parent_key(self):
-        if self.parent_class is None: return None
+        if self.object_type == 'Phrase': return None
         if self.parent_id == EMPTY_ID: return None
         return key_helper.audio_id_segment_id_class_to_key(self.audio_id,
             self.parent_id, self.parent_class_name, self.parent_start)
@@ -197,7 +195,7 @@ class Segment:
     @property
     def parent(self):
         """Return the parent segment."""
-        if self.parent_class is None: return None
+        if self.object_type == 'Phrase': return None
         if hasattr(self, '_parent'): return self._parent
         if self.parent_id == EMPTY_ID: return
         self._parent = self.store.load(self.parent_key)
@@ -266,6 +264,8 @@ class Segment:
 
     @property
     def phrase(self):
+        if self.object_type == 'Phrase': return self
+        if self.object_type == 'Word': return self.parent
         if hasattr(self, '_phrase'): return self._phrase
         if self.phrase_key is None: return None
         self._phrase = self.store.load(self.phrase_key)
@@ -378,11 +378,13 @@ class Segment:
     # complete here so staged trees are navigable from the root.
 
     def _validate_parent_link(self, parent):
+        if self.object_type == 'Phrase':
+            raise TypeError('Phrase cannot have a parent segment.')
         if self.__class__ != parent.allowed_child_type:
             m = f'{parent.object_type} cannot contain '
             m += f'{self.object_type} as child.'
             raise TypeError(m)
-        if (self.stores_phrase_link and
+        if (self.object_type in ('Syllable', 'Phone') and
             parent.phrase_id != EMPTY_ID and
             self.phrase_id not in (EMPTY_ID, parent.phrase_id)):
             m = f'This {self.object_type} is already linked to a different '
@@ -460,7 +462,7 @@ class Segment:
         self._children = [known for known in children if known is not child]
 
     def _inherit_phrase_from(self, parent):
-        if not self.stores_phrase_link: return
+        if self.object_type not in ('Syllable', 'Phone'): return
         if parent.phrase_id == EMPTY_ID: return
         self.phrase_id = parent.phrase_id
         self.phrase_start = parent.phrase_start
@@ -499,7 +501,11 @@ class Segment:
     @property
     def overlap_items(self):
         if hasattr(self, '_overlap_items'): return self._overlap_items
-        items = self._overlap_candidates
+        if self.object_type == 'Phrase':
+            if not self.audio: return []
+            items = self.audio.phrases
+        else:
+            items = self.parent.related
         if items is None: return []
         overlapping = []
         for item in items:
@@ -512,12 +518,9 @@ class Segment:
         return self._overlap_items
 
     @property
-    def _overlap_candidates(self):
-        '''Segments this one may overlap with (other speakers).'''
-        return self.parent.related
-
-    @property
     def siblings(self):
+        if self.object_type == 'Phrase':
+            return self.audio.phrases
         if self.parent is None: return
         return self.parent.children
 
@@ -655,21 +658,6 @@ class Phrase(Segment):
         return self.identifier
 
     @property
-    def phrase_key(self):
-        '''A phrase is its own phrase; return its own key.'''
-        return self.key
-
-    @property
-    def phrase(self):
-        '''A phrase is its own phrase.'''
-        return self
-
-    @property
-    def siblings(self):
-        '''Return all phrases in the same audio.'''
-        return self.audio.phrases
-
-    @property
     def words(self):
         """Return all words in this phrase."""
         return self.children
@@ -704,14 +692,6 @@ class Phrase(Segment):
         for phone in self.phones:
             phone._add_phrase(self, update_database=update_database)
 
-    def _validate_parent_link(self, parent):
-        raise TypeError('Phrase cannot have a parent segment.')
-
-    @property
-    def _overlap_candidates(self):
-        if not self.audio: return []
-        return self.audio.phrases
-
 
 
 
@@ -726,11 +706,6 @@ class Word(Segment):
     @property
     def phrase_id(self):
         return self.parent_id
-
-    @property
-    def phrase(self):
-        '''Return the parent phrase of this word.'''
-        return self.parent
 
     @property
     def syllables(self):
@@ -763,7 +738,6 @@ def _add_phrase(self, phrase, update_database = True):
 
 class Syllable(Segment):
     METADATA_FIELDS = {'stress_code'}
-    stores_phrase_link = True
     phrase_id = EMPTY_ID
     phrase_start = 0
     stress_code = 9
@@ -814,7 +788,6 @@ class Syllable(Segment):
 class Phone(Segment):
     METADATA_FIELDS = {}
 
-    stores_phrase_link = True
     phrase_id = EMPTY_ID
     phrase_start = 0
     position_code = 9      # stored int: 1=onset 2=nucleus 3=coda, 9=unassigned
