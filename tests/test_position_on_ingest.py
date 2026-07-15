@@ -13,12 +13,24 @@ from phraser.model_helper import EMPTY_ID
 from phraser.segment import Phone, Syllable
 
 
+AUDIO_ID = b'\x01' * 8
+SPEAKER_ID = b'\x02' * 8
+IDENTITY = {'audio_id': AUDIO_ID, 'speaker_id': SPEAKER_ID}
+
+
 def make_phone(label, start, end):
-    return Phone(label=label, start=start, end=end, save=False, store=None)
+    return Phone(label=label, start=start, end=end, save=False, store=None,
+        **IDENTITY)
 
 
 def make_syllable(start, end):
-    return Syllable(label='syl', start=start, end=end, save=False, store=None)
+    return Syllable(label='syl', start=start, end=end, save=False,
+        store=None, **IDENTITY)
+
+
+def make_speaker(store):
+    return models.Speaker(name='spk', dataset='test', store=store,
+        save=False)
 
 
 class TestPositionOnIngest(unittest.TestCase):
@@ -124,9 +136,12 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                     interval('x', 1.0, 1.1)]),
             ])
         loader = textgrid_loader.textgrid_filename_to_database_objects
+        audio, speaker = make_audio(self.store, save=False), make_speaker(
+            self.store)
         with patch.object(textgrid_loader, 'load_textgrid',
                 return_value=tg), redirect_stdout(io.StringIO()):
-            items = loader('fake.TextGrid', store=self.store)
+            items = loader('fake.TextGrid', audio=audio, speaker=speaker,
+                store=self.store)
 
         phrase = [i for i in items if i.object_type == 'Phrase'][0]
         orphan = [i for i in items if i.label == 'x'][0]
@@ -149,9 +164,12 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                     interval('l', .5, .625), interval('o', .625, .75)]),
             ])
         loader = textgrid_loader.textgrid_filename_to_database_objects
+        audio, speaker = make_audio(self.store, save=False), make_speaker(
+            self.store)
         with patch.object(textgrid_loader, 'load_textgrid',
                 return_value=tg), redirect_stdout(io.StringIO()):
-            items = loader('fake.TextGrid', store=self.store)
+            items = loader('fake.TextGrid', audio=audio, speaker=speaker,
+                store=self.store)
 
         phrase = [i for i in items if i.object_type == 'Phrase'][0]
         orphan = [i for i in items if i.label == 'lo'][0]
@@ -360,10 +378,14 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
             ],
         )
 
+        audio, speaker = make_audio(self.store, save=False), make_speaker(
+            self.store)
         with patch.object(textgrid_loader, 'load_textgrid', return_value=tg):
             with self.assertRaisesRegex(ValueError, 'non-empty word interval'):
                 textgrid_loader.textgrid_filename_to_database_objects(
                     'empty.TextGrid',
+                    audio=audio,
+                    speaker=speaker,
                     store=self.store,
                 )
 
@@ -388,7 +410,7 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
     def test_save_to_db_false_stages_store_bound_objects_without_writing(self):
         before = len(self.store.DB.all_keys())
         words = list(textgrid_loader.textgrid_to_words(MiniTextGrid(),
-            store=self.store))
+            store=self.store, kwargs=IDENTITY))
         after = len(self.store.DB.all_keys())
 
         self.assertEqual(len(words), 1)
@@ -420,8 +442,9 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
         ort_two = SimpleNamespace(mark='two', minTime=1, maxTime=2)
 
         word_one = textgrid_loader.interval_to_word(ort_one, ipa_one,
-            store=self.store)
-        word_two = textgrid_loader.interval_to_word(ort_two, store=self.store)
+            store=self.store, kwargs=IDENTITY)
+        word_two = textgrid_loader.interval_to_word(ort_two, store=self.store,
+            kwargs=IDENTITY)
 
         self.assertEqual(word_one.ipa, 'w ʌ n')
         self.assertEqual(word_two.ipa, '')
@@ -496,7 +519,11 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
         self.assertTrue(self.store.DB.key_exists(replace_items[-1].key))
 
     def test_save_textgrid_items_existence_check_requires_audio(self):
-        items = make_textgrid_items(self.store, audio_id=b'\x00' * 8)
+        items = make_textgrid_items(self.store)
+        for item in items:
+            # identity is unconstructable as EMPTY now; tamper to hit the
+            # store-level guard directly
+            item.audio_id = b'\x00' * 8
 
         with self.assertRaisesRegex(ValueError, 'audio_id'):
             textgrid_loader.save_textgrid_items(items, store=self.store,

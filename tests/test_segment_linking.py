@@ -12,8 +12,10 @@ from phraser.models import Audio, Phone, Phrase, Speaker, Syllable, Word
 
 class TestSegmentLinking(unittest.TestCase):
     '''Staging-only linking: add_parent / add_children build an in-memory
-    tree (bidirectional caches, identity propagation, phrase inheritance)
+    tree (bidirectional caches, identity validation, phrase inheritance)
     and never write to the database; persistence is an explicit save.
+    Segments carry audio/speaker from construction; linking rejects
+    mismatches and inherits phrase refs.
     '''
 
     def setUp(self):
@@ -27,6 +29,8 @@ class TestSegmentLinking(unittest.TestCase):
             duration=10_000)
         self.speaker = self.store.create(Speaker, name='spk',
             dataset='test')
+        audio_id, speaker_id = self.audio.identifier, self.speaker.identifier
+        self.identity = {'audio_id': audio_id, 'speaker_id': speaker_id}
 
     # ------------------ staged tree navigation ------------------
 
@@ -63,13 +67,6 @@ class TestSegmentLinking(unittest.TestCase):
             self.assertEqual(segment.phrase_id, tree.phrase.identifier)
             self.assertEqual(segment.phrase_start, tree.phrase.start)
 
-    def test_staged_tree_propagates_audio_and_speaker(self):
-        '''Linking spreads the phrase audio and speaker over the tree.'''
-        tree = self._build_staged_tree()
-        for segment in tree.all_segments:
-            self.assertEqual(segment.audio_id, self.audio.identifier)
-            self.assertEqual(segment.speaker_id, self.speaker.identifier)
-
     def test_linking_writes_nothing_to_db(self):
         '''Linking is staging-only; no segment reaches the database.'''
         tree = self._build_staged_tree()
@@ -88,8 +85,10 @@ class TestSegmentLinking(unittest.TestCase):
     def test_add_children_with_invalid_type_links_nothing(self):
         '''One invalid child type aborts the whole add_children call.'''
         phrase = self._create_phrase()
-        word = self.store.create(Word, label='valid', start=0, end=500)
-        phone = self.store.create(Phone, label='x', start=0, end=100)
+        word = self.store.create(Word, label='valid', start=0, end=500,
+            **self.identity)
+        phone = self.store.create(Phone, label='x', start=0, end=100,
+            **self.identity)
         with self.assertRaises(TypeError):
             phrase.add_children([word, phone])
         self.assertEqual(word.parent_id, EMPTY_ID)
@@ -100,40 +99,26 @@ class TestSegmentLinking(unittest.TestCase):
     def test_add_children_with_audio_mismatch_links_nothing(self):
         '''One child on a different audio aborts add_children.'''
         phrase = self._create_phrase()
-        word = self.store.create(Word, label='valid', start=0, end=500)
+        word = self.store.create(Word, label='valid', start=0, end=500,
+            **self.identity)
         other = self.store.create(Word, label='other', start=500, end=1000,
-            audio_id=b'\x07' * 8)
+            audio_id=b'\x07' * 8, speaker_id=self.speaker.identifier)
         with self.assertRaises(ValueError):
             phrase.add_children([word, other])
         self.assertEqual(word.parent_id, EMPTY_ID)
         self.assertEqual(other.parent_id, EMPTY_ID)
         self.assertEqual(phrase.children, [])
 
-    # Review finding 1 regression: children that conflict with each other
-    # must be rejected before any link mutates the parent.
-    def test_add_children_with_conflicting_children_links_nothing(self):
-        '''Children that conflict with each other abort add_children.'''
-        word = self.store.create(Word, label='bare', start=0, end=1000)
-        first = self.store.create(Syllable, label='one', start=0, end=500,
-            audio_id=b'\x01' * 8)
-        second = self.store.create(Syllable, label='two', start=500,
-            end=1000, audio_id=b'\x02' * 8)
-        with self.assertRaises(ValueError):
-            word.add_children([first, second])
-        self.assertEqual(first.parent_id, EMPTY_ID)
-        self.assertEqual(second.parent_id, EMPTY_ID)
-        self.assertEqual(word.audio_id, EMPTY_ID)
-        self.assertEqual(word.children, [])
-
     # ------------------ re-parenting and duplicates ------------------
 
     def test_reparenting_moves_child_between_caches(self):
         '''A new parent removes the child from the old parent cache.'''
-        first = self.store.create(Word, label='first', start=0, end=500)
+        first = self.store.create(Word, label='first', start=0, end=500,
+            **self.identity)
         second = self.store.create(Word, label='second', start=500,
-            end=1000)
+            end=1000, **self.identity)
         syllable = self.store.create(Syllable, label='syl', start=0,
-            end=500)
+            end=500, **self.identity)
         syllable.add_parent(first)
         syllable.add_parent(second)
         self.assertEqual(first.children, [])
@@ -176,7 +161,7 @@ class TestSegmentLinking(unittest.TestCase):
         other_phrase = self._create_phrase(label='other', start=2000,
             end=3000)
         other_word = self.store.create(Word, label='again', start=2000,
-            end=3000)
+            end=3000, **self.identity)
         other_phrase.add_children([other_word])
         syllable = tree.syllables[0]
         with self.assertRaises(ValueError):
@@ -186,9 +171,10 @@ class TestSegmentLinking(unittest.TestCase):
 
     def test_duplicate_add_parent_does_not_duplicate_cache(self):
         '''Linking the same child twice keeps one cache entry.'''
-        word = self.store.create(Word, label='once', start=0, end=500)
+        word = self.store.create(Word, label='once', start=0, end=500,
+            **self.identity)
         syllable = self.store.create(Syllable, label='syl', start=0,
-            end=500)
+            end=500, **self.identity)
         syllable.add_parent(word)
         syllable.add_parent(word)
         word_children = word.children
@@ -197,8 +183,10 @@ class TestSegmentLinking(unittest.TestCase):
 
     def test_unbound_segments_can_stage_links(self):
         '''Segments without a store can still be linked in memory.'''
-        word = Word(label='solo', start=0, end=100)
-        syllable = Syllable(label='so', start=0, end=100)
+        word = Word(label='solo', start=0, end=100, audio_id=b'\x01' * 8,
+            speaker_id=b'\x02' * 8)
+        syllable = Syllable(label='so', start=0, end=100,
+            audio_id=b'\x01' * 8, speaker_id=b'\x02' * 8)
         syllable.add_parent(word)
         word_children = word.children
         self.assertEqual(len(word_children), 1)
@@ -212,30 +200,18 @@ class TestSegmentLinking(unittest.TestCase):
     def test_bottom_up_construction_inherits_phrase_refs(self):
         '''Linking leaves-first still gives every segment phrase refs.'''
         phrase = self._create_phrase()
-        word = self.store.create(Word, label='word', start=0, end=1000)
+        word = self.store.create(Word, label='word', start=0, end=1000,
+            **self.identity)
         syllable = self.store.create(Syllable, label='syl', start=0,
-            end=1000)
-        phone = self.store.create(Phone, label='p', start=0, end=1000)
+            end=1000, **self.identity)
+        phone = self.store.create(Phone, label='p', start=0, end=1000,
+            **self.identity)
         phone.add_parent(syllable)
         syllable.add_parent(word)
         word.add_parent(phrase)
         for segment in (word, syllable, phone):
             self.assertEqual(segment.phrase_id, phrase.identifier)
             self.assertEqual(segment.phrase_start, phrase.start)
-
-    # Review finding 4 regression: propagation at link time walks the
-    # child's descendants; children on an unbound segment must return the
-    # staged cache instead of raising UnboundStoreError.
-    def test_unbound_linking_with_audio_stages_cleanly(self):
-        '''An unbound parent carrying audio can still link a child.'''
-        word = Word(label='solo', start=0, end=100, audio_id=b'\x01' * 8)
-        syllable = Syllable(label='so', start=0, end=100)
-        syllable.add_parent(word)
-        self.assertEqual(syllable.parent_id, word.identifier)
-        self.assertEqual(syllable.audio_id, word.audio_id)
-        word_children = word.children
-        self.assertEqual(len(word_children), 1)
-        self.assertIs(word_children[0], syllable)
 
     # ------------------ persistence round trip ------------------
 
@@ -313,15 +289,16 @@ class TestSegmentLinking(unittest.TestCase):
         exists = self.store.DB.key_exists(tree.phrase.key)
         self.assertFalse(exists)
 
-    def test_save_phrase_trees_requires_speaker(self):
-        '''A phrase without an explicit speaker is rejected.'''
-        phrase = self.store.create(Phrase, label='no speaker', start=0,
-            end=1000, audio_id=self.audio.identifier,
-            filename='linking.TextGrid')
-        with self.assertRaisesRegex(ValueError, 'without a speaker'):
-            self.store.save_phrase_trees([phrase])
-        exists = self.store.DB.key_exists(phrase.key)
-        self.assertFalse(exists)
+    def test_phrase_requires_speaker_at_construction(self):
+        '''Identity is a construction-time requirement.'''
+        with self.assertRaises(TypeError):
+            self.store.create(Phrase, label='no speaker', start=0,
+                end=1000, audio_id=self.audio.identifier,
+                filename='linking.TextGrid')
+        with self.assertRaisesRegex(ValueError, 'requires a speaker_id'):
+            self.store.create(Phrase, label='no speaker', start=0,
+                end=1000, audio_id=self.audio.identifier,
+                speaker_id=EMPTY_ID, filename='linking.TextGrid')
 
     def test_save_phrase_trees_rejects_duplicate_identity(self):
         '''Two phrases with the same identity cannot share a batch.'''
@@ -335,19 +312,19 @@ class TestSegmentLinking(unittest.TestCase):
     def test_save_phrase_trees_rejects_non_phrase(self):
         '''Only Phrase objects are accepted.'''
         word = self.store.create(Word, label='w', start=0, end=100,
-            audio_id=self.audio.identifier)
+            **self.identity)
         with self.assertRaises(TypeError):
             self.store.save_phrase_trees([word])
 
     def test_save_phrase_trees_writes_nothing_on_invalid_tree(self):
-        '''A missing audio anywhere in the batch aborts the whole write.'''
+        '''An invalid tree anywhere in the batch aborts the whole write.'''
         tree = self._build_staged_tree()
-        no_audio = self.store.create(Phrase, label='bad', start=2000,
-            end=3000, speaker_id=self.speaker.identifier,
-            filename='linking.TextGrid')
-        message = 'cannot be saved without audio'
+        bad = self._create_phrase(label='bad', start=2000, end=3000)
+        bad.save()
+        bad.audio_id = b'\x08' * 8
+        message = 'cannot change after persistence'
         with self.assertRaisesRegex(ValueError, message):
-            self.store.save_phrase_trees([tree.phrase, no_audio])
+            self.store.save_phrase_trees([tree.phrase, bad])
         for segment in tree.all_segments:
             exists = self.store.DB.key_exists(segment.key)
             self.assertFalse(exists)
@@ -362,26 +339,35 @@ class TestSegmentLinking(unittest.TestCase):
 
     def _build_staged_tree(self):
         '''Staged Phrase > 2 Words > 1 Syllable each > 2 Phones each.
-        Only the phrase carries audio/speaker; linking must propagate.
+        Every segment carries audio/speaker from construction.
         Children are added out of order to exercise cache sorting.
         '''
+        identity = self.identity
         phrase = self._create_phrase()
         words = [
-            self.store.create(Word, label='hello', start=0, end=500),
-            self.store.create(Word, label='world', start=500, end=1000),
+            self.store.create(Word, label='hello', start=0, end=500,
+                **identity),
+            self.store.create(Word, label='world', start=500, end=1000,
+                **identity),
         ]
         phrase.add_children([words[1], words[0]])
         syllables = [
-            self.store.create(Syllable, label='hel', start=0, end=500),
-            self.store.create(Syllable, label='wor', start=500, end=1000),
+            self.store.create(Syllable, label='hel', start=0, end=500,
+                **identity),
+            self.store.create(Syllable, label='wor', start=500, end=1000,
+                **identity),
         ]
         words[0].add_children([syllables[0]])
         words[1].add_children([syllables[1]])
         phones = [
-            self.store.create(Phone, label='h', start=0, end=250),
-            self.store.create(Phone, label='e', start=250, end=500),
-            self.store.create(Phone, label='w', start=500, end=750),
-            self.store.create(Phone, label='d', start=750, end=1000),
+            self.store.create(Phone, label='h', start=0, end=250,
+                **identity),
+            self.store.create(Phone, label='e', start=250, end=500,
+                **identity),
+            self.store.create(Phone, label='w', start=500, end=750,
+                **identity),
+            self.store.create(Phone, label='d', start=750, end=1000,
+                **identity),
         ]
         syllables[0].add_children([phones[1], phones[0]])
         syllables[1].add_children([phones[3], phones[2]])

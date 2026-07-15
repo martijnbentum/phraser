@@ -39,12 +39,13 @@ class TestStoreBinding(unittest.TestCase):
     # ------------------------------------------------------------------ #
 
     def test_store_create_methods_bind_objects(self):
+        identity = {'audio_id': b'\x01' * 8, 'speaker_id': b'\x02' * 8}
         objs = {
             'Audio':    self.store.create(Audio, filename='bind.wav', save=False),
-            'Phrase':   self.store.create(Phrase, label='bp', start=0, end=100, save=False),
-            'Word':     self.store.create(Word, label='bw', start=0, end=50, save=False),
-            'Syllable': self.store.create(Syllable, label='bs', start=0, end=50, save=False),
-            'Phone':    self.store.create(Phone, label='t', start=0, end=50, save=False),
+            'Phrase':   self.store.create(Phrase, label='bp', start=0, end=100, save=False, **identity),
+            'Word':     self.store.create(Word, label='bw', start=0, end=50, save=False, **identity),
+            'Syllable': self.store.create(Syllable, label='bs', start=0, end=50, save=False, **identity),
+            'Phone':    self.store.create(Phone, label='t', start=0, end=50, save=False, **identity),
             'Speaker':  self.store.create(Speaker, name='bs', dataset='test', save=False),
         }
         for class_name, obj in objs.items():
@@ -89,21 +90,36 @@ class TestStoreBinding(unittest.TestCase):
     # ------------------------------------------------------------------ #
 
     def test_explicit_store_constructor_binding(self):
-        word = Word(label='ctor', start=0, end=100, store=self.store, save=False)
+        word = Word(label='ctor', start=0, end=100, audio_id=b'\x01' * 8,
+            speaker_id=b'\x02' * 8, store=self.store, save=False)
         self.assertIs(word._store, self.store)
 
     def test_segment_constructor_stages_by_default(self):
         word = Word(label='staged', start=0, end=100, store=self.store,
-            audio_id=b'\x01' * 8)
+            audio_id=b'\x01' * 8, speaker_id=b'\x02' * 8)
 
         self.assertFalse(self.store.DB.key_exists(word.key))
+
+    def test_segment_constructor_requires_identity(self):
+        with self.assertRaises(TypeError):
+            Word(label='no identity', start=0, end=100, store=None,
+                save=False)
+        with self.assertRaisesRegex(ValueError, 'requires an audio_id'):
+            Word(label='empty audio', start=0, end=100,
+                audio_id=b'\x00' * 8, speaker_id=b'\x02' * 8, store=None,
+                save=False)
+        with self.assertRaisesRegex(ValueError, 'requires a speaker_id'):
+            Word(label='empty speaker', start=0, end=100,
+                audio_id=b'\x01' * 8, speaker_id=None, store=None,
+                save=False)
 
     # ------------------------------------------------------------------ #
     # 4. Unbound objects raise UnboundStoreError on DB operations
     # ------------------------------------------------------------------ #
 
     def test_unbound_object_raises_for_db_operations(self):
-        word = Word(label='unbound', start=0, end=100, store=None, save=False)
+        word = Word(label='unbound', start=0, end=100, audio_id=b'\x01' * 8,
+            speaker_id=b'\x02' * 8, store=None, save=False)
 
         with self.assertRaises(UnboundStoreError):
             _ = word.store
@@ -132,7 +148,7 @@ class TestStoreBinding(unittest.TestCase):
     def test_word_ipa_round_trips_through_storage(self):
         word = self.store.create(
             Word, label='test', start=600, end=700, ipa='t ɛ s t',
-            audio_id=b'\x01' * 8, save=True)
+            audio_id=b'\x01' * 8, speaker_id=b'\x02' * 8, save=True)
         key = word.key
         self.store._cache.clear()
 
@@ -175,39 +191,30 @@ class TestStoreBinding(unittest.TestCase):
         self.assertFalse(hasattr(phrase, '_speaker'))
         self.assertTrue(changed)
 
-    def test_save_rejects_segment_without_audio(self):
-        store = self._fresh_store()
-        self.addCleanup(store.close)
-        word = store.create(Word, label='missing audio', start=0, end=100)
-
-        with self.assertRaisesRegex(ValueError, 'cannot be saved without audio'):
-            word.save()
-
-        self.assertFalse(hasattr(word, '_key'))
-        self.assertFalse(store.DB.key_exists(word.key))
-
     def test_save_many_validates_all_segments_before_writing(self):
         store = self._fresh_store()
         self.addCleanup(store.close)
         valid = store.create(Word, label='valid', start=0, end=100,
-            audio_id=b'\x01' * 8)
-        invalid = store.create(Word, label='invalid', start=100, end=200)
+            audio_id=b'\x01' * 8, speaker_id=b'\x02' * 8)
+        invalid = store.create(Word, label='invalid', start=100, end=200,
+            audio_id=b'\x01' * 8, speaker_id=b'\x02' * 8, save=True)
+        invalid.audio_id = b'\x03' * 8
 
-        with self.assertRaisesRegex(ValueError, 'cannot be saved without audio'):
+        message = 'cannot change after persistence'
+        with self.assertRaisesRegex(ValueError, message):
             store.save_many([valid, invalid])
 
         self.assertFalse(store.DB.key_exists(valid.key))
-        self.assertFalse(store.DB.key_exists(invalid.key))
 
     def test_update_validates_before_deleting_old_record(self):
         store = self._fresh_store()
         self.addCleanup(store.close)
         word = store.create(Word, label='update', start=0, end=100,
-            audio_id=b'\x01' * 8, save=True)
+            audio_id=b'\x01' * 8, speaker_id=b'\x02' * 8, save=True)
         old_key = word.key
-        word.audio_id = b'\x00' * 8
+        word.audio_id = b'\x03' * 8
 
-        with self.assertRaisesRegex(ValueError, 'cannot be saved without audio'):
+        with self.assertRaisesRegex(ValueError, 'cannot change after persistence'):
             store.update(old_key, word)
 
         self.assertTrue(store.DB.key_exists(old_key))
@@ -218,7 +225,8 @@ class TestStoreBinding(unittest.TestCase):
         old_audio = store.create(Audio, filename='old.wav', duration=1000)
         new_audio = store.create(Audio, filename='new.wav', duration=1000)
         phrase = store.create(Phrase, label='audio test', start=0, end=100,
-            audio_id=old_audio.identifier, filename='test.TextGrid', save=True)
+            audio_id=old_audio.identifier, speaker_id=b'\x02' * 8,
+            filename='test.TextGrid', save=True)
         old_key = phrase.key
 
         with self.assertRaisesRegex(ValueError, 'cannot change after persistence'):
@@ -231,7 +239,8 @@ class TestStoreBinding(unittest.TestCase):
         store = self._fresh_store()
         self.addCleanup(store.close)
         phrase = store.create(Phrase, label='direct change', start=0, end=100,
-            audio_id=b'\x01' * 8, filename='test.TextGrid', save=True)
+            audio_id=b'\x01' * 8, speaker_id=b'\x02' * 8,
+            filename='test.TextGrid', save=True)
         old_key = phrase.key
         phrase.audio_id = b'\x02' * 8
 
@@ -248,9 +257,9 @@ class TestStoreBinding(unittest.TestCase):
         old_audio = store.create(Audio, filename='staged-old.wav', duration=1000)
         new_audio = store.create(Audio, filename='staged-new.wav', duration=1000)
         phrase = store.create(Phrase, label='staged audio', start=0, end=100,
+            audio_id=old_audio.identifier, speaker_id=b'\x02' * 8,
             filename='test.TextGrid')
 
-        phrase.add_audio(old_audio, update_database=False, propagate=False)
         phrase.add_audio(new_audio, update_database=False, propagate=False)
         phrase.save()
 
@@ -262,7 +271,8 @@ class TestStoreBinding(unittest.TestCase):
         store = self._fresh_store()
         self.addCleanup(store.close)
         phrase = store.create(Phrase, label='batch', start=0, end=100,
-            audio_id=b'\x01' * 8, filename='test.TextGrid')
+            audio_id=b'\x01' * 8, speaker_id=b'\x02' * 8,
+            filename='test.TextGrid')
 
         store.save_many([phrase])
 

@@ -58,6 +58,8 @@ MISMATCH_SYLLABLES = [(0, 100), (100, 200), (200, 400)]
 UNKNOWN_PHONES = [('ɑ', 0, 100), ('XYZ', 100, 200)]
 UNKNOWN_SYLLABLES = [(0, 200)]
 
+SPEAKER_ID = b'\x05' * 8
+
 
 def build_word(store, phone_spec=PHONE_SPEC, syllable_spec=GIVEN_SYLLABLES,
         word_label='april'):
@@ -65,11 +67,13 @@ def build_word(store, phone_spec=PHONE_SPEC, syllable_spec=GIVEN_SYLLABLES,
     boundaries; mirrors the textgrid loader's wiring.'''
     end = max(e for _, _, e in phone_spec)
     audio = Audio(filename='april.wav', store=store, save=False)
-    word = Word(label=word_label, start=0, end=end, store=store, save=False)
-    syllables = [Syllable(label='syl', start=s, end=e, store=store, save=False)
-        for s, e in syllable_spec]
-    phones = [Phone(label=l, start=s, end=e, store=store, save=False)
-        for l, s, e in phone_spec]
+    identity = {'audio_id': audio.identifier, 'speaker_id': SPEAKER_ID}
+    word = Word(label=word_label, start=0, end=end, store=store, save=False,
+        **identity)
+    syllables = [Syllable(label='syl', start=s, end=e, store=store,
+        save=False, **identity) for s, e in syllable_spec]
+    phones = [Phone(label=l, start=s, end=e, store=store, save=False,
+        **identity) for l, s, e in phone_spec]
     for syllable in syllables:
         tgl.find_and_add_phones_to_syllable(syllable, phones, save_to_db=False)
     tgl.find_and_add_syllables_to_word(word, syllables, save_to_db=False)

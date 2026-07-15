@@ -29,14 +29,16 @@ def build_phrase(store, phones, words, syls, filename='x.TextGrid'):
     '''Build and persist one phrase from (label, start, end) specs, mirroring the
     textgrid loader's wiring. Returns (phrase, words, syllables, phones).'''
     audio = Audio(filename='x.wav', store=store, save=False)
+    identity = {'audio_id': audio.identifier, 'speaker_id': b'\x05' * 8}
     phrase = Phrase(label=' '.join(l for l, _, _ in words), filename=filename,
-        start=phones[0][1], end=phones[-1][2], store=store, save=False)
-    word_objs = [Word(label=l, start=s, end=e, store=store, save=False)
-        for l, s, e in words]
-    syl_objs = [Syllable(label='s', start=s, end=e, store=store, save=False)
-        for s, e in syls]
-    phone_objs = [Phone(label=l, start=s, end=e, store=store, save=False)
-        for l, s, e in phones]
+        start=phones[0][1], end=phones[-1][2], store=store, save=False,
+        **identity)
+    word_objs = [Word(label=l, start=s, end=e, store=store, save=False,
+        **identity) for l, s, e in words]
+    syl_objs = [Syllable(label='s', start=s, end=e, store=store, save=False,
+        **identity) for s, e in syls]
+    phone_objs = [Phone(label=l, start=s, end=e, store=store, save=False,
+        **identity) for l, s, e in phones]
     for syl in syl_objs:
         tgl.find_and_add_phones_to_syllable(syl, phone_objs, save_to_db=False)
         syl._set_phrase_refs(phrase.identifier, phrase.start)

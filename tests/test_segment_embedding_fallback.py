@@ -66,13 +66,15 @@ class TestSegmentEmbeddingFallback(unittest.TestCase):
         # is staging-only, so the parent chain lives in memory and
         # iter_ancestors yields Syllable, Word, Phrase without DB writes.
         store = self.store
+        identity = {'audio_id': b'\x01' * 8, 'speaker_id': b'\x02' * 8}
         self.phrase = store.create(Phrase, label='ph', start=0, end=1000,
-            save=False)
-        self.word = store.create(Word, label='w', start=0, end=200, save=False)
+            save=False, **identity)
+        self.word = store.create(Word, label='w', start=0, end=200,
+            save=False, **identity)
         self.syllable = store.create(Syllable, label='s', start=0, end=100,
-            save=False)
+            save=False, **identity)
         self.phone = store.create(Phone, label='p', start=20, end=50,
-            save=False)
+            save=False, **identity)
         self.word.add_parent(self.phrase)
         self.syllable.add_parent(self.word)
         self.phone.add_parent(self.syllable)

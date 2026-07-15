@@ -23,12 +23,17 @@ class Segment:
     allowed_child_type = []# subclasses override
     overlap_code = 9
 
-    def __init__(self, label = None, start = None, end = None,
-        parent_id=EMPTY_ID, audio_id= EMPTY_ID,
-        speaker_id= EMPTY_ID, parent_start = 0,
+    def __init__(self, label, start, end, audio_id, speaker_id,
+        parent_id=EMPTY_ID, parent_start=0,
         save = False, overwrite = False, store = None, **kwargs):
 
         self.object_type = self.__class__.__name__
+        if audio_id is None or audio_id == EMPTY_ID:
+            m = f'{self.object_type} requires an audio_id at construction.'
+            raise ValueError(m)
+        if speaker_id is None or speaker_id == EMPTY_ID:
+            m = f'{self.object_type} requires a speaker_id at construction.'
+            raise ValueError(m)
         self.label = label
         self.start = int(start)
         self.end = int(end)
@@ -290,10 +295,6 @@ class Segment:
             fail_gracefully=fail_gracefully)
 
     def _validate_for_save(self):
-        if self.audio_id == EMPTY_ID:
-            message = f'{self.object_type} cannot be saved without audio; '
-            message += 'assign audio before saving.'
-            raise ValueError(message)
         self._validate_audio_assignment(self.audio_id)
 
     def _validate_audio_assignment(self, audio_id):
@@ -392,7 +393,6 @@ class Segment:
             raise ValueError(m)
         for attr in ('audio_id', 'speaker_id'):
             own, other = getattr(self, attr), getattr(parent, attr)
-            if EMPTY_ID in (own, other): continue
             if own != other:
                 raise ValueError(f'{attr} mismatch: {own} vs {other}')
 
@@ -406,21 +406,6 @@ class Segment:
         self._parent = parent
         parent._cache_child(self)
         self._inherit_phrase_from(parent)
-        self._inherit_identity_from(parent)
-
-    def _inherit_identity_from(self, parent):
-        '''Copy audio/speaker across a new link, whichever side has it;
-        a mismatch was already rejected by _validate_parent_link.'''
-        if self.audio_id == EMPTY_ID and parent.audio_id != EMPTY_ID:
-            self.add_audio(audio_id=parent.audio_id, update_database=False)
-        if parent.audio_id == EMPTY_ID and self.audio_id != EMPTY_ID:
-            parent.add_audio(audio_id=self.audio_id, update_database=False)
-        if self.speaker_id == EMPTY_ID and parent.speaker_id != EMPTY_ID:
-            self.add_speaker(speaker_id=parent.speaker_id,
-                update_database=False)
-        if parent.speaker_id == EMPTY_ID and self.speaker_id != EMPTY_ID:
-            parent.add_speaker(speaker_id=self.speaker_id,
-                update_database=False)
 
     def _known_parent(self):
         '''The in-memory parent, if any: the staged _parent or an already
@@ -441,25 +426,8 @@ class Segment:
         children = list(children)
         for child in children:
             child._validate_parent_link(self)
-        self._validate_children_consistency(children)
         for child in children:
             child.add_parent(self)
-
-    def _validate_children_consistency(self, children):
-        '''Reject children that conflict with each other on audio or
-        speaker; the per-child parent check misses this when the parent
-        value is still empty and the first link would propagate it.'''
-        for attr in ('audio_id', 'speaker_id'):
-            seen = getattr(self, attr)
-            for child in children:
-                own = getattr(child, attr)
-                if own == EMPTY_ID: continue
-                if seen == EMPTY_ID:
-                    seen = own
-                    continue
-                if own != seen:
-                    m = f'{attr} mismatch: {own} vs {seen}'
-                    raise ValueError(m)
 
     def _cache_child(self, child):
         children = self.children
@@ -671,12 +639,8 @@ class Phrase(Segment):
 
     def validate_tree(self):
         '''Check this phrase and its staged descendants are saveable:
-        an explicit speaker shared by the whole tree, and audio on
-        every segment.'''
-        if self.speaker_id == EMPTY_ID:
-            m = 'Phrase cannot be saved without a speaker; '
-            m += 'assign a speaker before saving.'
-            raise ValueError(m)
+        one speaker across the whole tree, and no persisted segment
+        changing its audio.'''
         for item in self.items:
             item._validate_for_save()
             if item.speaker_id != self.speaker_id:

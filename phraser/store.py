@@ -244,9 +244,9 @@ class Store:
         phrases:    Phrase objects with staged, linked descendants
         overwrite:  if True, overwrite existing objects with same keys
 
-        Every tree is validated via Phrase.validate_tree (an explicit
-        speaker shared by the whole tree, audio on every segment), and
-        no two phrases in the batch may share the same
+        Every tree is validated via Phrase.validate_tree (one speaker
+        across the whole tree, no persisted segment changing its
+        audio), and no two phrases in the batch may share the same
         (audio_id, speaker_id, start) identity. The trees are flattened
         via Phrase.items and written through save_many; nothing is
         written when any validation fails.

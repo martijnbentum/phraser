@@ -23,7 +23,7 @@ def syllabify_word(word, phone_types=None):
 
     Ignores the existing syllables: syllabifies word.phones from scratch, builds
     fresh Syllable objects labelled by their phones, and rewires the hierarchy
-    (word, phrase, audio, speaker) around them through the model's own helpers.
+    (word, phrase) around them through the model's own helpers.
     The old syllables are abandoned; deleting them from the store is a separate,
     persistent-mode concern.
 
@@ -40,7 +40,7 @@ def syllabify_word(word, phone_types=None):
     new_syllables = []
     for group in groups:
         syllable = _build_syllable(word.store, group, phone_types)
-        syllable.add_parent(word)     # word + audio + speaker + phrase
+        syllable.add_parent(word)     # word + phrase
         new_syllables.append(syllable)
 
     word._children, word._related = new_syllables, []   # load-bearing: not on disk
@@ -156,7 +156,7 @@ def _build_word(phrase, old, syllables, cursor):
         if field in models.Word.METADATA_FIELDS:        # set ones only (skips the
             setattr(word, field, value)                 # derived 'overlap' property)
     word._children, word._related = syllables, []
-    word.add_parent(phrase)       # phrase + audio + speaker
+    word.add_parent(phrase)
     for syllable in syllables:
         syllable.add_parent(word)     # inherits the phrase from word
     return word
@@ -164,9 +164,7 @@ def _build_word(phrase, old, syllables, cursor):
 
 def _build_phrase(run, store, filename):
     '''Fresh Phrase sized to the run, carrying audio/speaker from it and the
-    given filename for provenance. Has no parent (top-level), so audio/speaker
-    are set at construction; the words built under it inherit them via
-    add_parent.'''
+    given filename for provenance.'''
     phrase = models.Phrase(store=store, save=False, label='',
         start=run[0].start, end=run[-1].end, filename=filename,
         audio_id=run[0].audio_id, speaker_id=run[0].speaker_id)

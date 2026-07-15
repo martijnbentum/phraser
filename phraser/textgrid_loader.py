@@ -199,17 +199,17 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset = 0,
     them later.
     '''
     validate_textgrid_overwrite(overwrite)
+    if audio is None or speaker is None:
+        m = 'audio and speaker are required; segments carry their '
+        m += 'identity from construction.'
+        raise ValueError(m)
     if store is None:
         if audio is not None: store = getattr(audio, '_store', None)
         elif speaker is not None: store = getattr(speaker, '_store', None)
     store = require_textgrid_store(store)
     no_overlap_code = utils.overlap_dict[False]
     tg = load_textgrid(textgrid_filename)
-    # segments are born with their identity; a later pass no longer
-    # attaches audio/speaker (step toward mandatory constructor params)
-    identity = {}
-    if audio is not None: identity['audio_id'] = audio.identifier
-    if speaker is not None: identity['speaker_id'] = speaker.identifier
+    identity = {'audio_id': audio.identifier, 'speaker_id': speaker.identifier}
     words = list(textgrid_to_words(tg, offset, store=store,
         kwargs=identity))
     syllables = list(textgrid_to_syllables(tg, offset, store=store,
