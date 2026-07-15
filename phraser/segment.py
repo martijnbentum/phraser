@@ -3,7 +3,6 @@ import time
 from ssh_audio_play import play
 
 from . import key_helper
-from . import model_helper
 from . import phone_features
 from . import query
 from . import struct_value
@@ -407,10 +406,21 @@ class Segment:
         self._parent = parent
         parent._cache_child(self)
         self._inherit_phrase_from(parent)
-        model_helper.ensure_consistent_link(self, parent, 'audio_id',
-            'add_audio', update_database=False)
-        model_helper.ensure_consistent_link(self, parent, 'speaker_id',
-            'add_speaker', update_database=False)
+        self._inherit_identity_from(parent)
+
+    def _inherit_identity_from(self, parent):
+        '''Copy audio/speaker across a new link, whichever side has it;
+        a mismatch was already rejected by _validate_parent_link.'''
+        if self.audio_id == EMPTY_ID and parent.audio_id != EMPTY_ID:
+            self.add_audio(audio_id=parent.audio_id, update_database=False)
+        if parent.audio_id == EMPTY_ID and self.audio_id != EMPTY_ID:
+            parent.add_audio(audio_id=self.audio_id, update_database=False)
+        if self.speaker_id == EMPTY_ID and parent.speaker_id != EMPTY_ID:
+            self.add_speaker(speaker_id=parent.speaker_id,
+                update_database=False)
+        if parent.speaker_id == EMPTY_ID and self.speaker_id != EMPTY_ID:
+            parent.add_speaker(speaker_id=self.speaker_id,
+                update_database=False)
 
     def _known_parent(self):
         '''The in-memory parent, if any: the staged _parent or an already
@@ -463,10 +473,19 @@ class Segment:
         self._children = [known for known in children if known is not child]
 
     def _inherit_phrase_from(self, parent):
-        if self.object_type not in ('Syllable', 'Phone'): return
         if parent.phrase_id == EMPTY_ID: return
-        self.phrase_id = parent.phrase_id
-        self.phrase_start = parent.phrase_start
+        self._set_phrase_refs(parent.phrase_id, parent.phrase_start)
+
+    def _set_phrase_refs(self, phrase_id, phrase_start):
+        '''Set phrase refs here and push them through the staged
+        children, so trees built bottom-up (phrase linked last) get
+        refs everywhere. A Word stores no refs of its own (its phrase
+        IS its parent link), but its staged descendants do.'''
+        if self.object_type in ('Syllable', 'Phone'):
+            self.phrase_id = phrase_id
+            self.phrase_start = phrase_start
+        for child in getattr(self, '_children', []):
+            child._set_phrase_refs(phrase_id, phrase_start)
 
     # ------------------ serialization ------------------
 
@@ -753,8 +772,7 @@ def _add_phrase(self, phrase, update_database = True):
     if self.phrase_id != EMPTY_ID and self.phrase_id != phrase.identifier:
         m = f"This {self.object_type} is already linked to a different phrase."
         raise ValueError(m)
-    self.phrase_id = phrase.identifier
-    self.phrase_start = phrase.start
+    self._set_phrase_refs(phrase.identifier, phrase.start)
     if update_database: self.save(overwrite = True)
 
 

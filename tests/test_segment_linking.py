@@ -206,10 +206,9 @@ class TestSegmentLinking(unittest.TestCase):
         self.assertEqual(word.related, [])
         self.assertIs(syllable.parent, word)
 
-    # Review finding 3: _inherit_phrase_from only updates the directly
-    # linked segment, so linking bottom-up (phone first, phrase last)
-    # leaves syllable and phone without phrase references.
-    @unittest.expectedFailure
+    # Regression (review finding 3): phrase refs gained at link time
+    # must push down through staged children, or bottom-up built trees
+    # (phone first, phrase last) leave descendants without them.
     def test_bottom_up_construction_inherits_phrase_refs(self):
         '''Linking leaves-first still gives every segment phrase refs.'''
         phrase = self._create_phrase()

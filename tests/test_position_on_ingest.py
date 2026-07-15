@@ -136,6 +136,35 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                 self.assertEqual(item.phrase_start, phrase.start)
         self.assertEqual(orphan.parent_id, EMPTY_ID)
 
+    def test_orphan_syllable_phones_inherit_phrase_refs(self):
+        '''Phones inside a syllable that falls outside every word get
+        phrase refs through the orphan fallback's push-down.'''
+        tg = MiniTextGrid(
+            names=['ORT-MAU', 'KAN-MAU', 'MAS', 'MAU'],
+            tiers=[
+                Tier([interval('hello', 0, .5)]),
+                Tier([interval('h e', 0, .5)]),
+                Tier([interval('hel', 0, .5), interval('lo', .5, .75)]),
+                Tier([interval('h', 0, .25), interval('e', .25, .5),
+                    interval('l', .5, .625), interval('o', .625, .75)]),
+            ])
+        loader = textgrid_loader.textgrid_filename_to_database_objects
+        with patch.object(textgrid_loader, 'load_textgrid',
+                return_value=tg), redirect_stdout(io.StringIO()):
+            items = loader('fake.TextGrid', store=self.store)
+
+        phrase = [i for i in items if i.object_type == 'Phrase'][0]
+        orphan = [i for i in items if i.label == 'lo'][0]
+        self.assertEqual(orphan.parent_id, EMPTY_ID)
+        orphan_phones = [i for i in items if i.label in ('l', 'o')]
+        self.assertEqual(len(orphan_phones), 2)
+        for phone in orphan_phones:
+            self.assertEqual(phone.parent_id, orphan.identifier)
+        for item in items:
+            with self.subTest(item=item.label):
+                self.assertEqual(item.phrase_id, phrase.identifier)
+                self.assertEqual(item.phrase_start, phrase.start)
+
     def test_textgrid_overwrite_option_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'overwrite=True'):
             textgrid_loader.textgrid_filename_to_database_objects(
