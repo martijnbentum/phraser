@@ -1,9 +1,10 @@
 # Segment linking and batch persistence — continuation notes
 
 Status notes for continuing the phrase-tree work. Rewritten 2026-07-15,
-after commit `62a1669`. The previous version tracked the model_helper
-cleanup and the mandatory-identity plan; both are complete — see
-`git log 4c8bd21..62a1669` for the trail.
+after commit `62a1669`; amended the same day after `6b71c18`. The
+previous version tracked the model_helper cleanup and the
+mandatory-identity plan; both are complete — see
+`git log 4c8bd21..6b71c18` for the trail.
 
 ## Where the work stands
 
@@ -43,6 +44,11 @@ Done this session (suite green after every commit):
 - `62a1669` — `add_audio`/`add_speaker`/`iter_family` deleted:
   identity cannot be reassigned; rebuild-and-replace is the only
   identity operation.
+- `a747b23` — syllabify hardening: `_rebuild_word` returns an
+  unlinked word; callers seed empty child caches and link via
+  `phrase.add_children`. The snapshot rule is gone.
+- `6b71c18` — Audio and Speaker stage by default (`save=False`),
+  matching Segments; persistence is always an explicit ask.
 
 `model_helper.py` now contains only `EMPTY_ID`. Segment tests:
 184 + 33 subtests green at `62a1669`.
@@ -76,22 +82,11 @@ Done this session (suite green after every commit):
 
 ## Next steps
 
-1. **syllabify_phrase hardening (optional).** Its correctness hangs on
-   the iterate-a-copy snapshot rule: `_build_word` links each new word
-   to the phrase mid-loop, mutating the list backing `phrase.words`
-   while it is iterated (`for old in list(phrase.words)`). Chosen
-   approach: decouple building from linking — `_build_word` returns an
-   unlinked word; both callers drop the old layer and link once at the
-   end via `phrase.add_children(new_words)` (validate-all-then-link,
-   phrase refs push down to the staged syllables/phones). The
-   originally sketched "build into a fresh Phrase" is rejected: a
-   fresh phrase gets a new identifier, so transplanting would need to
-   re-point every word's `parent_id`.
-2. **Benched: cross-tree descendant collisions** in
+1. **Benched: cross-tree descendant collisions** in
    `save_phrase_trees` — the batch dedup is phrase-level only. Before
    adding a check, verify whether `DB.write_many` detects duplicate
    keys within one batch or silently last-writes-wins.
-3. **Benched: `scripts/check_style.py` is untracked** but referenced
+2. **Benched: `scripts/check_style.py` is untracked** but referenced
    in the gotchas below; commit it or drop the references.
 
 ## Gotchas
