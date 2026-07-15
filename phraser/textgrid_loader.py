@@ -238,7 +238,7 @@ def words_to_phrase(words, textgrid_filename, store=None):
     phrase = models.Phrase(start=start, end=end, label=label, 
         filename =textgrid_filename, save = False, store=store)
     for word in words:
-        word.add_parent(phrase, update_database = False)
+        word.add_parent(phrase)
     return phrase 
 
 def textgrid_to_words(tg, offset = 0, *, store=None):
@@ -316,13 +316,13 @@ def select_objecs_in_range(objects, start, end):
 def find_and_add_syllables_to_word(word, syllables, save_to_db=False):
     syllables = select_objecs_in_range(syllables, word.start, word.end)
     for syl in syllables:
-        syl.add_parent(word, update_database = save_to_db)
+        syl.add_parent(word)
 
 def find_and_add_phones_to_syllable(syllable, phones, save_to_db=False,
     assign_positions=True):
     phones = select_objecs_in_range(phones, syllable.start, syllable.end)
     for phone in phones:
-        phone.add_parent(syllable, update_database = save_to_db)
+        phone.add_parent(syllable)
     if assign_positions:
         try:
             # in-memory; position_code is persisted by the later db save

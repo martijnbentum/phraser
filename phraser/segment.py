@@ -376,24 +376,77 @@ class Segment:
 
 
     # ------------------ hierarchy helpers ------------------
-    def add_parent(self, parent, update_database = True):
+    # Linking is staging-only: it never writes to the database. Only the
+    # upward link (parent_id, parent_start, phrase_id, phrase_start) is
+    # persisted on save; the database derives children by key scan. The
+    # downward link lives only in the in-memory _children cache, kept
+    # complete here so staged trees are navigable from the root.
+
+    def _validate_parent_link(self, parent):
         if self.object_type == 'Phrase':
             raise TypeError("Phrase cannot have a parent segment.")
         if self.__class__ != parent.allowed_child_type:
             m = f'{parent.object_type} cannot contain '
             m += f'{self.object_type} as child.'
             raise TypeError(m)
+        if (self.object_type in ('Syllable', 'Phone') and
+            parent.phrase_id != EMPTY_ID and
+            self.phrase_id not in (EMPTY_ID, parent.phrase_id)):
+            m = f'This {self.object_type} is already linked to a different '
+            m += 'phrase.'
+            raise ValueError(m)
+        for attr in ('audio_id', 'speaker_id'):
+            own, other = getattr(self, attr), getattr(parent, attr)
+            if EMPTY_ID in (own, other): continue
+            if own != other:
+                raise ValueError(f'{attr} mismatch: {own} vs {other}')
+
+    def add_parent(self, parent):
+        self._validate_parent_link(parent)
+        old_parent = getattr(self, '_parent', None)
+        if old_parent is not None and old_parent is not parent:
+            old_parent._uncache_child(self)
         self.parent_id = parent.identifier
         self.parent_start = parent.start
         self._parent = parent
+        parent._cache_child(self)
+        self._inherit_phrase_from(parent)
         model_helper.ensure_consistent_link(self, parent, 'audio_id',
-            'add_audio', update_database=update_database)
+            'add_audio', update_database=False)
         model_helper.ensure_consistent_link(self, parent, 'speaker_id',
-            'add_speaker', update_database=update_database)
-        if update_database: self.save(overwrite = True)
+            'add_speaker', update_database=False)
 
-    def add_child(self, child, update_database = True):
-        child.add_parent(self, update_database=update_database)
+    def add_child(self, child):
+        child.add_parent(self)
+
+    def add_children(self, children):
+        '''Link children to this segment, validating all before linking any.'''
+        children = list(children)
+        for child in children:
+            child._validate_parent_link(self)
+        for child in children:
+            child.add_parent(self)
+
+    def _cache_child(self, child):
+        if not hasattr(self, '_children') and \
+            getattr(self, '_store', None) is None:
+            # unbound segments have no DB children to merge with
+            self._children, self._related = [], []
+        children = self.children
+        if any(known is child for known in children): return
+        children.append(child)
+        children.sort(key=lambda segment: (segment.start, segment.end))
+
+    def _uncache_child(self, child):
+        children = getattr(self, '_children', None)
+        if children is None: return
+        self._children = [known for known in children if known is not child]
+
+    def _inherit_phrase_from(self, parent):
+        if self.object_type not in ('Syllable', 'Phone'): return
+        if parent.phrase_id == EMPTY_ID: return
+        self.phrase_id = parent.phrase_id
+        self.phrase_start = parent.phrase_start
 
     # ------------------ serialization ------------------
 

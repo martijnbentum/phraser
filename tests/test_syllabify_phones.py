@@ -42,7 +42,7 @@ def build_phrase(store, phones, words, syls, filename='x.TextGrid'):
         syl._add_phrase(phrase, update_database=False)
     for word in word_objs:
         tgl.find_and_add_syllables_to_word(word, syl_objs, save_to_db=False)
-        word.add_parent(phrase, update_database=False)
+        word.add_parent(phrase)
     for phone in phone_objs:
         phone._add_phrase(phrase, update_database=False)
     items = [phrase] + word_objs + syl_objs + phone_objs

@@ -63,7 +63,7 @@ class TestSegmentEmbeddingFallback(unittest.TestCase):
 
     def setUp(self):
         # A fresh, unsaved Phrase>Word>Syllable>Phone tree per test. Linking
-        # with update_database=False keeps the parent chain in memory so
+        # is staging-only, so the parent chain lives in memory and
         # iter_ancestors yields Syllable, Word, Phrase without DB writes.
         store = self.store
         self.phrase = store.create(Phrase, label='ph', start=0, end=1000,
@@ -73,9 +73,9 @@ class TestSegmentEmbeddingFallback(unittest.TestCase):
             save=False)
         self.phone = store.create(Phone, label='p', start=20, end=50,
             save=False)
-        self.word.add_parent(self.phrase, update_database=False)
-        self.syllable.add_parent(self.word, update_database=False)
-        self.phone.add_parent(self.syllable, update_database=False)
+        self.word.add_parent(self.phrase)
+        self.syllable.add_parent(self.word)
+        self.phone.add_parent(self.syllable)
         self.addCleanup(self._clear_binding)
 
     def _clear_binding(self):

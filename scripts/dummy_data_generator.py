@@ -66,7 +66,7 @@ def generate_objects(store=None):
                 word_obj = models.Word(word, start=w_start, end=w_end,
                     store=store, save=False)
                 all_objects.append(word_obj)
-                phrase.add_child(word_obj, update_database=False)
+                phrase.add_child(word_obj)
 
                 # ---------------- SYLLABLES ---------------------
                 syl_dur = (w_end - w_start) / len(sylls)
@@ -79,7 +79,7 @@ def generate_objects(store=None):
 
                     syl_obj = models.Syllable(syl, start=s_start, end=s_end,
                         store=store, save=False)
-                    word_obj.add_child(syl_obj, update_database=False)
+                    word_obj.add_child(syl_obj)
                     all_objects.append(syl_obj)
 
                     # ---------------- PHONES --------------------
@@ -94,7 +94,7 @@ def generate_objects(store=None):
 
                         phone_obj = models.Phone(ph, start=p_start,
                             end=p_end, store=store, save=False)
-                        syl_obj.add_child(phone_obj, update_database=False)
+                        syl_obj.add_child(phone_obj)
                         all_objects.append(phone_obj)
 
             phrase_objects.append(phrase)

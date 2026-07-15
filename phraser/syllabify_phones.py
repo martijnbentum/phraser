@@ -40,7 +40,7 @@ def syllabify_word(word, phone_types=None):
     phrase, new_syllables = word.phrase, []
     for group in groups:
         syllable = _build_syllable(word.store, group, phone_types)
-        syllable.add_parent(word, update_database=False)     # word + audio + speaker
+        syllable.add_parent(word)     # word + audio + speaker
         syllable._add_phrase(phrase, update_database=False)
         new_syllables.append(syllable)
 
@@ -71,7 +71,8 @@ def syllabify_phrase(phrase, phone_types=None):
     syls_by_word = _bucket_by_nucleus(syllables, phone_word)
 
     new_words, cursor = [], phrase.start
-    for old in phrase.words:
+    # snapshot: add_parent caches each new word on the phrase mid-loop
+    for old in list(phrase.words):
         word = _build_word(phrase, old, syls_by_word.get(old.identifier, []), cursor)
         cursor = word.end                               # next empty word sits here
         new_words.append(word)
@@ -137,7 +138,7 @@ def _build_syllable(store, group, phone_types):
         label=' '.join(p.label for p in group),
         start=min(p.start for p in group), end=max(p.end for p in group))
     syllable._children, syllable._related = group, []   # fill before wiring
-    for phone in group: phone.add_parent(syllable, update_database=False)
+    for phone in group: phone.add_parent(syllable)
     assign_syllable_positions_to_phones(group, phone_types=phone_types)
     return syllable
 
@@ -154,9 +155,9 @@ def _build_word(phrase, old, syllables, cursor):
         if field in models.Word.METADATA_FIELDS:        # set ones only (skips the
             setattr(word, field, value)                 # derived 'overlap' property)
     word._children, word._related = syllables, []
-    word.add_parent(phrase, update_database=False)       # phrase + audio + speaker
+    word.add_parent(phrase)       # phrase + audio + speaker
     for syllable in syllables:
-        syllable.add_parent(word, update_database=False)
+        syllable.add_parent(word)
         syllable._add_phrase(phrase, update_database=False)
     return word
 

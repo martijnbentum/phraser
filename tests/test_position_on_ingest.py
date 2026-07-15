@@ -84,7 +84,7 @@ def make_textgrid_items(store, audio_id=None, speaker_id=None, start=100,
         store=store, save=False)
     word = models.Word(label=label.split()[0], start=start, end=start + 100,
         audio_id=audio_id, speaker_id=speaker_id, store=store, save=False)
-    word.add_parent(phrase, update_database=False)
+    word.add_parent(phrase)
     return [word, phrase]
 
 
