@@ -18,7 +18,7 @@ class Audio:
     n_channels = 0
     sample_rate = 0
 
-    def __init__(self, filename = None,  save=True, overwrite=False,
+    def __init__(self, filename = None,  save=False, overwrite=False,
         store=None, **kwargs):
         self.object_type = self.__class__.__name__
         self.filename = filename
@@ -177,7 +177,7 @@ class Speaker:
     region = ''
     language = ''
 
-    def __init__(self, name =None, dataset = None, save=True, overwrite=False,
+    def __init__(self, name =None, dataset = None, save=False, overwrite=False,
         store=None, **kwargs):
         self.object_type = self.__class__.__name__
         self.name = name

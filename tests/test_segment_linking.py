@@ -26,9 +26,9 @@ class TestSegmentLinking(unittest.TestCase):
             self.store = Store(path=tmpdir)
         self.addCleanup(self.store.close)
         self.audio = self.store.create(Audio, filename='linking.wav',
-            duration=10_000)
+            duration=10_000, save=True)
         self.speaker = self.store.create(Speaker, name='spk',
-            dataset='test')
+            dataset='test', save=True)
         audio_id, speaker_id = self.audio.identifier, self.speaker.identifier
         self.identity = {'audio_id': audio_id, 'speaker_id': speaker_id}
 

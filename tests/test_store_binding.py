@@ -136,7 +136,8 @@ class TestStoreBinding(unittest.TestCase):
 
     def test_store_save_and_load_rebinds_loaded_object(self):
         # Audio requires an explicit duration; there is no class-level default.
-        audio = self.store.create(Audio, filename='slr_test.wav', duration=0)
+        audio = self.store.create(Audio, filename='slr_test.wav', duration=0,
+            save=True)
         key = audio.key
         self.store._cache.clear()
 
@@ -218,8 +219,10 @@ class TestStoreBinding(unittest.TestCase):
     # ------------------------------------------------------------------ #
 
     def test_store_load_many_uses_bulk_results(self):
-        a1 = self.store.create(Audio, filename='bulk1.wav', duration=0)
-        a2 = self.store.create(Audio, filename='bulk2.wav', duration=0)
+        a1 = self.store.create(Audio, filename='bulk1.wav', duration=0,
+            save=True)
+        a2 = self.store.create(Audio, filename='bulk2.wav', duration=0,
+            save=True)
         keys = [a1.key, a2.key]
         self.store._cache.clear()
 
@@ -279,7 +282,7 @@ class TestStoreBinding(unittest.TestCase):
 
     def test_close_sets_state_and_clears_cache(self):
         store = self._fresh_store()
-        store.create(Audio, filename='close.wav', duration=0)
+        store.create(Audio, filename='close.wav', duration=0, save=True)
         self.assertTrue(store._cache, 'save should populate the cache')
 
         store.close()
@@ -290,7 +293,8 @@ class TestStoreBinding(unittest.TestCase):
 
     def test_open_restores_usability(self):
         store = self._fresh_store()
-        audio = store.create(Audio, filename='reopen.wav', duration=0)
+        audio = store.create(Audio, filename='reopen.wav', duration=0,
+            save=True)
         key = audio.key
 
         store.close()
