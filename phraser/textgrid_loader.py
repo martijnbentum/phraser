@@ -233,7 +233,7 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset = 0,
         # orphans (e.g. pause phones outside every syllable) still belong
         # to the phrase timeline; give them the refs linking would inherit
         if item.parent_id != EMPTY_ID: continue
-        item._add_phrase(phrase, update_database=False)
+        item._set_phrase_refs(phrase.identifier, phrase.start)
     items = words + syllables + phones + [phrase]
     if multiple_speakers is False:
         for item in items:

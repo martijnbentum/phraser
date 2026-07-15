@@ -727,15 +727,6 @@ class Phrase(Segment):
         return query.queryset_from_items(self.phones, self.store)
 
 
-    def apply_phrase_id_and_start(self, update_database = True):
-        for syllable in self.syllables:
-            syllable._add_phrase(self, update_database=update_database)
-        for phone in self.phones:
-            phone._add_phrase(self, update_database=update_database)
-
-
-
-
 class Word(Segment):
     METADATA_FIELDS = {'overlap', 'ipa'}
     ipa = ''
@@ -767,23 +758,11 @@ class Word(Segment):
         """Return a query object for all phones for this speaker."""
         return query.queryset_from_items(self.phones, self.store)
 
-def _add_phrase(self, phrase, update_database = True):
-    if self.phrase_id == phrase.identifier: return
-    if self.phrase_id != EMPTY_ID and self.phrase_id != phrase.identifier:
-        m = f"This {self.object_type} is already linked to a different phrase."
-        raise ValueError(m)
-    self._set_phrase_refs(phrase.identifier, phrase.start)
-    if update_database: self.save(overwrite = True)
-
-
 class Syllable(Segment):
     METADATA_FIELDS = {'stress_code'}
     phrase_id = EMPTY_ID
     phrase_start = 0
     stress_code = 9
-
-    _add_phrase = _add_phrase
-
 
     @property
     def stress(self):
@@ -831,8 +810,6 @@ class Phone(Segment):
     phrase_id = EMPTY_ID
     phrase_start = 0
     position_code = 9      # stored int: 1=onset 2=nucleus 3=coda, 9=unassigned
-
-    _add_phrase = _add_phrase
 
     @property
     def position(self):
