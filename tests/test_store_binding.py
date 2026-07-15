@@ -170,10 +170,10 @@ class TestStoreBinding(unittest.TestCase):
             filename='test.TextGrid', save=True)
         phrase._speaker = old_speaker
 
-        phrase._apply_speaker_id(new_speaker.identifier)
+        changed = phrase._apply_speaker_id(new_speaker.identifier)
 
         self.assertFalse(hasattr(phrase, '_speaker'))
-        self.assertEqual(phrase._save_status, 'save')
+        self.assertTrue(changed)
 
     def test_save_rejects_segment_without_audio(self):
         store = self._fresh_store()

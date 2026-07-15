@@ -48,7 +48,6 @@ class Segment:
             setattr(self, k, v)
 
         if save: self.save(overwrite=overwrite)
-        self._save_status = None
 
     def __repr__(self):
         n = object_type_to_ljust_label.get(self.object_type, 15)
@@ -322,25 +321,26 @@ class Segment:
         for segment in affected_segments:
             segment._validate_audio_assignment(audio_id)
 
+        changed = []
         for segment in affected_segments:
-            segment._apply_audio_id(audio_id)
+            if segment._apply_audio_id(audio_id): changed.append(segment)
 
         if audio is not None:
             self._audio = audio
 
         if update_database:
-            model_helper.write_changes_to_db(affected_segments, self.store)
+            for segment in changed:
+                segment.save(overwrite=True)
 
     def _apply_audio_id(self, audio_id):
-        if not hasattr(self, '_save_status'):
-            self._save_status = None
-        if self.audio_id == audio_id: return
+        '''Set audio_id and drop a stale cached audio; True if changed.'''
+        if self.audio_id == audio_id: return False
         self.audio_id = audio_id
         cached_audio = getattr(self, '_audio', None)
         if cached_audio is not None:
             if cached_audio.identifier != audio_id:
                 del self._audio
-        self._save_status = 'save'
+        return True
 
     def add_speaker(self, speaker = None, speaker_id = None,
         update_database = True, propagate = True):
@@ -353,21 +353,22 @@ class Segment:
         all_segments = [self]
         if propagate:
             all_segments += list(self.iter_family())[1:]
+        changed = []
         for segment in all_segments:
-            segment._apply_speaker_id(speaker_id)
+            if segment._apply_speaker_id(speaker_id): changed.append(segment)
         if update_database:
-            model_helper.write_changes_to_db(all_segments, self.store)
+            for segment in changed:
+                segment.save(overwrite=True)
 
     def _apply_speaker_id(self, speaker_id):
-        if not hasattr(self, '_save_status'):
-            self._save_status = None
-        if self.speaker_id == speaker_id: return
+        '''Set speaker_id and drop a stale cached speaker; True if changed.'''
+        if self.speaker_id == speaker_id: return False
         self.speaker_id = speaker_id
         cached_speaker = getattr(self, '_speaker', None)
         if cached_speaker is not None:
             if cached_speaker.identifier != speaker_id:
                 del self._speaker
-        self._save_status = 'save'
+        return True
 
 
     # ------------------ hierarchy helpers ------------------

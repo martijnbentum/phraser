@@ -15,9 +15,6 @@ removed explicitly; save() only adds the entry for the new label. Because the
 full main key (with the unique identifier) is appended, removing one syllable's
 entry never touches another syllable that happens to share the same label.
 '''
-from phraser import model_helper
-
-
 def syllable_label_from_phones(syllable):
     '''Ground-truth label for a syllable: its phone children joined in order.
 
@@ -59,12 +56,11 @@ def fix_syllable_labels(syllables, update_database=False):
         if not has_label_phones_mismatch(syllable):
             continue
         stale_label_links.append(syllable.label_index_key)   # built from OLD label
-        syllable.label = syllable_label_from_phones(syllable)
-        syllable._save_status = 'save'        # main key stable: label not in it
+        syllable.label = syllable_label_from_phones(syllable)   # main key stable
         changed.append(syllable)
     if update_database and changed:
         store = changed[0].store
-        model_helper.write_changes_to_db(changed, store)     # record + NEW label link
+        store.save_many(changed, overwrite=True)     # records + NEW label links
         # drop the OLD label-index entries in one batched write (helper TBD)
         store.DB.delete_many_label_index_links(stale_label_links)
     return changed
