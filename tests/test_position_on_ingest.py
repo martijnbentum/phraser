@@ -9,6 +9,7 @@ from unittest.mock import patch
 from phraser import Store
 from phraser import models
 from phraser import textgrid_loader
+from phraser.model_helper import EMPTY_ID
 from phraser.segment import Phone, Syllable
 
 
@@ -108,6 +109,32 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'store is required'):
             list(textgrid_loader.textgrid_to_words(MiniTextGrid(),
                 store=None))
+
+    def test_full_ingest_links_tree_and_orphans_keep_phrase_refs(self):
+        '''Top-down linking gives every segment phrase refs; a phone
+        outside every syllable (e.g. a pause) still gets them.'''
+        tg = MiniTextGrid(
+            names=['ORT-MAU', 'KAN-MAU', 'MAS', 'MAU'],
+            tiers=[
+                Tier([interval('hello', 0, .5), interval('world', .5, 1)]),
+                Tier([interval('h e', 0, .5), interval('w d', .5, 1)]),
+                Tier([interval('hel', 0, .5), interval('wor', .5, 1)]),
+                Tier([interval('h', 0, .25), interval('e', .25, .5),
+                    interval('w', .5, .75), interval('d', .75, 1),
+                    interval('x', 1.0, 1.1)]),
+            ])
+        loader = textgrid_loader.textgrid_filename_to_database_objects
+        with patch.object(textgrid_loader, 'load_textgrid',
+                return_value=tg), redirect_stdout(io.StringIO()):
+            items = loader('fake.TextGrid', store=self.store)
+
+        phrase = [i for i in items if i.object_type == 'Phrase'][0]
+        orphan = [i for i in items if i.label == 'x'][0]
+        for item in items:
+            with self.subTest(item=item.label):
+                self.assertEqual(item.phrase_id, phrase.identifier)
+                self.assertEqual(item.phrase_start, phrase.start)
+        self.assertEqual(orphan.parent_id, EMPTY_ID)
 
     def test_textgrid_overwrite_option_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'overwrite=True'):

@@ -37,11 +37,10 @@ def syllabify_word(word, phone_types=None):
     try: groups = resyllabify_phones(phones)
     except ValueError: return None
 
-    phrase, new_syllables = word.phrase, []
+    new_syllables = []
     for group in groups:
         syllable = _build_syllable(word.store, group, phone_types)
-        syllable.add_parent(word)     # word + audio + speaker
-        syllable._add_phrase(phrase, update_database=False)
+        syllable.add_parent(word)     # word + audio + speaker + phrase
         new_syllables.append(syllable)
 
     word._children, word._related = new_syllables, []   # load-bearing: not on disk
@@ -157,8 +156,7 @@ def _build_word(phrase, old, syllables, cursor):
     word._children, word._related = syllables, []
     word.add_parent(phrase)       # phrase + audio + speaker
     for syllable in syllables:
-        syllable.add_parent(word)
-        syllable._add_phrase(phrase, update_database=False)
+        syllable.add_parent(word)     # inherits the phrase from word
     return word
 
 

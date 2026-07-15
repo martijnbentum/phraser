@@ -214,13 +214,18 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset = 0,
         m = 'TextGrid must contain at least one non-empty word interval; '
         m += f'got {textgrid_filename!r}'
         raise ValueError(m)
-    for phone in phones:
-        phone._add_phrase(phrase, update_database = False)
-    for syllable in syllables:
-        find_and_add_phones_to_syllable(syllable, phones, save_to_db=False)
-        syllable._add_phrase(phrase, update_database = False)
+    # link top-down: words got the phrase in words_to_phrase, so
+    # syllables inherit phrase refs from their word and phones from
+    # their syllable at add_parent time
     for word in words:
         find_and_add_syllables_to_word(word, syllables, save_to_db=False)
+    for syllable in syllables:
+        find_and_add_phones_to_syllable(syllable, phones, save_to_db=False)
+    for item in syllables + phones:
+        # orphans (e.g. pause phones outside every syllable) still belong
+        # to the phrase timeline; give them the refs linking would inherit
+        if item.parent_id != EMPTY_ID: continue
+        item._add_phrase(phrase, update_database=False)
     items = words + syllables + phones + [phrase]
     for item in items:
         item.add_audio(audio, update_database = False, propagate = False)
