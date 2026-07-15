@@ -8,7 +8,6 @@ from . import lmdb_helper
 from . import locations
 from . import struct_value
 from . import utils
-from .model_helper import EMPTY_ID
 from .struct_helper import CLASS_RANK_MAP, RANK_CLASS_MAP
 
 R= "\033[91m"
@@ -245,11 +244,12 @@ class Store:
         phrases:    Phrase objects with staged, linked descendants
         overwrite:  if True, overwrite existing objects with same keys
 
-        Every phrase needs an explicit speaker, and no two phrases in
-        the batch may share the same (audio_id, speaker_id, start)
-        identity. The trees are flattened via Phrase.items and written
-        through save_many, so per-segment audio validation also happens
-        before anything is written.
+        Every tree is validated via Phrase.validate_tree (an explicit
+        speaker shared by the whole tree, audio on every segment), and
+        no two phrases in the batch may share the same
+        (audio_id, speaker_id, start) identity. The trees are flattened
+        via Phrase.items and written through save_many; nothing is
+        written when any validation fails.
         '''
         phrases = list(phrases)
         if not phrases: return
@@ -267,10 +267,7 @@ class Store:
                 m = 'save_phrase_trees expects Phrase objects, '
                 m += f'got {type(phrase).__name__}.'
                 raise TypeError(m)
-            if phrase.speaker_id == EMPTY_ID:
-                m = 'Phrase cannot be saved without a speaker; '
-                m += 'assign a speaker before saving.'
-                raise ValueError(m)
+            phrase.validate_tree()
             if phrase in seen:
                 m = 'duplicate phrase identity in batch: '
                 m += f'(audio_id, speaker_id, start) = ({phrase.audio_id}, '

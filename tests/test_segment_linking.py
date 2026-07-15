@@ -298,6 +298,22 @@ class TestSegmentLinking(unittest.TestCase):
         other_exists = self.store.DB.key_exists(other.key)
         self.assertTrue(other_exists)
 
+    def test_validate_tree_accepts_valid_staged_tree(self):
+        '''A staged tree with speaker and audio everywhere validates.'''
+        tree = self._build_staged_tree()
+        tree.phrase.validate_tree()
+
+    def test_validate_tree_rejects_speaker_mismatch(self):
+        '''A descendant with a diverging speaker fails tree validation.'''
+        tree = self._build_staged_tree()
+        tree.phones[0].speaker_id = b'\x09' * 8
+        with self.assertRaisesRegex(ValueError, 'does not match'):
+            tree.phrase.validate_tree()
+        with self.assertRaisesRegex(ValueError, 'does not match'):
+            self.store.save_phrase_trees([tree.phrase])
+        exists = self.store.DB.key_exists(tree.phrase.key)
+        self.assertFalse(exists)
+
     def test_save_phrase_trees_requires_speaker(self):
         '''A phrase without an explicit speaker is rejected.'''
         phrase = self.store.create(Phrase, label='no speaker', start=0,

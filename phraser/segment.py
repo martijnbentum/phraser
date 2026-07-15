@@ -649,6 +649,21 @@ class Phrase(Segment):
         descendants in depth-first order. Works on staged trees.'''
         return (self, *self.iter_descendants())
 
+    def validate_tree(self):
+        '''Check this phrase and its staged descendants are saveable:
+        an explicit speaker shared by the whole tree, and audio on
+        every segment.'''
+        if self.speaker_id == EMPTY_ID:
+            m = 'Phrase cannot be saved without a speaker; '
+            m += 'assign a speaker before saving.'
+            raise ValueError(m)
+        for item in self.items:
+            item._validate_for_save()
+            if item.speaker_id != self.speaker_id:
+                m = f'{item.object_type} speaker_id does not match its '
+                m += 'phrase; reassign the speaker on the whole tree.'
+                raise ValueError(m)
+
     def delete(self):
         """ Delete this phrase and all its descendants from the database.
         """
