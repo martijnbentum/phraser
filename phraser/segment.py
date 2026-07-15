@@ -643,6 +643,12 @@ class Phrase(Segment):
         keys = [x.key for x in self.all_objects]
         return keys
 
+    @property
+    def items(self):
+        '''The flattened tree: this phrase followed by all its
+        descendants in depth-first order. Works on staged trees.'''
+        return (self, *self.iter_descendants())
+
     def delete(self):
         """ Delete this phrase and all its descendants from the database.
         """

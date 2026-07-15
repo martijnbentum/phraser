@@ -264,6 +264,79 @@ class TestSegmentLinking(unittest.TestCase):
         self.assertEqual(leaf.syllable.label, 'hel')
         self.assertEqual(leaf.word.label, 'hello')
 
+    # ------------------ Phrase.items / save_phrase_trees ------------------
+
+    def test_items_flattens_staged_tree(self):
+        '''items yields the phrase first, then every staged descendant.'''
+        tree = self._build_staged_tree()
+        items = tree.phrase.items
+        self.assertIs(items[0], tree.phrase)
+        item_count = len(items)
+        segment_count = len(tree.all_segments)
+        self.assertEqual(item_count, segment_count)
+        for segment in tree.all_segments:
+            found = any(known is segment for known in items)
+            self.assertTrue(found)
+
+    def test_items_of_childless_phrase_is_only_the_phrase(self):
+        '''items of a phrase without children is just the phrase.'''
+        phrase = self._create_phrase()
+        self.assertEqual(phrase.items, (phrase,))
+
+    def test_save_phrase_trees_persists_and_reloads(self):
+        '''save_phrase_trees writes whole staged trees in one batch.'''
+        tree = self._build_staged_tree()
+        other = self._create_phrase(label='second', start=2000, end=3000)
+        self.store.save_phrase_trees([tree.phrase, other])
+        self.store._cache.clear()
+
+        loaded = self.store.load(tree.phrase.key)
+        self.assertEqual([w.label for w in loaded.words],
+            ['hello', 'world'])
+        phone_count = len(loaded.phones)
+        self.assertEqual(phone_count, 4)
+        other_exists = self.store.DB.key_exists(other.key)
+        self.assertTrue(other_exists)
+
+    def test_save_phrase_trees_requires_speaker(self):
+        '''A phrase without an explicit speaker is rejected.'''
+        phrase = self.store.create(Phrase, label='no speaker', start=0,
+            end=1000, audio_id=self.audio.identifier,
+            filename='linking.TextGrid')
+        with self.assertRaisesRegex(ValueError, 'without a speaker'):
+            self.store.save_phrase_trees([phrase])
+        exists = self.store.DB.key_exists(phrase.key)
+        self.assertFalse(exists)
+
+    def test_save_phrase_trees_rejects_duplicate_identity(self):
+        '''Two phrases with the same identity cannot share a batch.'''
+        first = self._create_phrase(label='one')
+        second = self._create_phrase(label='two')
+        with self.assertRaisesRegex(ValueError, 'duplicate phrase identity'):
+            self.store.save_phrase_trees([first, second])
+        exists = self.store.DB.key_exists(first.key)
+        self.assertFalse(exists)
+
+    def test_save_phrase_trees_rejects_non_phrase(self):
+        '''Only Phrase objects are accepted.'''
+        word = self.store.create(Word, label='w', start=0, end=100,
+            audio_id=self.audio.identifier)
+        with self.assertRaises(TypeError):
+            self.store.save_phrase_trees([word])
+
+    def test_save_phrase_trees_writes_nothing_on_invalid_tree(self):
+        '''A missing audio anywhere in the batch aborts the whole write.'''
+        tree = self._build_staged_tree()
+        no_audio = self.store.create(Phrase, label='bad', start=2000,
+            end=3000, speaker_id=self.speaker.identifier,
+            filename='linking.TextGrid')
+        message = 'cannot be saved without audio'
+        with self.assertRaisesRegex(ValueError, message):
+            self.store.save_phrase_trees([tree.phrase, no_audio])
+        for segment in tree.all_segments:
+            exists = self.store.DB.key_exists(segment.key)
+            self.assertFalse(exists)
+
     # ------------------ helpers ------------------
 
     def _create_phrase(self, label='hello world', start=0, end=1000):

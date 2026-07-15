@@ -8,6 +8,7 @@ from . import lmdb_helper
 from . import locations
 from . import struct_value
 from . import utils
+from .model_helper import EMPTY_ID
 from .struct_helper import CLASS_RANK_MAP, RANK_CLASS_MAP
 
 R= "\033[91m"
@@ -237,6 +238,45 @@ class Store:
             else: self.save_key_counter[key] += 1
         # print('done', time.time() - start)
         self._handle_label_links(objs)
+
+    def save_phrase_trees(self, phrases, overwrite = False):
+        '''Persist staged phrase trees (each phrase and its descendants).
+
+        phrases:    Phrase objects with staged, linked descendants
+        overwrite:  if True, overwrite existing objects with same keys
+
+        Every phrase needs an explicit speaker, and no two phrases in
+        the batch may share the same (audio_id, speaker_id, start)
+        identity. The trees are flattened via Phrase.items and written
+        through save_many, so per-segment audio validation also happens
+        before anything is written.
+        '''
+        phrases = list(phrases)
+        if not phrases: return
+        self._validate_phrase_trees(phrases)
+        segments = []
+        for phrase in phrases:
+            segments.extend(phrase.items)
+        self.save_many(segments, overwrite = overwrite)
+
+    def _validate_phrase_trees(self, phrases):
+        from .models import Phrase
+        seen = set()
+        for phrase in phrases:
+            if not isinstance(phrase, Phrase):
+                m = 'save_phrase_trees expects Phrase objects, '
+                m += f'got {type(phrase).__name__}.'
+                raise TypeError(m)
+            if phrase.speaker_id == EMPTY_ID:
+                m = 'Phrase cannot be saved without a speaker; '
+                m += 'assign a speaker before saving.'
+                raise ValueError(m)
+            if phrase in seen:
+                m = 'duplicate phrase identity in batch: '
+                m += f'(audio_id, speaker_id, start) = ({phrase.audio_id}, '
+                m += f'{phrase.speaker_id}, {phrase.start})'
+                raise ValueError(m)
+            seen.add(phrase)
 
     def _handle_label_links(self, objs):
         '''after saving objects, write label index links for all objects with

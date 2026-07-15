@@ -37,11 +37,11 @@ graph that had to be kept in sync with the objects' own caches.
 - Iteration rule (standard Python, enforced by convention): code that
   iterates a parent's children while re-linking children to that same
   parent must iterate a copy — see the snapshot in `syllabify_phrase`.
-- Speaker policy for batch persistence (recommended, not yet decided):
-  require an explicit speaker; do NOT auto-create per-phrase placeholder
-  speakers — Phrase identity is `(audio_id, speaker_id, start)`, so
-  fresh placeholders break the `add_missing`/`upsert` existence
-  policies in the TextGrid loader.
+- Speaker policy for batch persistence (decided 2026-07-15): require an
+  explicit speaker; do NOT auto-create per-phrase placeholder speakers —
+  Phrase identity is `(audio_id, speaker_id, start)`, so fresh
+  placeholders break the `add_missing`/`upsert` existence policies in
+  the TextGrid loader. Enforced in `store.save_phrase_trees`.
 
 ## Done (committed to main)
 
@@ -55,24 +55,14 @@ graph that had to be kept in sync with the objects' own caches.
 
 ## Next steps, in order
 
-1. **Tests for the new linking** — `tests/test_segment_linking.py`,
-   porting the worthwhile scenarios from the deleted PhraseHierarchy
-   tests:
-   - staged Phrase→Word→Syllable→Phone tree fully navigable from the
-     root (children, iter_descendants, phrase refs on syllables/phones,
-     one audio/speaker after propagation);
-   - `add_children` with an invalid child links nothing (atomicity);
-   - re-parenting moves the child between `_children` caches;
-   - duplicate `add_parent` does not duplicate the cache entry;
-   - `related` stays consistent after linking (no AttributeError);
-   - build staged tree, `save_many`, reload, navigate from DB.
-2. **`Phrase.items`** — property returning
-   `(self, *self.iter_descendants())`; the flattened staged tree.
-3. **`store.save_phrase_trees(phrases)`** — at the Store boundary:
-   prevalidate every phrase (audio present, no duplicate
-   `(audio_id, speaker_id, start)` in the batch), flatten via `items`,
-   write through the existing `save_many`. Decide the speaker policy
-   here (see above).
+1. ~~**Tests for the new linking**~~ — done (`tests/test_segment_linking.py`,
+   plus regression tests and fixes for the linking review findings 1/2/4;
+   finding 3 — bottom-up phrase inheritance — is pinned as an expected
+   failure until step 5).
+2. ~~**`Phrase.items`**~~ — done.
+3. ~~**`store.save_phrase_trees(phrases)`**~~ — done (requires explicit
+   speaker, rejects duplicate `(audio_id, speaker_id, start)` in the
+   batch, flattens via `items`, writes through `save_many`).
 4. **Loader migration** — TextGrid loader and `syllabify_phones` no
    longer need their explicit `_add_phrase` calls (linking inherits the
    phrase now); remove them and verify with the loader tests.
