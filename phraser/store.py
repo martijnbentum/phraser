@@ -245,6 +245,12 @@ class Store:
         if label_index_keys:
             self.DB.write_many_label_index_links(label_index_keys)
 
+    def get_cached(self, key):
+        '''Return the already-loaded object for key, or None.
+        Never reads the database.
+        '''
+        return self._cache.get(key)
+
     def load(self, key):
         '''load an object from LMDB by key.
         key: to load the object from the database.

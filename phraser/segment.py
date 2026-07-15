@@ -221,6 +221,8 @@ class Segment:
         if self.allowed_child_type is None: return []
         if hasattr(self, '_children'): return self._children
         self._children, self._related = [], []
+        # unbound segments have no DB children to merge with
+        if getattr(self, '_store', None) is None: return self._children
         if self.child_keys:
             children = self.store.load_many(self.child_keys)
 
@@ -403,7 +405,7 @@ class Segment:
 
     def add_parent(self, parent):
         self._validate_parent_link(parent)
-        old_parent = getattr(self, '_parent', None)
+        old_parent = self._known_parent()
         if old_parent is not None and old_parent is not parent:
             old_parent._uncache_child(self)
         self.parent_id = parent.identifier
@@ -416,6 +418,17 @@ class Segment:
         model_helper.ensure_consistent_link(self, parent, 'speaker_id',
             'add_speaker', update_database=False)
 
+    def _known_parent(self):
+        '''The in-memory parent, if any: the staged _parent or an already
+        loaded instance in the store cache. Never reads the database.'''
+        parent = getattr(self, '_parent', None)
+        if parent is not None: return parent
+        store = getattr(self, '_store', None)
+        if store is None: return None
+        parent_key = self.parent_key
+        if parent_key is None: return None
+        return store.get_cached(parent_key)
+
     def add_child(self, child):
         child.add_parent(self)
 
@@ -424,14 +437,27 @@ class Segment:
         children = list(children)
         for child in children:
             child._validate_parent_link(self)
+        self._validate_children_consistency(children)
         for child in children:
             child.add_parent(self)
 
+    def _validate_children_consistency(self, children):
+        '''Reject children that conflict with each other on audio or
+        speaker; the per-child parent check misses this when the parent
+        value is still empty and the first link would propagate it.'''
+        for attr in ('audio_id', 'speaker_id'):
+            seen = getattr(self, attr)
+            for child in children:
+                own = getattr(child, attr)
+                if own == EMPTY_ID: continue
+                if seen == EMPTY_ID:
+                    seen = own
+                    continue
+                if own != seen:
+                    m = f'{attr} mismatch: {own} vs {seen}'
+                    raise ValueError(m)
+
     def _cache_child(self, child):
-        if not hasattr(self, '_children') and \
-            getattr(self, '_store', None) is None:
-            # unbound segments have no DB children to merge with
-            self._children, self._related = [], []
         children = self.children
         if any(known is child for known in children): return
         children.append(child)
