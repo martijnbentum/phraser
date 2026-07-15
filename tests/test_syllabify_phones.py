@@ -49,7 +49,7 @@ def build_phrase(store, phones, words, syls, filename='x.TextGrid'):
         phone._set_phrase_refs(phrase.identifier, phrase.start)
     items = [phrase] + word_objs + syl_objs + phone_objs
     for item in items:
-        item.add_audio(audio, update_database=False, propagate=False)
+        item._audio = audio     # cache: the Audio row itself is never saved
     store.save_many(items)
     return phrase, word_objs, syl_objs, phone_objs
 

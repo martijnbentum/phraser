@@ -157,40 +157,6 @@ class TestStoreBinding(unittest.TestCase):
         self.assertEqual(loaded.ipa, 't ɛ s t')
         self.assertFalse(hasattr(loaded, 'ipa_label'))
 
-    def test_loaded_add_speaker_persists(self):
-        store = self._fresh_store()
-        self.addCleanup(store.close)
-        old_speaker = store.create(Speaker, name='old', dataset='test')
-        new_speaker = store.create(Speaker, name='new', dataset='test')
-        phrase = store.create(Phrase, label='speaker test', start=0, end=100,
-            audio_id=b'\x01' * 8, speaker_id=old_speaker.identifier,
-            filename='test.TextGrid', save=True)
-        key = phrase.key
-        store._cache.clear()
-
-        loaded = store.load(key)
-        loaded.add_speaker(old_speaker, propagate=False)
-        loaded.add_speaker(new_speaker, propagate=False)
-        store._cache.clear()
-        reloaded = store.load(key)
-
-        self.assertEqual(reloaded.speaker_id, new_speaker.identifier)
-
-    def test_apply_speaker_id_invalidates_stale_speaker_cache(self):
-        store = self._fresh_store()
-        self.addCleanup(store.close)
-        old_speaker = store.create(Speaker, name='old-cache', dataset='test')
-        new_speaker = store.create(Speaker, name='new-cache', dataset='test')
-        phrase = store.create(Phrase, label='cache test', start=0, end=100,
-            audio_id=b'\x01' * 8, speaker_id=old_speaker.identifier,
-            filename='test.TextGrid', save=True)
-        phrase._speaker = old_speaker
-
-        changed = phrase._apply_speaker_id(new_speaker.identifier)
-
-        self.assertFalse(hasattr(phrase, '_speaker'))
-        self.assertTrue(changed)
-
     def test_save_many_validates_all_segments_before_writing(self):
         store = self._fresh_store()
         self.addCleanup(store.close)
@@ -219,22 +185,6 @@ class TestStoreBinding(unittest.TestCase):
 
         self.assertTrue(store.DB.key_exists(old_key))
 
-    def test_persisted_segment_audio_cannot_change(self):
-        store = self._fresh_store()
-        self.addCleanup(store.close)
-        old_audio = store.create(Audio, filename='old.wav', duration=1000)
-        new_audio = store.create(Audio, filename='new.wav', duration=1000)
-        phrase = store.create(Phrase, label='audio test', start=0, end=100,
-            audio_id=old_audio.identifier, speaker_id=b'\x02' * 8,
-            filename='test.TextGrid', save=True)
-        old_key = phrase.key
-
-        with self.assertRaisesRegex(ValueError, 'cannot change after persistence'):
-            phrase.add_audio(new_audio, update_database=False, propagate=False)
-
-        self.assertEqual(phrase.audio_id, old_audio.identifier)
-        self.assertTrue(store.DB.key_exists(old_key))
-
     def test_save_rejects_direct_persisted_audio_change(self):
         store = self._fresh_store()
         self.addCleanup(store.close)
@@ -250,22 +200,6 @@ class TestStoreBinding(unittest.TestCase):
         self.assertTrue(store.DB.key_exists(old_key))
         self.assertFalse(store.DB.key_exists(
             key_helper.instance_to_key(phrase)))
-
-    def test_staged_segment_audio_can_change(self):
-        store = self._fresh_store()
-        self.addCleanup(store.close)
-        old_audio = store.create(Audio, filename='staged-old.wav', duration=1000)
-        new_audio = store.create(Audio, filename='staged-new.wav', duration=1000)
-        phrase = store.create(Phrase, label='staged audio', start=0, end=100,
-            audio_id=old_audio.identifier, speaker_id=b'\x02' * 8,
-            filename='test.TextGrid')
-
-        phrase.add_audio(new_audio, update_database=False, propagate=False)
-        phrase.save()
-
-        self.assertEqual(phrase.audio_id, new_audio.identifier)
-        self.assertEqual(phrase._key, key_helper.instance_to_key(phrase))
-        self.assertTrue(store.DB.key_exists(phrase.key))
 
     def test_save_many_sets_persisted_key(self):
         store = self._fresh_store()

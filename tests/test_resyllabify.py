@@ -79,7 +79,7 @@ def build_word(store, phone_spec=PHONE_SPEC, syllable_spec=GIVEN_SYLLABLES,
     tgl.find_and_add_syllables_to_word(word, syllables, save_to_db=False)
     items = [word] + syllables + phones
     for item in items:
-        item.add_audio(audio, update_database=False, propagate=False)
+        item._audio = audio     # cache only
     # the Audio row itself is not needed: segments only carry its identifier as
     # audio_id, and parent lookups resolve via syllable keys, not the Audio.
     store.save_many(items)

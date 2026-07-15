@@ -305,72 +305,6 @@ class Segment:
         message += 'persistence; assign audio before saving.'
         raise ValueError(message)
 
-    def add_audio(self, audio = None, audio_id = None, update_database = True,
-        propagate = True):
-        ''' Link this segment (and by default its family) to an Audio object.
-        '''
-        if audio_id is None and audio is None:
-            print("Warning: No audio or audio_id provided to add_audio.")
-            return
-        if audio is not None:
-            audio_id = audio.identifier
-        if propagate:
-            affected_segments = list(self.iter_family())
-        else: affected_segments = [self]
-
-        for segment in affected_segments:
-            segment._validate_audio_assignment(audio_id)
-
-        changed = []
-        for segment in affected_segments:
-            if segment._apply_audio_id(audio_id): changed.append(segment)
-
-        if audio is not None:
-            self._audio = audio
-
-        if update_database:
-            for segment in changed:
-                segment.save(overwrite=True)
-
-    def _apply_audio_id(self, audio_id):
-        '''Set audio_id and drop a stale cached audio; True if changed.'''
-        if self.audio_id == audio_id: return False
-        self.audio_id = audio_id
-        cached_audio = getattr(self, '_audio', None)
-        if cached_audio is not None:
-            if cached_audio.identifier != audio_id:
-                del self._audio
-        return True
-
-    def add_speaker(self, speaker = None, speaker_id = None,
-        update_database = True, propagate = True):
-        if speaker_id is None and speaker is None:
-            print("Warning: No speaker or speaker_id provided to add_speaker.")
-            return
-        if speaker is not None:
-            speaker_id = speaker.identifier
-            self._speaker = speaker
-        all_segments = [self]
-        if propagate:
-            all_segments += list(self.iter_family())[1:]
-        changed = []
-        for segment in all_segments:
-            if segment._apply_speaker_id(speaker_id): changed.append(segment)
-        if update_database:
-            for segment in changed:
-                segment.save(overwrite=True)
-
-    def _apply_speaker_id(self, speaker_id):
-        '''Set speaker_id and drop a stale cached speaker; True if changed.'''
-        if self.speaker_id == speaker_id: return False
-        self.speaker_id = speaker_id
-        cached_speaker = getattr(self, '_speaker', None)
-        if cached_speaker is not None:
-            if cached_speaker.identifier != speaker_id:
-                del self._speaker
-        return True
-
-
     # ------------------ hierarchy helpers ------------------
     # Linking is staging-only: it never writes to the database. Only the
     # upward link (parent_id, parent_start, phrase_id, phrase_start) is
@@ -583,11 +517,6 @@ class Segment:
         while parent is not None:
             yield parent
             parent = parent.parent
-
-    def iter_family(self):
-        yield self
-        yield from self.iter_ancestors()
-        yield from self.iter_descendants()
 
     @property
     def store(self):
