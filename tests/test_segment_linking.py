@@ -444,6 +444,109 @@ class TestSegmentLinking(unittest.TestCase):
             exists = self.store.DB.key_exists(phrase.key)
             self.assertTrue(exists)
 
+    # ------------------ save_phrase_trees overwrite replacement ------------------
+
+    def test_overwrite_replaces_persisted_tree(self):
+        '''overwrite=True: the persisted tree becomes exactly the staged
+        tree; the old descendant rows are deleted, not re-merged.'''
+        tree = self._build_staged_tree()
+        self.store.save_phrase_trees([tree.phrase])
+        old_keys = [segment.key for segment in
+            tree.words + tree.syllables + tree.phones]
+        self.store._cache.clear()
+        loaded = self.store.load(tree.phrase.key)
+        new_word = self.store.create(Word, label='helloworld', start=0,
+            end=1000, **self.identity)
+        loaded.replace_children([new_word])
+        self.store.save_phrase_trees([loaded], overwrite=True)
+        for key in old_keys:
+            exists = self.store.DB.key_exists(key)
+            self.assertFalse(exists)
+        self.store._cache.clear()
+        reloaded = self.store.load(loaded.key)
+        self.assertEqual([w.label for w in reloaded.children],
+            ['helloworld'])
+        self.assertEqual(reloaded.overlapping, [])
+
+    def test_overwrite_reaches_stale_rows_beyond_shrunk_end(self):
+        '''Re-saving with a smaller end still deletes stale descendants
+        starting beyond the new end: the deletion scan runs to the
+        persisted row's end, not the staged one.'''
+        phrase = self._create_phrase(label='long', start=0, end=2000)
+        late_word = self.store.create(Word, label='late', start=1500,
+            end=2000, **self.identity)
+        phrase.add_children([late_word])
+        self.store.save_phrase_trees([phrase])
+        stale_key = late_word.key
+        self.store._cache.clear()
+        loaded = self.store.load(phrase.key)
+        loaded.end = 1000
+        new_word = self.store.create(Word, label='early', start=0,
+            end=1000, **self.identity)
+        loaded.replace_children([new_word])
+        self.store.save_phrase_trees([loaded], overwrite=True)
+        exists = self.store.DB.key_exists(stale_key)
+        self.assertFalse(exists)
+
+    def test_overwrite_cleans_label_index_of_deleted_rows(self):
+        '''Deleted rows lose their label-index entries; the staged rows
+        gain theirs.'''
+        tree = self._build_staged_tree()
+        self.store.save_phrase_trees([tree.phrase])
+        old_word_key = tree.words[0].key
+        self.store._cache.clear()
+        loaded = self.store.load(tree.phrase.key)
+        new_word = self.store.create(Word, label='helloworld', start=0,
+            end=1000, **self.identity)
+        loaded.replace_children([new_word])
+        self.store.save_phrase_trees([loaded], overwrite=True)
+        old_entries = self.store.DB.label_to_segment_keys('hello', 'Word')
+        old_entries = list(old_entries)
+        self.assertNotIn(old_word_key, old_entries)
+        new_entries = self.store.DB.label_to_segment_keys(
+            'helloworld', 'Word')
+        new_entries = list(new_entries)
+        self.assertIn(new_word.key, new_entries)
+
+    def test_overwrite_spares_other_speaker_rows_in_range(self):
+        '''Attribution is by identifier: another speaker's overlapping
+        tree survives an overwrite re-save.'''
+        other_speaker = self.store.create(Speaker, name='spk2',
+            dataset='test', save=True)
+        audio_id, speaker_id = self.audio.identifier, other_speaker.identifier
+        other_identity = {'audio_id': audio_id, 'speaker_id': speaker_id}
+        other = self.store.create(Phrase, label='other', start=0,
+            end=1000, **other_identity)
+        other_word = self.store.create(Word, label='their', start=0,
+            end=500, **other_identity)
+        other.add_children([other_word])
+        tree = self._build_staged_tree()
+        self.store.save_phrase_trees([tree.phrase, other])
+        self.store._cache.clear()
+        loaded = self.store.load(tree.phrase.key)
+        new_word = self.store.create(Word, label='helloworld', start=0,
+            end=1000, **self.identity)
+        loaded.replace_children([new_word])
+        self.store.save_phrase_trees([loaded], overwrite=True)
+        for segment in (other, other_word):
+            exists = self.store.DB.key_exists(segment.key)
+            self.assertTrue(exists)
+
+    def test_save_phrase_trees_without_overwrite_rejects_existing_keys(self):
+        '''A persisted tree cannot be re-saved without overwrite; the
+        DB-level fail-early check writes nothing.'''
+        tree = self._build_staged_tree()
+        self.store.save_phrase_trees([tree.phrase])
+        self.store._cache.clear()
+        loaded = self.store.load(tree.phrase.key)
+        new_word = self.store.create(Word, label='helloworld', start=0,
+            end=1000, **self.identity)
+        loaded.replace_children([new_word])
+        with self.assertRaises(KeyError):
+            self.store.save_phrase_trees([loaded])
+        exists = self.store.DB.key_exists(new_word.key)
+        self.assertFalse(exists)
+
     def test_save_phrase_trees_rejects_non_phrase(self):
         '''Only Phrase objects are accepted.'''
         word = self.store.create(Word, label='w', start=0, end=100,

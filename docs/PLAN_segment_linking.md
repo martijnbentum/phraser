@@ -1,57 +1,59 @@
 # Segment linking and batch persistence — continuation notes
 
 Status notes for continuing the phrase-tree work. Rewritten
-2026-07-16 (second rewrite that day), after steps 1–6 of the previous
-version landed in the working tree on top of `75ff328` (uncommitted —
+2026-07-16 (third rewrite that day), after steps 1–3 of the previous
+version landed in the working tree on top of `c2da1a4` (uncommitted —
 commit before continuing; the pre-commit hook bumps the version).
-Suite green: 194 tests + 33 subtests
+Suite green: 199 tests + 33 subtests
 (`.venv/bin/python -m pytest tests/ -q`). Every new guard was
 negative-verified: with the guard temporarily disabled, its tests
-fail.
+fail (the overwrite deletion and its persisted-end scan window were
+each disabled separately).
 
-## The governing rule (state it in code, step 1 below)
+## The governing rule (now stated in code)
 
 The persistence signal lives in the RECEIVER, not the verb: on a
 Segment, only `save` and `delete` touch the database; every other
 method and property is in-memory. Tree persistence goes through the
 Store. Verbs (`add_`, `replace_`) describe the in-memory effect only.
-This rule is decided and load-bearing but not yet written into the
-`Segment` class docstring or README — that is step 1.
+Written into the `Segment` class docstring and the README staging
+section (step 1, done).
 
 ## Where the work stands (all in working tree, tested)
 
-- `Segment.child_keys` → `_candidate_child_keys`: private, docstring
-  says time-range candidate scan, not ownership. The `children`
-  property now scans once (was twice) and a dead `_child_keys`
-  assignment is gone.
-- Ownership filter: `children` classifies candidates by
-  `candidate.parent_id == self.identifier`. Everything else in range
-  — other speakers, same-speaker foreign-parent, unlinked — lands in
-  `overlapping` (renamed from `related`; `_related` → `_overlapping`
-  everywhere). Sole consumer `overlap_items` reads
-  `parent.overlapping`; `check_overlap.py` filters speakers itself,
-  so overlap codes are unaffected.
-- `replace_children(new_children)`: staging-only wholesale relink.
-  Validates ALL children BEFORE displacing, so a bad batch leaves the
-  staged view intact (same promise as `add_children`). The two
-  seed-idiom call sites in `syllabify_phones.py` now use it; the
-  remaining direct `_children, _overlapping = ...` assignments there
-  and in `resyllabifier.py` are fill-before-wiring, a different
-  operation — leave them.
-- Intra-batch duplicate-key check in `save_many`
-  (`_check_intra_batch_keys`): raises before packing/writing;
-  `DB.write_many` still silently last-write-wins within a txn, the
-  guard sits above it. Runs regardless of overwrite/fail_gracefully.
-- Same-speaker overlap enforcement in `save_phrase_trees`
-  (`_check_same_speaker_overlap` + `_persisted_phrases_by_group`):
-  one start-sorted running-max-end sweep per (audio_id, speaker_id)
-  over batch phrases MERGED with the audio's persisted phrases.
-  Batch-vs-batch and batch-vs-persisted overlaps raise; a phrase's
-  own persisted row is key-exempt (overwrite re-saves pass);
-  persisted-vs-persisted overlap is legacy dirt and does not block.
-  Persisted fetch: `audio_id_to_child_keys` per audio, early break at
-  `key_to_start(key) >= batch max end` (new helper in key_helper.py;
-  segment keys are start-ordered).
+- Receiver-rule docs (old step 1): sentence in the `Segment`
+  docstring — which is now a real docstring; the old string literal
+  sat after the class attributes and never became `__doc__` — and a
+  rewritten README example section. The README's construction and
+  linking examples were broken against the current API (missing
+  mandatory identity, deleted `add_audio`, removed `update_database`)
+  and were repaired in the same pass; both sections were executed
+  verbatim against a temp store to verify.
+- `save_phrase_trees(overwrite=True)` now REPLACES (old step 2): each
+  phrase's persisted tree becomes exactly its staged tree. Design is
+  delete-first, atomic: `save_validation.persisted_tree_rows` collects
+  every persisted row of the phrase from RAW rows (the phrase row plus
+  Word/Syllable/Phone rows in range attributed by
+  parent_id/phrase_id), then `DB.replace_many` deletes old rows + old
+  label-index entries and writes staged rows + new label entries in
+  ONE LMDB transaction (`env.begin` spans named dbs). A crash leaves
+  the old trees or the new ones, never neither. `overwrite=False` is
+  unchanged: `write_many`'s fail-early existence check raises with
+  nothing written.
+- `save_validation.py` extracted (old step 3): plain functions
+  `check_intra_batch_keys`, `validate_phrase_trees`,
+  `check_same_speaker_overlap`, `persisted_phrases_by_group`,
+  `persisted_tree_rows`; Store delegates. `save_many` was factored
+  into `_prepare_batch`/`_finalize_batch`, shared by the
+  `_replace_phrase_trees` path (which cannot reuse `save_many`: the
+  deletes and writes must share a transaction).
+- `DB.time_range_keys(audio_id, child_class, start, end)`: explicit
+  range scan; `instance_to_child_keys` now delegates to it.
+  `key_helper.label_to_label_index_key` builds label-index keys from
+  raw row parts; the instance variant delegates.
+- Earlier (committed in `c2da1a4`): ownership-filtered `children` +
+  `overlapping` rename, `replace_children`, intra-batch key guard,
+  same-speaker overlap sweep, `key_to_start`.
 
 ## Decisions made (do not relitigate)
 
@@ -76,42 +78,45 @@ This rule is decided and load-bearing but not yet written into the
   rebuild-and-replace. Never auto-create placeholder speakers.
 - The overlap check tolerates persisted-persisted legacy overlap so
   dirty old data cannot block unrelated saves.
+- `Segment.save` stays row-level. Remapping it to
+  `save_phrase_trees([self.phrase])` was considered and REJECTED: the
+  verb would overclaim (a leaf save commits every staged edit in the
+  tree and, with replace semantics, gains delete authority), unlinked
+  segments would need a second conditional path, and `save_many`
+  remains a batch backdoor regardless. Candidate narrow fix if forced
+  validation is ever wanted: `store.save` running the overlap check
+  when handed a Phrase.
+- Persisted-tree collection for deletion reads RAW rows, never
+  `store.load`/object navigation: the staged tree occupies the cache
+  under the same keys, and cache-first navigation reflects session
+  state (a re-parented child's mutated parent_id would hide its row
+  from the walk). Attribution by identifier needs no recursion —
+  words by parent_id, syllables/phones by phrase_id.
+- Overwrite replace is delete-first inside one transaction; crash
+  safety comes from atomicity, not operation ordering.
 - Style: explicit `object_type == '...'` branches, no mixins, helper
   modules with plain functions over class indirection.
 
 ## Next steps
 
-1. **Receiver-rule docs.** One sentence in the `Segment` class
-   docstring and above the README staging example: only `save`/
-   `delete` on a Segment touch the database; everything else is
-   in-memory; tree persistence goes through the Store.
-2. **Strengthen `save_phrase_trees(overwrite=True)`**: before
-   writing, delete persisted descendants of each saved phrase that
-   are not in its staged tree (persisted tree becomes exactly the
-   staged tree). Closes the remaining stale-layer footgun: a rebuild
-   whose phrase boundaries CHANGED is already caught by the overlap
-   check, but same-boundary rebuilds leave old descendant rows that
-   re-merge on load (they share the phrase's parent_id). Include
-   label-index cleanup for deleted rows (see
-   `scripts/fix_syllable_labels.py`). Test: rebuild with changed word
-   boundaries, save with overwrite=True, reload → no doubled layer.
-3. **Extract `save_validation.py`** together with step 2 (so the
-   module is born complete): move `_check_intra_batch_keys`,
-   `_validate_phrase_trees`, `_check_same_speaker_overlap`,
-   `_persisted_phrases_by_group` (+ step 2's stale-descendant check)
-   into plain functions taking `store`/`phrases` explicitly, repo
-   helper-module style. `store.py` is 653 lines; the family is ~120
-   and growing.
-4. **Housekeeping** (old step 7): guard speaker in `store.update`
-   like audio, or comment that the asymmetry is deliberate; tag the
-   post-refactor state (pyproject 0.2.6x, last tag `v0.1.33`).
-5. **Naming backlog** (each mechanical, do when touching the file):
+1. **Housekeeping**: guard speaker in `store.update` like audio, or
+   comment that the asymmetry is deliberate; tag the post-refactor
+   state (pyproject 0.2.6x, last tag `v0.1.33`).
+2. **Naming backlog** (each mechanical, do when touching the file):
    - `DB.instance_to_child_keys` → a candidate-scan name; do NOT
      rename `audio_id_to_child_keys` (audio→phrase ownership is
      unambiguous).
    - `Segment.overlapping` hides a level shift: `phrase.overlapping`
      yields WORDS (child class), not other phrases. Rename when a
      better name surfaces; `overlapping_children` is also ambiguous.
+3. **Optional**: a README-example smoke test (the staging snippet run
+   against a temp store) to stop future README rot; a friendlier
+   pre-check message for the non-overwrite existing-key case (the DB
+   error does not name the colliding object).
+4. **Candidate simplification**: `resyllabifier` and
+   `fix_syllable_labels` predate replace semantics; their
+   save-new/delete-old dances could collapse into
+   `save_phrase_trees(overwrite=True)` when next touched.
 
 ## Gotchas
 
@@ -119,8 +124,9 @@ This rule is decided and load-bearing but not yet written into the
   `children` property, `_cache_child`, `replace_children`.
 - The parent_id filter does NOT protect same-boundary rebuild flows —
   replacement children share the old layer's parent_id. Staging is
-  safe via `replace_children`; the DISK stays dirty until delete
-  (step 2 closes this).
+  safe via `replace_children`; the disk is cleaned by
+  `save_phrase_trees(overwrite=True)` (replace semantics). A plain
+  `save_many` of a rebuilt layer still leaves the doubled layer.
 - Phrase-level overlap scanning must not reuse the candidate-scan
   window: that scan finds segments STARTING in range and misses
   earlier-starting sprawlers. `_persisted_phrases_by_group` scans all
@@ -140,9 +146,15 @@ This rule is decided and load-bearing but not yet written into the
   path that can put one object in two staged trees (the intra-batch
   key check catches it at save).
 - Deletion paths must clean label-index entries
-  (`scripts/fix_syllable_labels.py` pattern); saves never do.
+  (`scripts/fix_syllable_labels.py` pattern); saves never do. The
+  replace path cleans them inside `DB.replace_many`;
+  `Store.delete_many` still does NOT.
+- The deletion scan window must be the PERSISTED phrase row's end: a
+  re-save with a shrunk end has stale descendants starting beyond the
+  staged end. `test_overwrite_reaches_stale_rows_beyond_shrunk_end`
+  pins it.
 - Run tests with the project venv:
-  `.venv/bin/python -m pytest tests/ -q` (194 + 33 green).
+  `.venv/bin/python -m pytest tests/ -q` (199 + 33 green).
 - `scripts/check_style.py` on touched files; compare ERROR counts
   against `git show HEAD:<file>` — bar is "no new errors"
   (pre-existing findings shift line numbers when code is inserted;

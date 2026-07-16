@@ -13,13 +13,17 @@ from .utils import R, B, GR, RE, object_type_to_ljust_label
 
 
 class Segment:
+    '''
+    Base time-aligned segment with a unique ID and parent/child links.
+
+    Only save and delete touch the database; every other method and
+    property (add_parent, add_children, replace_children, ...) works
+    in memory. Tree persistence goes through store.save_phrase_trees.
+    '''
     IDENTITY_FIELDS= {'label', 'start', 'end', 'audio_key'}
     DB_FIELDS = {'identifier', 'label', 'start', 'end', 'parent_id',
         'parent_start', 'audio_id', 'speaker_id'}
     METADATA_FIELDS = {}# subclasses override
-    '''
-    Base time-aligned segment with a unique ID and parent/child links.
-    '''
     allowed_child_type = []# subclasses override
     overlap_code = 9
 

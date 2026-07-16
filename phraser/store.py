@@ -6,6 +6,7 @@ import time
 from . import key_helper
 from . import lmdb_helper
 from . import locations
+from . import save_validation
 from . import struct_value
 from . import utils
 from .struct_helper import CLASS_RANK_MAP, RANK_CLASS_MAP
@@ -206,61 +207,53 @@ class Store:
         self._ensure_open()
         start = time.time()
         objs = list(objs)
-        for obj in objs:
-            self._validate_for_save(obj)
-        for obj in objs:
-            self._bind(obj)
-        itk = key_helper.instance_to_key
-        pi = struct_value.pack_instance
-        keys = [itk(obj) for obj in objs]
-        self._check_intra_batch_keys(objs, keys)
-        values = [pi(obj) for obj in objs]
-        # print('update dict done', time.time() - start)
+        keys, values = self._prepare_batch(objs)
         try: self.DB.write_many(keys, values,
             overwrite = overwrite)
 
         except KeyError as e:
-            
+
             print('failed', time.time() - start)
-            if fail_gracefully: 
+            if fail_gracefully:
                 print(e)
                 return
             else: raise e
 
-        # print('succes', time.time() - start)
+        self._finalize_batch(objs, keys)
+        self._handle_label_links(objs)
+
+    def _prepare_batch(self, objs):
+        '''Validate, bind and pack a batch; nothing is written.'''
+        for obj in objs:
+            self._validate_for_save(obj)
+        for obj in objs:
+            self._bind(obj)
+        keys = [key_helper.instance_to_key(obj) for obj in objs]
+        save_validation.check_intra_batch_keys(objs, keys)
+        values = [struct_value.pack_instance(obj) for obj in objs]
+        return keys, values
+
+    def _finalize_batch(self, objs, keys):
+        '''Post-write bookkeeping: remember persisted keys, cache the
+        objects, count the saves.'''
         for obj, key in zip(objs, keys):
             obj._key = key
-        cache_update = {key: obj for key, obj in zip(keys, objs)}
-        self._cache.update(cache_update)
-        for key in cache_update.keys():
+        self._cache.update(zip(keys, objs))
+        for key in keys:
             if key not in self.save_key_counter:
                 self.save_key_counter[key] = 1
             else: self.save_key_counter[key] += 1
-        # print('done', time.time() - start)
-        self._handle_label_links(objs)
-
-    def _check_intra_batch_keys(self, objs, keys):
-        '''Reject duplicate keys within one batch. DB.write_many only
-        checks keys against the database; within a transaction a
-        repeated key silently keeps the last value written, so one
-        object would overwrite the other without an error.'''
-        seen = {}
-        for obj, key in zip(objs, keys):
-            other = seen.get(key)
-            if other is None:
-                seen[key] = obj
-                continue
-            m = 'duplicate key in batch: '
-            m += f'{type(obj).__name__} {obj.identifier.hex()} '
-            m += 'appears twice (the same object listed twice, or two '
-            m += 'loaded copies of one persisted object); written nothing.'
-            raise ValueError(m)
 
     def save_phrase_trees(self, phrases, overwrite = False):
         '''Persist staged phrase trees (each phrase and its descendants).
 
         phrases:    Phrase objects with staged, linked descendants
-        overwrite:  if True, overwrite existing objects with same keys
+        overwrite:  if True, each phrase's persisted tree is REPLACED
+                    by its staged tree: every persisted row of the
+                    phrase (and its label-index entry) is deleted in
+                    the same transaction that writes the staged rows,
+                    so stale descendant layers cannot survive a
+                    rebuild.
 
         Every tree is validated via Phrase.validate_tree (one speaker
         across the whole tree, no persisted segment changing its
@@ -269,87 +262,43 @@ class Store:
         overlap a same-speaker phrase, in the batch or already
         persisted on the same audio (a phrase's own persisted row is
         exempt, so overwrite re-saves pass). The trees are flattened
-        via Phrase.items and written through save_many; nothing is
+        via Phrase.items; without overwrite they are written through
+        save_many, which raises if any key already exists. Nothing is
         written when any validation fails.
         '''
         phrases = list(phrases)
         if not phrases: return
-        self._validate_phrase_trees(phrases)
+        save_validation.validate_phrase_trees(self, phrases)
         segments = []
         for phrase in phrases:
             segments.extend(phrase.items)
-        self.save_many(segments, overwrite = overwrite)
+        if not overwrite:
+            self.save_many(segments)
+            return
+        self._replace_phrase_trees(phrases, segments)
 
-    def _validate_phrase_trees(self, phrases):
-        from .models import Phrase
-        seen = set()
+    def _replace_phrase_trees(self, phrases, segments):
+        '''overwrite=True: persisted trees become exactly the staged
+        trees. Collect every persisted row of each phrase (disk truth,
+        not the staged view), then delete old rows and write staged
+        rows in one transaction — crash-safe by atomicity, not
+        ordering: the store holds the old trees or the new ones, never
+        neither.'''
+        self._ensure_open()
+        keys, values = self._prepare_batch(segments)
+        old_rows = []
         for phrase in phrases:
-            if not isinstance(phrase, Phrase):
-                m = 'save_phrase_trees expects Phrase objects, '
-                m += f'got {type(phrase).__name__}.'
-                raise TypeError(m)
-            phrase.validate_tree()
-            if phrase in seen:
-                m = 'duplicate phrase identity in batch: '
-                m += f'(audio_id, speaker_id, start) = ({phrase.audio_id}, '
-                m += f'{phrase.speaker_id}, {phrase.start})'
-                raise ValueError(m)
-            seen.add(phrase)
-        self._check_same_speaker_overlap(phrases)
-
-    def _check_same_speaker_overlap(self, phrases):
-        '''One speaker, one phrase at a time: reject a phrase that
-        overlaps a same-speaker phrase, in the batch or already
-        persisted on the same audio. A phrase's own persisted row
-        (identical key) is exempt, so overwrite re-saves pass. Two
-        persisted rows overlapping each other are legacy data and do
-        not block an unrelated save.'''
-        groups = {}
-        for phrase in phrases:
-            group_key = (phrase.audio_id, phrase.speaker_id)
-            groups.setdefault(group_key, []).append(phrase)
-        persisted = self._persisted_phrases_by_group(groups)
-        for group_key, group in groups.items():
-            entries = [(p, True) for p in group]
-            entries += [(p, False) for p in persisted.get(group_key, [])]
-            entries.sort(key=lambda entry: entry[0].start)
-            widest, widest_in_batch = entries[0]
-            for phrase, in_batch in entries[1:]:
-                overlaps = phrase.start < widest.end
-                if overlaps and (in_batch or widest_in_batch):
-                    m = 'same-speaker overlapping phrases: '
-                    m += f'{phrase.label!r} [{phrase.start}, {phrase.end}] '
-                    m += f'overlaps {widest.label!r} '
-                    m += f'[{widest.start}, {widest.end}]; written nothing.'
-                    raise ValueError(m)
-                if phrase.end > widest.end:
-                    widest, widest_in_batch = phrase, in_batch
-
-    def _persisted_phrases_by_group(self, groups):
-        '''Load the persisted phrases that could overlap the batch,
-        grouped by (audio_id, speaker_id). Only phrases starting
-        before the audio's last batch end can overlap (keys scan in
-        start order); the batch phrases' own rows are skipped by key.'''
-        own_keys = set()
-        max_end_by_audio = {}
-        for (audio_id, _), group in groups.items():
-            for phrase in group:
-                own_key = key_helper.instance_to_key(phrase)
-                own_keys.add(own_key)
-            end = max(phrase.end for phrase in group)
-            if end > max_end_by_audio.get(audio_id, 0):
-                max_end_by_audio[audio_id] = end
-        persisted = {}
-        for audio_id, max_end in max_end_by_audio.items():
-            keys = []
-            for key in self.DB.audio_id_to_child_keys(audio_id, 'Phrase'):
-                if key_helper.key_to_start(key) >= max_end: break
-                if key in own_keys: continue
-                keys.append(key)
-            for phrase in self.load_many(keys):
-                group_key = (audio_id, phrase.speaker_id)
-                persisted.setdefault(group_key, []).append(phrase)
-        return persisted
+            rows = save_validation.persisted_tree_rows(self, phrase)
+            old_rows.extend(rows)
+        old_keys = [key for key, _ in old_rows]
+        old_label_keys = [label_key for _, label_key in old_rows]
+        label_keys = items_to_label_index_keys(segments)
+        self.DB.replace_many(old_keys, old_label_keys, keys, values,
+            label_keys)
+        written = set(keys)
+        for key in old_keys:
+            if key not in written: self._cache.pop(key, None)
+        self._finalize_batch(segments, keys)
 
     def _handle_label_links(self, objs):
         '''after saving objects, write label index links for all objects with

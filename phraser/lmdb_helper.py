@@ -131,6 +131,26 @@ class DB:
             for k, v in progressbar(zip(keys, values), max_value=len(keys)):
                 txn.put(k, v, db = db)
 
+    def replace_many(self, delete_keys, delete_label_keys, keys, values,
+            label_keys):
+        '''Replace rows atomically: delete old main rows and their
+        label-index entries, then write the new rows and theirs, all in
+        one transaction — a crash leaves either the old rows or the new
+        ones, never neither. No existence checks: the caller decides
+        what is replaced. A key in both delete_keys and keys ends up
+        holding its new value.'''
+        main = self.db['main']
+        label = self.db['label_segment']
+        with self.env.begin(write=True) as txn:
+            for key in delete_keys:
+                txn.delete(key, db = main)
+            for key in delete_label_keys:
+                txn.delete(key, db = label)
+            for key, value in zip(keys, values):
+                txn.put(key, value, db = main)
+            for key in label_keys:
+                txn.put(key, b'', db = label)
+
     def audio_id_to_child_keys(self, audio_id, child_class = 'Phrase'):
         db = self.db['main']
         prefix = key_helper.pack_audio_scan_prefix(audio_id, child_class)
@@ -162,13 +182,22 @@ class DB:
     def instance_to_child_keys(self, instance, child_class = None):
         '''Yield keys for child objects of instance, ordered by start time.
         instance:      An Segment instance (Phrase, Word, Syllable).
-        child_class:   Class name of child objects to retrieve 
+        child_class:   Class name of child objects to retrieve
                        (Word, Syllable, Phone).
                        If None, uses instance.child_class_name.
         '''
+        if child_class is None: child_class = instance.child_class_name
+        return self.time_range_keys(instance.audio_id, child_class,
+            instance.start, instance.end)
+
+    def time_range_keys(self, audio_id, child_class, start, end):
+        '''Yield keys of child_class segments in the audio starting in
+        [start, end), ordered by start time.'''
         db = self.db['main']
-        f = key_helper.instance_to_child_time_scan_keys
-        start_prefix, end_prefix = f(instance, child_class)
+        start_prefix = key_helper.make_time_scan_prefix(audio_id,
+            child_class, start)
+        end_prefix = key_helper.make_time_scan_prefix(audio_id,
+            child_class, end)
         with self.env.begin() as txn:
             cur = txn.cursor(db = db)
             if not cur.set_range(start_prefix):

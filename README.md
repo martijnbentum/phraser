@@ -113,52 +113,40 @@ load_cache()
 
 ### Access objects from the package API
 
+Every segment is constructed with its identity: `label`, `start`, `end`,
+`audio_id`, and `speaker_id`. Construction stages the object in memory;
+nothing is written until an explicit save.
+
 ```python
-from phraser import Audio, Phrase, Word, Syllable, Phone, Speaker
+from phraser import Audio, Phrase, Word, Syllable, Phone, Speaker, Store
 
-audio = Audio(filename="example.wav", save=False)
-speaker = Speaker(name="spk1", dataset="demo", save=False)
+store = Store("/path/to/lmdb")
+audio = store.create(Audio, filename="example.wav")
+speaker = store.create(Speaker, name="spk1", dataset="demo")
 
-phrase = Phrase(
-    label="hello world",
-    start=0,
-    end=1200,
-    save=False,
-)
-
-word = Word(
-    label="hello",
-    start=0,
-    end=500,
-    save=False,
-)
-
-syllable = Syllable(
-    label="he",
-    start=0,
-    end=250,
-    save=False,
-)
-
-phone = Phone(
-    label="h",
-    start=0,
-    end=100,
-    save=False,
-)
+identity = dict(audio_id=audio.identifier, speaker_id=speaker.identifier)
+phrase = store.create(Phrase, label="hello world", start=0, end=1200,
+    **identity)
+word = store.create(Word, label="hello", start=0, end=500, **identity)
+syllable = store.create(Syllable, label="he", start=0, end=250, **identity)
+phone = store.create(Phone, label="h", start=0, end=100, **identity)
 ```
 
-### Link objects together
+### Stage and save a phrase tree
+
+On a `Segment`, only `save` and `delete` touch the database; every other
+method and property (`add_parent`, `add_children`, `replace_children`, ...)
+works in memory. Linking stages a tree; persisting it is an explicit call
+to `store.save_phrase_trees`, which validates each tree and writes nothing
+when any validation fails.
 
 ```python
-from phraser import Audio, Phrase, Word
+phrase.add_children([word])       # staged, never writes
+word.add_children([syllable])
+syllable.add_children([phone])
+phrase.validate_tree()            # optional early check
 
-audio = Audio(filename="example.wav", save=False)
-phrase = Phrase(label="hello world", start=0, end=1200, save=False)
-word = Word(label="hello", start=0, end=500, save=False)
-
-phrase.add_audio(audio, update_database=False)
-word.add_parent(phrase, update_database=False)
+store.save_phrase_trees([phrase])
 ```
 
 ### Convert TextGrid annotations

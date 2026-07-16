@@ -241,8 +241,14 @@ def hash_label(label):
 
 def instance_to_label_index_key(instance):
     key = instance_to_key(instance)
-    rank = CLASS_RANK_MAP[instance.object_type]
-    return bytes([rank]) + hash_label(instance.label) + key
+    return label_to_label_index_key(instance.label, instance.object_type,
+        key)
+
+def label_to_label_index_key(label, object_type, key):
+    '''Label-index key from raw row parts (label, type, instance key);
+    instance_to_label_index_key for rows not loaded as instances.'''
+    rank = CLASS_RANK_MAP[object_type]
+    return bytes([rank]) + hash_label(label) + key
 
 def label_to_label_index_prefix(label, object_type):
     rank = CLASS_RANK_MAP[object_type]
