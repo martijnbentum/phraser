@@ -56,6 +56,11 @@ def key_to_rank(key):
     '''
     return key[9]
 
+def key_to_start(key):
+    '''Get start time (offset) from a segment LMDB key.
+    '''
+    return struct.unpack_from('>I', key, 10)[0]
+
 
 
 

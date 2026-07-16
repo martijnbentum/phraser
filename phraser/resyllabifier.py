@@ -29,7 +29,7 @@ def apply_new_syllable_boundaries(word, phone_groups, phone_types=None,
     new_syllables = []
     for old_syllable, phones in zip(old_syllables, phone_groups):
         new_syllables.append(_rebuild_syllable(old_syllable, phones, phone_types))
-    word._children, word._related = new_syllables, []   # pair is load-bearing
+    word._children, word._overlapping = new_syllables, []   # pair is load-bearing
     if update_database:
         _save_new_syllables(new_syllables)
         _delete_old_syllables(old_syllables)
@@ -112,7 +112,7 @@ def _rebuild_syllable(old_syllable, phones, phone_types):
         phone.parent_start = syllable.start
         phone._parent = syllable
     assign_syllable_positions_to_phones(phones, phone_types=phone_types)
-    syllable._children, syllable._related = phones, []
+    syllable._children, syllable._overlapping = phones, []
     return syllable
 
 

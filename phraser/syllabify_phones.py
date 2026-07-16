@@ -43,7 +43,7 @@ def syllabify_word(word, phone_types=None):
         syllable.add_parent(word)     # word + phrase
         new_syllables.append(syllable)
 
-    word._children, word._related = new_syllables, []   # load-bearing: not on disk
+    word._children, word._overlapping = new_syllables, []   # load-bearing: not on disk
     return new_syllables
 
 
@@ -75,10 +75,9 @@ def syllabify_phrase(phrase, phone_types=None):
             syls_by_word.get(old_word.identifier, []), cursor)
         cursor = word.end                               # next empty word sits here
         new_words.append(word)
-    # drop the old layer in one step; the empty caches also stop
-    # _cache_child from re-merging the persisted children via child_keys
-    phrase._children, phrase._related = [], []
-    phrase.add_children(new_words)
+    # drop the old word layer in one step; the persisted words stay on
+    # disk until the old tree is deleted
+    phrase.replace_children(new_words)
     return new_words
 
 
@@ -128,9 +127,7 @@ def syllabify_phones(phones, max_pause=500, phone_types=None):
                 syls_by_word.get(old_word.identifier, []), cursor)
             cursor = word.end
             words.append(word)
-        # seed empty caches first: child_keys scans the persisted range
-        phrase._children, phrase._related = [], []
-        phrase.add_children(words)
+        phrase.replace_children(words)
         phrase.label = ' '.join(w.label for w in words)
         new_phrases.append(phrase)
     return new_phrases
@@ -143,7 +140,7 @@ def _build_syllable(store, group, phone_types):
         label=' '.join(p.label for p in group),
         start=min(p.start for p in group), end=max(p.end for p in group),
         audio_id=group[0].audio_id, speaker_id=group[0].speaker_id)
-    syllable._children, syllable._related = group, []   # fill before wiring
+    syllable._children, syllable._overlapping = group, []   # fill before wiring
     for phone in group: phone.add_parent(syllable)
     assign_syllable_positions_to_phones(group, phone_types=phone_types)
     return syllable
@@ -162,7 +159,7 @@ def _rebuild_word(phrase, old_word, syllables, cursor):
     for field, value in old_word.__dict__.items():      # carry persisted metadata
         if field in models.Word.METADATA_FIELDS:        # set ones only (skips the
             setattr(word, field, value)                 # derived 'overlap' property)
-    word._children, word._related = syllables, []
+    word._children, word._overlapping = syllables, []
     for syllable in syllables:
         syllable.add_parent(word)
     return word

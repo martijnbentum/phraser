@@ -213,6 +213,7 @@ class Store:
         itk = key_helper.instance_to_key
         pi = struct_value.pack_instance
         keys = [itk(obj) for obj in objs]
+        self._check_intra_batch_keys(objs, keys)
         values = [pi(obj) for obj in objs]
         # print('update dict done', time.time() - start)
         try: self.DB.write_many(keys, values,
@@ -238,6 +239,23 @@ class Store:
         # print('done', time.time() - start)
         self._handle_label_links(objs)
 
+    def _check_intra_batch_keys(self, objs, keys):
+        '''Reject duplicate keys within one batch. DB.write_many only
+        checks keys against the database; within a transaction a
+        repeated key silently keeps the last value written, so one
+        object would overwrite the other without an error.'''
+        seen = {}
+        for obj, key in zip(objs, keys):
+            other = seen.get(key)
+            if other is None:
+                seen[key] = obj
+                continue
+            m = 'duplicate key in batch: '
+            m += f'{type(obj).__name__} {obj.identifier.hex()} '
+            m += 'appears twice (the same object listed twice, or two '
+            m += 'loaded copies of one persisted object); written nothing.'
+            raise ValueError(m)
+
     def save_phrase_trees(self, phrases, overwrite = False):
         '''Persist staged phrase trees (each phrase and its descendants).
 
@@ -246,8 +264,11 @@ class Store:
 
         Every tree is validated via Phrase.validate_tree (one speaker
         across the whole tree, no persisted segment changing its
-        audio), and no two phrases in the batch may share the same
-        (audio_id, speaker_id, start) identity. The trees are flattened
+        audio), no two phrases in the batch may share the same
+        (audio_id, speaker_id, start) identity, and no phrase may
+        overlap a same-speaker phrase, in the batch or already
+        persisted on the same audio (a phrase's own persisted row is
+        exempt, so overwrite re-saves pass). The trees are flattened
         via Phrase.items and written through save_many; nothing is
         written when any validation fails.
         '''
@@ -274,6 +295,61 @@ class Store:
                 m += f'{phrase.speaker_id}, {phrase.start})'
                 raise ValueError(m)
             seen.add(phrase)
+        self._check_same_speaker_overlap(phrases)
+
+    def _check_same_speaker_overlap(self, phrases):
+        '''One speaker, one phrase at a time: reject a phrase that
+        overlaps a same-speaker phrase, in the batch or already
+        persisted on the same audio. A phrase's own persisted row
+        (identical key) is exempt, so overwrite re-saves pass. Two
+        persisted rows overlapping each other are legacy data and do
+        not block an unrelated save.'''
+        groups = {}
+        for phrase in phrases:
+            group_key = (phrase.audio_id, phrase.speaker_id)
+            groups.setdefault(group_key, []).append(phrase)
+        persisted = self._persisted_phrases_by_group(groups)
+        for group_key, group in groups.items():
+            entries = [(p, True) for p in group]
+            entries += [(p, False) for p in persisted.get(group_key, [])]
+            entries.sort(key=lambda entry: entry[0].start)
+            widest, widest_in_batch = entries[0]
+            for phrase, in_batch in entries[1:]:
+                overlaps = phrase.start < widest.end
+                if overlaps and (in_batch or widest_in_batch):
+                    m = 'same-speaker overlapping phrases: '
+                    m += f'{phrase.label!r} [{phrase.start}, {phrase.end}] '
+                    m += f'overlaps {widest.label!r} '
+                    m += f'[{widest.start}, {widest.end}]; written nothing.'
+                    raise ValueError(m)
+                if phrase.end > widest.end:
+                    widest, widest_in_batch = phrase, in_batch
+
+    def _persisted_phrases_by_group(self, groups):
+        '''Load the persisted phrases that could overlap the batch,
+        grouped by (audio_id, speaker_id). Only phrases starting
+        before the audio's last batch end can overlap (keys scan in
+        start order); the batch phrases' own rows are skipped by key.'''
+        own_keys = set()
+        max_end_by_audio = {}
+        for (audio_id, _), group in groups.items():
+            for phrase in group:
+                own_key = key_helper.instance_to_key(phrase)
+                own_keys.add(own_key)
+            end = max(phrase.end for phrase in group)
+            if end > max_end_by_audio.get(audio_id, 0):
+                max_end_by_audio[audio_id] = end
+        persisted = {}
+        for audio_id, max_end in max_end_by_audio.items():
+            keys = []
+            for key in self.DB.audio_id_to_child_keys(audio_id, 'Phrase'):
+                if key_helper.key_to_start(key) >= max_end: break
+                if key in own_keys: continue
+                keys.append(key)
+            for phrase in self.load_many(keys):
+                group_key = (audio_id, phrase.speaker_id)
+                persisted.setdefault(group_key, []).append(phrase)
+        return persisted
 
     def _handle_label_links(self, objs):
         '''after saving objects, write label index links for all objects with

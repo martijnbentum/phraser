@@ -74,11 +74,11 @@ class TestSegmentLinking(unittest.TestCase):
             exists = self.store.DB.key_exists(segment.key)
             self.assertFalse(exists)
 
-    def test_related_stays_consistent_after_linking(self):
-        '''related is an empty list after linking, never an error.'''
+    def test_overlapping_stays_consistent_after_linking(self):
+        '''overlapping is an empty list after linking, never an error.'''
         tree = self._build_staged_tree()
         for segment in [tree.phrase] + tree.words + tree.syllables:
-            self.assertEqual(segment.related, [])
+            self.assertEqual(segment.overlapping, [])
 
     # ------------------ add_children atomicity ------------------
 
@@ -191,7 +191,7 @@ class TestSegmentLinking(unittest.TestCase):
         word_children = word.children
         self.assertEqual(len(word_children), 1)
         self.assertIs(word_children[0], syllable)
-        self.assertEqual(word.related, [])
+        self.assertEqual(word.overlapping, [])
         self.assertIs(syllable.parent, word)
 
     # Regression (review finding 3): phrase refs gained at link time
@@ -238,6 +238,60 @@ class TestSegmentLinking(unittest.TestCase):
         leaf = phones[0]
         self.assertEqual(leaf.syllable.label, 'hel')
         self.assertEqual(leaf.word.label, 'hello')
+
+    # ------------------ ownership filter / replace_children ------------------
+
+    def test_foreign_parent_same_speaker_lands_in_overlapping(self):
+        '''A same-speaker segment owned by another parent is not adopted.'''
+        mine = self._create_phrase(label='mine', start=0, end=1000)
+        my_word = self.store.create(Word, label='my', start=0, end=500,
+            **self.identity)
+        mine.add_children([my_word])
+        other = self._create_phrase(label='other', start=500, end=1500)
+        other_word = self.store.create(Word, label='their', start=500,
+            end=1000, **self.identity)
+        other.add_children([other_word])
+        self.store.save_many([mine, my_word, other, other_word])
+        self.store._cache.clear()
+
+        loaded = self.store.load(mine.key)
+        self.assertEqual([w.label for w in loaded.children], ['my'])
+        self.assertEqual([w.label for w in loaded.overlapping], ['their'])
+
+    def test_replace_children_rebuild_excludes_persisted_layer(self):
+        '''Rebuilding via replace_children keeps the old persisted word
+        layer out of the staged tree; the old rows stay on disk.'''
+        tree = self._build_staged_tree()
+        self.store.save_phrase_trees([tree.phrase])
+        self.store._cache.clear()
+
+        loaded = self.store.load(tree.phrase.key)
+        old_word_keys = [w.key for w in loaded.words]
+        new_word = self.store.create(Word, label='helloworld', start=0,
+            end=1000, **self.identity)
+        loaded.replace_children([new_word])
+        children = loaded.children
+        self.assertEqual(len(children), 1)
+        self.assertIs(children[0], new_word)
+        items = loaded.items
+        item_count = len(items)
+        self.assertEqual(item_count, 2)
+        self.assertIs(items[0], loaded)
+        self.assertIs(items[1], new_word)
+        loaded.validate_tree()
+        for key in old_word_keys:
+            exists = self.store.DB.key_exists(key)
+            self.assertTrue(exists)
+
+    def test_replace_children_with_invalid_child_keeps_old_children(self):
+        '''A failing replace_children leaves the staged view untouched.'''
+        tree = self._build_staged_tree()
+        phone = self.store.create(Phone, label='x', start=0, end=100,
+            **self.identity)
+        with self.assertRaises(TypeError):
+            tree.phrase.replace_children([phone])
+        self.assertEqual([w.label for w in tree.phrase.children],
+            ['hello', 'world'])
 
     # ------------------ Phrase.items / save_phrase_trees ------------------
 
@@ -308,6 +362,87 @@ class TestSegmentLinking(unittest.TestCase):
             self.store.save_phrase_trees([first, second])
         exists = self.store.DB.key_exists(first.key)
         self.assertFalse(exists)
+
+    def test_save_many_rejects_duplicate_keys_in_batch(self):
+        '''The same key twice in one batch aborts before writing.'''
+        word = self.store.create(Word, label='twice', start=0, end=500,
+            **self.identity)
+        with self.assertRaisesRegex(ValueError, 'duplicate key in batch'):
+            self.store.save_many([word, word])
+        exists = self.store.DB.key_exists(word.key)
+        self.assertFalse(exists)
+
+    def test_save_phrase_trees_rejects_shared_descendant_key(self):
+        '''Two loaded copies of one word cannot be saved in one batch:
+        DB.write_many would silently keep only the last copy's row.'''
+        tree = self._build_staged_tree()
+        self.store.save_phrase_trees([tree.phrase])
+        self.store._cache.clear()
+        loaded = self.store.load(tree.phrase.key)
+        first_copy = loaded.words[0]
+        self.store._cache.clear()
+        second_copy = self.store.load(first_copy.key)
+        other = self._create_phrase(label='other', start=2000, end=3000)
+        second_copy.add_parent(other)
+        message = 'duplicate key in batch'
+        with self.assertRaisesRegex(ValueError, message):
+            self.store.save_phrase_trees([loaded, other], overwrite=True)
+        exists = self.store.DB.key_exists(other.key)
+        self.assertFalse(exists)
+
+    def test_save_phrase_trees_rejects_same_speaker_overlap_in_batch(self):
+        '''Two same-speaker overlapping phrases cannot share a batch.'''
+        first = self._create_phrase(label='first', start=0, end=1000)
+        second = self._create_phrase(label='second', start=500, end=1500)
+        message = 'same-speaker overlapping phrases'
+        with self.assertRaisesRegex(ValueError, message):
+            self.store.save_phrase_trees([first, second])
+        exists = self.store.DB.key_exists(first.key)
+        self.assertFalse(exists)
+
+    def test_save_phrase_trees_rejects_overlap_with_persisted(self):
+        '''A phrase overlapping a same-speaker persisted phrase is
+        rejected, also across separate save calls.'''
+        first = self._create_phrase(label='first', start=0, end=1000)
+        self.store.save_phrase_trees([first])
+        second = self._create_phrase(label='second', start=500, end=1500)
+        message = 'same-speaker overlapping phrases'
+        with self.assertRaisesRegex(ValueError, message):
+            self.store.save_phrase_trees([second])
+        exists = self.store.DB.key_exists(second.key)
+        self.assertFalse(exists)
+
+    def test_save_phrase_trees_rejects_overlap_inside_persisted(self):
+        '''A phrase inside an earlier-starting persisted phrase is
+        rejected: the scan window must reach earlier starts.'''
+        first = self._create_phrase(label='first', start=0, end=2000)
+        self.store.save_phrase_trees([first])
+        inner = self._create_phrase(label='inner', start=500, end=800)
+        message = 'same-speaker overlapping phrases'
+        with self.assertRaisesRegex(ValueError, message):
+            self.store.save_phrase_trees([inner])
+
+    def test_save_phrase_trees_own_row_is_overlap_exempt(self):
+        '''Re-saving a persisted phrase does not overlap itself.'''
+        tree = self._build_staged_tree()
+        self.store.save_phrase_trees([tree.phrase])
+        self.store._cache.clear()
+        loaded = self.store.load(tree.phrase.key)
+        self.store.save_phrase_trees([loaded], overwrite=True)
+
+    def test_save_phrase_trees_allows_other_speaker_overlap(self):
+        '''Overlap between different speakers is legitimate speech.'''
+        other_speaker = self.store.create(Speaker, name='spk2',
+            dataset='test', save=True)
+        first = self._create_phrase(label='first', start=0, end=1000)
+        second = self.store.create(Phrase, label='second', start=0,
+            end=1000, audio_id=self.audio.identifier,
+            speaker_id=other_speaker.identifier,
+            filename='linking.TextGrid')
+        self.store.save_phrase_trees([first, second])
+        for phrase in (first, second):
+            exists = self.store.DB.key_exists(phrase.key)
+            self.assertTrue(exists)
 
     def test_save_phrase_trees_rejects_non_phrase(self):
         '''Only Phrase objects are accepted.'''

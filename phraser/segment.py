@@ -205,37 +205,43 @@ class Segment:
         return self._parent
 
     @property
-    def child_keys(self):
-        if self.allowed_child_type is None:
-            self._child_keys = None
-            return []
+    def _candidate_child_keys(self):
+        '''Keys from a time-range candidate scan: segments of the child
+        class in the same audio within [start, end]. NOT an ownership
+        list — a candidate may belong to another parent. Only the
+        children property consumes this, classifying the loaded
+        candidates.'''
+        if self.allowed_child_type is None: return []
         return list(self.store.DB.instance_to_child_keys(self))
 
     @property
     def children(self):
-        """Return the list of child segments."""
+        """Return the list of child segments this segment owns."""
         if self.allowed_child_type is None: return []
         if hasattr(self, '_children'): return self._children
-        self._children, self._related = [], []
+        self._children, self._overlapping = [], []
         # unbound segments have no DB children to merge with
         if getattr(self, '_store', None) is None: return self._children
-        if self.child_keys:
-            children = self.store.load_many(self.child_keys)
-
+        candidate_keys = self._candidate_child_keys
+        if candidate_keys:
+            candidates = self.store.load_many(candidate_keys)
         else:
-            children = []
-        sid = self.speaker_id
-        for child in children:
-            if child.speaker_id == sid: self._children.append(child)
-            else: self._related.append(child)
+            candidates = []
+        for candidate in candidates:
+            if candidate.parent_id == self.identifier:
+                self._children.append(candidate)
+            else: self._overlapping.append(candidate)
         return self._children
 
     @property
-    def related(self):
-        if hasattr(self, '_related'): return self._related
+    def overlapping(self):
+        '''Segments of the child class in this segment's time range that
+        belong to another parent, e.g. another speaker's overlapping
+        speech.'''
+        if hasattr(self, '_overlapping'): return self._overlapping
         if self.allowed_child_type is None: return []
         _ = self.children
-        return self._related
+        return self._overlapping
 
 
     @property
@@ -363,6 +369,19 @@ class Segment:
         for child in children:
             child.add_parent(self)
 
+    def replace_children(self, children):
+        '''Displace all current children — staged or persisted — and
+        link these instead. Staging-only, like the whole linking
+        family: persisted former children remain on disk; delete the
+        old tree separately before saving a rebuilt one.'''
+        children = list(children)
+        # validate before displacing, so a bad batch leaves the
+        # current staged view intact
+        for child in children:
+            child._validate_parent_link(self)
+        self._children, self._overlapping = [], []
+        self.add_children(children)
+
     def _cache_child(self, child):
         children = self.children
         if any(known is child for known in children): return
@@ -427,7 +446,7 @@ class Segment:
             if not self.audio: return []
             items = self.audio.phrases
         else:
-            items = self.parent.related
+            items = self.parent.overlapping
         if items is None: return []
         overlapping = []
         for item in items:
