@@ -306,6 +306,7 @@ class Segment:
 
     def _validate_for_save(self):
         self._validate_audio_assignment(self.audio_id)
+        self._validate_speaker_assignment(self.speaker_id)
 
     def _validate_audio_assignment(self, audio_id):
         if not hasattr(self, '_key'): return
@@ -313,6 +314,17 @@ class Segment:
         if stored_audio_id == audio_id: return
         message = f'{self.object_type}.audio_id cannot change after '
         message += 'persistence; assign audio before saving.'
+        raise ValueError(message)
+
+    def _validate_speaker_assignment(self, speaker_id):
+        '''Mirror of the audio guard for the identity field the key
+        does not carry: speaker_id lives only in the value, so the
+        store stamps _persisted_speaker_id at load and save and this
+        compares against it.'''
+        if not hasattr(self, '_persisted_speaker_id'): return
+        if self._persisted_speaker_id == speaker_id: return
+        message = f'{self.object_type}.speaker_id cannot change after '
+        message += 'persistence; rebuild and replace instead.'
         raise ValueError(message)
 
     # ------------------ hierarchy helpers ------------------

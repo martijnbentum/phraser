@@ -567,6 +567,35 @@ class TestSegmentLinking(unittest.TestCase):
             exists = self.store.DB.key_exists(segment.key)
             self.assertFalse(exists)
 
+    def test_speaker_cannot_change_after_persistence(self):
+        '''A loaded segment with a force-mutated speaker_id is rejected
+        by every save path: speaker_id is value-only (the key carries
+        audio, not speaker), so the guard compares a load-time stamp.'''
+        tree = self._build_staged_tree()
+        self.store.save_phrase_trees([tree.phrase])
+        self.store._cache.clear()
+        loaded = self.store.load(tree.words[0].key)
+        loaded.speaker_id = b'\x08' * 8
+        message = 'speaker_id cannot change after persistence'
+        with self.assertRaisesRegex(ValueError, message):
+            loaded.save(overwrite=True)
+        with self.assertRaisesRegex(ValueError, message):
+            self.store.save_many([loaded], overwrite=True)
+        with self.assertRaisesRegex(ValueError, message):
+            self.store.update(loaded.key, loaded)
+        exists = self.store.DB.key_exists(loaded.key)
+        self.assertTrue(exists)
+
+    def test_speaker_guard_also_stamps_fresh_saves(self):
+        '''The stamp is set at save time too, not only at load.'''
+        word = self.store.create(Word, label='w', start=0, end=100,
+            **self.identity)
+        word.save()
+        word.speaker_id = b'\x08' * 8
+        message = 'speaker_id cannot change after persistence'
+        with self.assertRaisesRegex(ValueError, message):
+            word.save(overwrite=True)
+
     # ------------------ helpers ------------------
 
     def _create_phrase(self, label='hello world', start=0, end=1000):

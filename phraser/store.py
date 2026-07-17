@@ -195,7 +195,7 @@ class Store:
                 print(fail_message)
                 return
             else: raise e
-        obj._key = key
+        stamp_persisted_identity(obj, key)
         self._cache[key] = obj
         self.save_counter[obj.object_type] += 1
         if key not in self.save_key_counter:
@@ -237,7 +237,7 @@ class Store:
         '''Post-write bookkeeping: remember persisted keys, cache the
         objects, count the saves.'''
         for obj, key in zip(objs, keys):
-            obj._key = key
+            stamp_persisted_identity(obj, key)
         self._cache.update(zip(keys, objs))
         for key in keys:
             if key not in self.save_key_counter:
@@ -507,9 +507,20 @@ def value_key_to_instance(store, value, key):
     obj = cls.__new__(cls)
     data = struct_value.unpack_instance(object_type, value)
     data.update(info)
-    data['_key'] = key
     obj.__dict__.update(data)
+    stamp_persisted_identity(obj, key)
     return obj
+
+
+def stamp_persisted_identity(obj, key):
+    '''Remember the persisted identity snapshot on load and save:
+    _key carries the audio_id; speaker_id is value-only, so it gets
+    its own stamp. Segment._validate_for_save compares both on later
+    saves.'''
+    obj._key = key
+    speaker_id = getattr(obj, 'speaker_id', None)
+    if speaker_id is not None:
+        obj._persisted_speaker_id = speaker_id
 
 
     
