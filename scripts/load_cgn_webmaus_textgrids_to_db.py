@@ -7,7 +7,7 @@ from phraser import Store
 from phraser import textgrid_loader as load_to_db
 from phraser.utils import seconds_to_miliseconds
 
-from . import process_cgn
+from . import prepare_cgn_webmaus_import
 
 def get_filenames_of_audios_in_db(refresh_db = True, store=None):
     if store is None: store = Store()
@@ -45,7 +45,7 @@ def save_audio_to_db(audio_infos = None, refresh_db = True, store=None):
     if store is None:
         raise ValueError('store is required')
     if audio_infos is None:
-        audio_infos = process_cgn.make_or_load_audio_info()
+        audio_infos = prepare_cgn_webmaus_import.make_or_load_audio_info()
     skipped, added, audios = [], [], []
     fn = get_filenames_of_audios_in_db(refresh_db=refresh_db,
         store=store)
@@ -73,7 +73,7 @@ def save_cgn_speakers_to_db(speaker_infos = None, refresh_db = True,
     if store is None:
         raise ValueError('store is required')
     if speaker_infos is None:
-        speaker_infos = process_cgn.make_or_load_speaker_info()
+        speaker_infos = prepare_cgn_webmaus_import.make_or_load_speaker_info()
     skipped, added, speakers = [], [], []
     speaker_names = get_cgn_speaker_names_in_db(refresh_db=refresh_db,
         store=store)

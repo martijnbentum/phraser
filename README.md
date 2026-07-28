@@ -63,6 +63,7 @@ This project has required Git-based runtime dependencies:
 - `ssh-audio-play`
 - `webmaus`
 - `frame`
+- `phone-mapper`
 
 They are declared in [`pyproject.toml`](./pyproject.toml). The current package
 configuration uses `git+https` URLs, so installation requires:
@@ -176,6 +177,43 @@ store.refresh_query_roots()
 `"replace"`, and `"upsert"`. Policies other than `"append"` run an existence
 check using phrase identity `(audio_id, speaker_id, start)` and require an
 existing `Audio` object.
+
+### Build a CGN database from original AWD alignments
+
+CGN has two separate import paths:
+
+- `scripts/build_cgn_awd_textgrid_db.py` builds a fresh database directly from
+  the original paired `.ort` phrase annotations and `.awd` word/phone
+  alignments. It has no dependency on the WebMAUS CGN scripts or
+  `phraser.textgrid_loader`.
+- `scripts/prepare_cgn_webmaus_import.py` and
+  `scripts/load_cgn_webmaus_textgrids_to_db.py` are the legacy path for
+  WebMAUS-generated TextGrids.
+
+The AWD builder takes phrase boundaries from the speaker tiers in `.ort`,
+word and phone timing from the matching speaker, `_FON`, and `_SEG` tiers in
+`.awd`, and maps CGN phones to IPA with `phone_mapper.cgn.cgn_to_ipa`.
+Syllable tiers are derived during import with `dutch_syllabifier`.
+
+The target database is always explicit. The builder refuses the configured
+legacy CGN database and refuses any other non-empty target unless `--resume`
+is supplied:
+
+```bash
+.venv/bin/python scripts/build_cgn_awd_textgrid_db.py \
+    --ort-dir data/ort \
+    --awd-dir data/awd \
+    --audio-filenames data/audio_filenames.txt \
+    --speaker-file /path/to/CGN/data/meta/text/speakers.txt \
+    --db-path data/cgn_awd_lmdb \
+    --report-file data/cgn_awd_import_report.json
+```
+
+The import saves one recording at a time. `--resume` skips a recording only
+when its complete staged phrase signature matches the existing recording; a
+partial or changed recording is reported as an error. Use `--strict-pairs`
+to fail when the ORT and AWD directories do not contain the same recording
+stems.
 
 ### Query loaded objects
 

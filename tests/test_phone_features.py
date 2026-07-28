@@ -1,6 +1,8 @@
 import types
 import unittest
 
+from phone_mapper.cgn import cgn_to_ipa
+
 from phraser import phone_features
 from phraser.segment import Phone
 from phraser.phone_types import PHONE_TYPES
@@ -29,6 +31,20 @@ class TestLoadIpaFeatures(unittest.TestCase):
             if kind in ('vowel', 'consonant') and label in data:
                 self.assertEqual(data[label]['type'], kind, label)
 
+    def test_covers_cgn_to_ipa_values(self):
+        data = phone_features.load_ipa_features()
+        mapped = set(cgn_to_ipa.values())
+        covered = mapped.issubset(data)
+        missing = mapped - set(data)
+        self.assertTrue(covered, missing)
+
+    def test_cgn_to_ipa_values_have_matching_phone_types(self):
+        data = phone_features.load_ipa_features()
+        for label in set(cgn_to_ipa.values()):
+            phone_type = PHONE_TYPES.get(label)
+            self.assertIn(phone_type, ('vowel', 'consonant'), label)
+            self.assertEqual(PHONE_TYPES[label], data[label]['type'], label)
+
     def test_entries_have_feature_matrix(self):
         for label, info in phone_features.load_ipa_features().items():
             self.assertIn('type', info, label)
@@ -54,6 +70,26 @@ class TestGetPhoneFeatures(unittest.TestCase):
         self.assertIsNone(phone_features.get_phone_features(''))
         self.assertIsNone(phone_features.get_phone_features('(..)'))
         self.assertIsNone(phone_features.get_phone_features('nope'))
+
+    def test_cgn_specific_consonant_features(self):
+        info = phone_features.get_phone_features('g')
+        self.assertEqual(info['type'], 'consonant')
+        self.assertEqual(info['place'], 'velar')
+        self.assertEqual(info['manner'], 'plosive')
+        self.assertEqual(info['voicing'], 'voiced')
+
+    def test_cgn_specific_vowel_features(self):
+        central = phone_features.get_phone_features('ʉ')
+        self.assertEqual(central['backness'], 'central')
+        self.assertEqual(central['rounding'], 'rounded')
+        for label in ('iː', 'uː', 'yː', 'ɒː', 'ɑ̃ː', 'ɒ̃ː'):
+            info = phone_features.get_phone_features(label)
+            self.assertEqual(info['length'], 'long', label)
+            self.assertEqual(info['features']['long'], '+', label)
+        for label in ('œ̃', 'æ̃', 'ɑ̃ː', 'ɒ̃ː'):
+            info = phone_features.get_phone_features(label)
+            self.assertEqual(info['nasality'], 'nasal', label)
+            self.assertEqual(info['features']['nasal'], '+', label)
 
 
 class TestFeatureVector(unittest.TestCase):

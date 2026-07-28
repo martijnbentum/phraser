@@ -36,6 +36,7 @@ CONSONANTS = [
     ('t', 'alveolar', 'plosive', False),
     ('d', 'alveolar', 'plosive', True),
     ('k', 'velar', 'plosive', False),
+    ('g', 'velar', 'plosive', True),
     ('ɡ', 'velar', 'plosive', True),          # ɡ
     ('ʔ', 'glottal', 'plosive', False),       # ʔ
     ('m', 'bilabial', 'nasal', True),
@@ -66,38 +67,48 @@ CONSONANTS = [
     ('ʋ', 'labiodental', 'approximant', True),# ʋ
 ]
 
-# (symbol, height, backness, rounded, long, tense)
+# (symbol, height, backness, rounded, long, tense, nasal)
 # height: close, near-close, close-mid, mid, open-mid, near-open, open
 # backness: front, central, back
 VOWELS = [
-    ('i', 'close', 'front', False, False, True),
-    ('y', 'close', 'front', True, False, True),
-    ('ɨ', 'close', 'central', False, False, True),   # ɨ
-    ('u', 'close', 'back', True, False, True),
-    ('ɪ', 'near-close', 'front', False, False, False),# ɪ
-    ('ʏ', 'near-close', 'front', True, False, False), # ʏ
-    ('ʊ', 'near-close', 'back', True, False, False),  # ʊ
-    ('e', 'close-mid', 'front', False, False, True),
-    ('ø', 'close-mid', 'front', True, False, True),   # ø
-    ('ə', 'mid', 'central', False, False, False),     # ə
-    ('o', 'close-mid', 'back', True, False, True),
-    ('ɛ', 'open-mid', 'front', False, False, False),  # ɛ
-    ('œ', 'open-mid', 'front', True, False, False),   # œ
-    ('ɔ', 'open-mid', 'back', True, False, False),    # ɔ
-    ('ʌ', 'open-mid', 'back', False, False, False),   # ʌ
-    ('æ', 'near-open', 'front', False, False, False), # æ
-    ('ɐ', 'near-open', 'central', False, False, False),# ɐ
-    ('a', 'open', 'front', False, False, False),
-    ('ɑ', 'open', 'back', False, False, False),       # ɑ
-    ('ɒ', 'open', 'back', True, False, False),        # ɒ
+    ('i', 'close', 'front', False, False, True, False),
+    ('y', 'close', 'front', True, False, True, False),
+    ('ɨ', 'close', 'central', False, False, True, False),
+    ('ʉ', 'close', 'central', True, False, False, False),
+    ('u', 'close', 'back', True, False, True, False),
+    ('ɪ', 'near-close', 'front', False, False, False, False),
+    ('ʏ', 'near-close', 'front', True, False, False, False),
+    ('ʊ', 'near-close', 'back', True, False, False, False),
+    ('e', 'close-mid', 'front', False, False, True, False),
+    ('ø', 'close-mid', 'front', True, False, True, False),
+    ('ə', 'mid', 'central', False, False, False, False),
+    ('o', 'close-mid', 'back', True, False, True, False),
+    ('ɛ', 'open-mid', 'front', False, False, False, False),
+    ('œ', 'open-mid', 'front', True, False, False, False),
+    ('ɔ', 'open-mid', 'back', True, False, False, False),
+    ('ʌ', 'open-mid', 'back', False, False, False, False),
+    ('æ', 'near-open', 'front', False, False, False, False),
+    ('ɐ', 'near-open', 'central', False, False, False, False),
+    ('a', 'open', 'front', False, False, False, False),
+    ('ɑ', 'open', 'back', False, False, False, False),
+    ('ɒ', 'open', 'back', True, False, False, False),
     # Dutch/CGN long vowels
-    ('aː', 'open', 'front', False, True, True),       # aː
-    ('eː', 'close-mid', 'front', False, True, True),  # eː
-    ('oː', 'close-mid', 'back', True, True, True),    # oː
-    ('øː', 'close-mid', 'front', True, True, True),  # øː
-    ('œː', 'open-mid', 'front', True, True, False), # œː
-    ('ɛː', 'open-mid', 'front', False, True, False),# ɛː
-    ('ɔː', 'open-mid', 'back', True, True, False),  # ɔː
+    ('iː', 'close', 'front', False, True, True, False),
+    ('yː', 'close', 'front', True, True, True, False),
+    ('uː', 'close', 'back', True, True, True, False),
+    ('aː', 'open', 'front', False, True, True, False),
+    ('eː', 'close-mid', 'front', False, True, True, False),
+    ('oː', 'close-mid', 'back', True, True, True, False),
+    ('øː', 'close-mid', 'front', True, True, True, False),
+    ('œː', 'open-mid', 'front', True, True, False, False),
+    ('ɛː', 'open-mid', 'front', False, True, False, False),
+    ('ɔː', 'open-mid', 'back', True, True, False, False),
+    ('ɒː', 'open', 'back', True, True, False, False),
+    # CGN nasal vowels
+    ('œ̃', 'open-mid', 'front', True, False, False, True),
+    ('æ̃', 'near-open', 'front', False, False, False, True),
+    ('ɑ̃ː', 'open', 'back', False, True, False, True),
+    ('ɒ̃ː', 'open', 'back', True, True, False, True),
 ]
 
 # (symbol, start_vowel_symbol, glide_to_symbol) ; binary features taken from
@@ -171,7 +182,7 @@ def consonant_features(place, manner, voiced):
     return f
 
 
-def vowel_features(height, backness, rounded, is_long, tense):
+def vowel_features(height, backness, rounded, is_long, tense, nasal=False):
     f = {k: '-' for k in FEATURE_ORDER}
     f['syllabic'] = '+'
     f['long'] = '+' if is_long else '-'
@@ -180,7 +191,7 @@ def vowel_features(height, backness, rounded, is_long, tense):
     f['continuant'] = '+'
     f['delayed_release'] = '0'
     f['approximant'] = '+'
-    f['nasal'] = '-'
+    f['nasal'] = '+' if nasal else '-'
     f['voice'] = '+'
     f['spread_glottis'] = '-'
     f['constricted_glottis'] = '-'
@@ -212,18 +223,21 @@ def build():
             'features': consonant_features(place, manner, voiced),
         }
     vowel_index = {}
-    for symbol, height, backness, rounded, is_long, tense in VOWELS:
-        vowel_index[symbol] = (height, backness, rounded, is_long, tense)
+    for symbol, height, backness, rounded, is_long, tense, nasal in VOWELS:
+        vowel_index[symbol] = (height, backness, rounded, is_long, tense,
+            nasal)
         data[symbol] = {
             'type': 'vowel',
             'height': height,
             'backness': backness,
             'rounding': 'rounded' if rounded else 'unrounded',
             'length': 'long' if is_long else 'short',
-            'features': vowel_features(height, backness, rounded, is_long, tense),
+            'nasality': 'nasal' if nasal else 'oral',
+            'features': vowel_features(height, backness, rounded, is_long,
+                tense, nasal),
         }
     for symbol, start, glide_to in DIPHTHONGS:
-        height, backness, rounded, is_long, tense = vowel_index[start]
+        height, backness, rounded, is_long, tense, nasal = vowel_index[start]
         data[symbol] = {
             'type': 'vowel',
             'diphthong': True,
@@ -232,7 +246,9 @@ def build():
             'backness': backness,
             'rounding': 'rounded' if rounded else 'unrounded',
             'length': 'long' if is_long else 'short',
-            'features': vowel_features(height, backness, rounded, is_long, tense),
+            'nasality': 'nasal' if nasal else 'oral',
+            'features': vowel_features(height, backness, rounded, is_long,
+                tense, nasal),
         }
     return data
 
