@@ -1,6 +1,7 @@
 import contextlib
 import inspect
 import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -60,6 +61,27 @@ def make_pair(special=False):
     segment_tier = make_tier('N00001_SEG', segments)
     awd.append(segment_tier)
     return ort, awd
+
+
+def write_test_corpus(root, stems):
+    '''Write a small CGN-shaped source tree.'''
+    ort_dir = root / 'ort'
+    awd_dir = root / 'awd'
+    audio_dir = root / 'audio'
+    nested_audio = audio_dir / 'nl'
+    ort_dir.mkdir()
+    awd_dir.mkdir()
+    nested_audio.mkdir(parents=True)
+    for stem in stems:
+        ort, awd = make_pair()
+        ort.write(str(ort_dir / f'{stem}.ort'))
+        awd.write(str(awd_dir / f'{stem}.awd'))
+        (nested_audio / f'{stem}.wav').touch()
+    speakers = root / 'speakers.txt'
+    speakers.write_text(
+        'ID\tsex\tbirthYear\tresRegion\n'
+        'N00001\tsex1\t1970\tUtrecht\n', encoding='utf-8')
+    return audio_dir, awd_dir, ort_dir, speakers
 
 
 class TestTierParsing(unittest.TestCase):
@@ -175,77 +197,86 @@ class TestDatabaseBuild(unittest.TestCase):
         self.assertEqual(parameters['report_file'].default,
             builder.cgn_report_file)
 
-    def test_pairs_annotations_recursively_by_bare_stem(self):
+    def test_collects_audio_and_transcriptions_recursively_by_stem(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            audio_dir = root / 'audio'
             ort_dir = root / 'ort'
             awd_dir = root / 'awd'
+            audio_nested = audio_dir / 'third'
             ort_nested = ort_dir / 'one'
             awd_nested = awd_dir / 'another'
+            audio_nested.mkdir(parents=True)
             ort_nested.mkdir(parents=True)
             awd_nested.mkdir(parents=True)
+            audio = audio_nested / 'fn000001.WAV'
             ort = ort_nested / 'fn000001.ORT'
             awd = awd_nested / 'fn000001.AWD'
+            audio.touch()
             ort.touch()
             awd.touch()
             report = builder.ImportReport()
-            pairs = builder.pair_annotation_files(
-                ort_dir, awd_dir, report=report)
+            recordings = builder.collect_cgn_audio_and_transcription_files(
+                audio_dir, ort_dir, awd_dir, report=report)
+            resolved_audio = audio.resolve()
             resolved_ort = ort.resolve()
             resolved_awd = awd.resolve()
-            self.assertEqual(len(pairs), 1)
-            self.assertEqual(pairs[0].stem, 'fn000001')
-            self.assertEqual(pairs[0].ort, resolved_ort)
-            self.assertEqual(pairs[0].awd, resolved_awd)
+            self.assertEqual(len(recordings), 1)
+            self.assertEqual(recordings[0].stem, 'fn000001')
+            self.assertEqual(recordings[0].audio_path, resolved_audio)
+            self.assertEqual(recordings[0].ort_path, resolved_ort)
+            self.assertEqual(recordings[0].awd_path, resolved_awd)
             self.assertEqual(report.counts['paired_recordings'], 1)
 
-    def test_reports_or_rejects_unmatched_annotation_stems(self):
+    def test_reports_or_rejects_incomplete_source_triples(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            audio_dir = root / 'audio'
             ort_dir = root / 'ort'
             awd_dir = root / 'awd'
+            audio_dir.mkdir()
             ort_dir.mkdir()
             awd_dir.mkdir()
+            (audio_dir / 'fn000001.wav').touch()
             (ort_dir / 'fn000001.ort').touch()
             report = builder.ImportReport()
-            pairs = builder.pair_annotation_files(
-                ort_dir, awd_dir, report=report)
-            self.assertEqual(pairs, [])
+            recordings = builder.collect_cgn_audio_and_transcription_files(
+                audio_dir, ort_dir, awd_dir, report=report)
+            self.assertEqual(recordings, [])
             self.assertEqual(report.counts['missing_awd'], 1)
             with self.assertRaisesRegex(ValueError, 'stems do not match'):
-                builder.pair_annotation_files(
-                    ort_dir, awd_dir, strict=True)
+                builder.collect_cgn_audio_and_transcription_files(
+                    audio_dir, ort_dir, awd_dir, strict=True)
 
     def test_rejects_missing_annotation_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            audio_dir = root / 'audio'
+            awd_dir = root / 'awd'
+            audio_dir.mkdir()
+            awd_dir.mkdir()
             with self.assertRaisesRegex(
                 ValueError, 'ort_dir is not a directory'):
-                builder.pair_annotation_files(
-                    root / 'missing-ort', root / 'missing-awd')
-
-    def test_discovers_wav_files_recursively_by_stem(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            nested = root / 'nl'
-            nested.mkdir()
-            expected = nested / 'fn000001.WAV'
-            expected.touch()
-            (nested / 'ignore.txt').touch()
-            discovered = builder.discover_audio_files(root)
-            self.assertEqual(discovered, {'fn000001': expected.resolve()})
+                builder.collect_cgn_audio_and_transcription_files(
+                    audio_dir, root / 'missing-ort', awd_dir)
 
     def test_rejects_duplicate_audio_stems(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            first = root / 'nl'
-            second = root / 'vl'
-            first.mkdir()
+            audio_dir = root / 'audio'
+            ort_dir = root / 'ort'
+            awd_dir = root / 'awd'
+            first = audio_dir / 'nl'
+            second = audio_dir / 'vl'
+            first.mkdir(parents=True)
             second.mkdir()
+            ort_dir.mkdir()
+            awd_dir.mkdir()
             (first / 'fn000001.wav').touch()
             (second / 'fn000001.wav').touch()
             with self.assertRaisesRegex(ValueError, 'duplicate audio stem'):
-                builder.discover_audio_files(root)
+                builder.collect_cgn_audio_and_transcription_files(
+                    audio_dir, ort_dir, awd_dir)
 
     def test_refuses_legacy_and_nonempty_targets(self):
         with self.assertRaisesRegex(ValueError, 'legacy CGN DB'):
@@ -258,24 +289,30 @@ class TestDatabaseBuild(unittest.TestCase):
             target = builder.validate_target_path(path, resume=True)
             self.assertEqual(target, path.resolve())
 
-    def test_resume_skips_complete_recording(self):
+    def test_fresh_state_skips_resume_database_reads(self):
+        report = builder.ImportReport()
+        audio_patch = mock.patch.object(
+            builder, '_get_database_audios_by_filename')
+        speaker_patch = mock.patch.object(
+            builder, '_get_database_speakers_by_id')
+        with audio_patch as get_audios, speaker_patch as get_speakers:
+            state = builder.make_cgn_import_state(
+                mock.sentinel.store, report, {}, [], resume=False)
+        get_audios.assert_not_called()
+        get_speakers.assert_not_called()
+        self.assertEqual(state.filename_to_audio, {})
+        self.assertEqual(state.id_to_speaker, {})
+        self.assertFalse(state.audit_stems)
+        audio_count = report.counts['database_audio_files']
+        audit_count = report.counts['resume_audit_recordings']
+        self.assertEqual(audio_count, 0)
+        self.assertEqual(audit_count, 0)
+
+    def test_resume_repairs_label_index_and_skips_complete_recording(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            ort_dir = root / 'ort'
-            awd_dir = root / 'awd'
-            ort_dir.mkdir()
-            awd_dir.mkdir()
-            ort, awd = make_pair()
-            ort.write(str(ort_dir / 'fn000001.ort'))
-            awd.write(str(awd_dir / 'fn000001.awd'))
-            audio_dir = root / 'audio' / 'nl'
-            audio_dir.mkdir(parents=True)
-            audio = audio_dir / 'fn000001.wav'
-            audio.touch()
-            speakers = root / 'speakers.txt'
-            speakers.write_text(
-                'ID\tsex\tbirthYear\tresRegion\n'
-                'N00001\tsex1\t1970\tUtrecht\n', encoding='utf-8')
+            paths = write_test_corpus(root, ['fn000001'])
+            audio_dir, awd_dir, ort_dir, speakers = paths
             database = root / 'database'
             audio_info = dict(duration=2000, n_channels=1, sample_rate=16000)
             output = io.StringIO()
@@ -284,23 +321,173 @@ class TestDatabaseBuild(unittest.TestCase):
             redirect = contextlib.redirect_stdout(output)
             recording_progress = mock.patch.object(builder, 'progressbar')
             with patcher, redirect, recording_progress as recording_bar:
-                first = builder.build_cgn_awd_database(audio_dir.parent,
+                first = builder.build_cgn_awd_database(audio_dir,
                     database, awd_dir=awd_dir, ort_dir=ort_dir,
                     speaker_file=speakers, report_file=None,
                     show_progress=False)
-                second = builder.build_cgn_awd_database(audio_dir.parent,
+                repair_store = Store(path=database)
+                label_keys = repair_store.DB.all_label_index_keys()
+                missing_key = label_keys[0]
+                repair_store.DB.delete(
+                    missing_key, db_name='label_segment')
+                repair_store.close()
+                second = builder.build_cgn_awd_database(audio_dir,
                     database, awd_dir=awd_dir, ort_dir=ort_dir,
                     speaker_file=speakers, resume=True,
                     report_file=None, show_progress=False)
             recording_bar.assert_not_called()
             self.assertEqual(first.counts['recordings_saved'], 1)
             self.assertEqual(second.counts['recordings_skipped'], 1)
+            self.assertEqual(second.counts['recordings_audited'], 1)
+            self.assertEqual(second.counts['label_indices_repaired'], 1)
+            store = Store(path=database)
+            try:
+                phrases = list(store.phrases.all())
+                self.assertEqual(len(phrases), 2)
+                exists = store.DB.key_exists(
+                    missing_key, db_name='label_segment')
+                self.assertTrue(exists)
+            finally:
+                store.close()
+
+    def test_resume_audits_only_last_three_database_audios(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stems = [f'fn{index:06d}' for index in range(1, 5)]
+            paths = write_test_corpus(root, stems)
+            audio_dir, awd_dir, ort_dir, speakers = paths
+            database = root / 'database'
+            audio_info = dict(duration=2000, n_channels=1, sample_rate=16000)
+            output = io.StringIO()
+            patcher = mock.patch.object(builder.audio_helper, 'audio_info',
+                return_value=audio_info)
+            redirect = contextlib.redirect_stdout(output)
+            with patcher, redirect:
+                builder.build_cgn_awd_database(audio_dir, database,
+                    awd_dir=awd_dir, ort_dir=ort_dir,
+                    speaker_file=speakers, report_file=None,
+                    show_progress=False)
+                stage_patcher = mock.patch.object(
+                    builder, 'stage_cgn_recording',
+                    wraps=builder.stage_cgn_recording)
+                with stage_patcher as stage_recording:
+                    report = builder.build_cgn_awd_database(
+                        audio_dir, database, awd_dir=awd_dir,
+                        ort_dir=ort_dir, speaker_file=speakers,
+                        resume=True, report_file=None,
+                        show_progress=False)
+            self.assertEqual(stage_recording.call_count, 3)
+            self.assertEqual(report.counts['recordings_fast_skipped'], 1)
+            self.assertEqual(report.counts['recordings_audited'], 3)
+
+    def test_resume_completes_tail_audio_without_phrases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = write_test_corpus(root, ['fn000001'])
+            audio_dir, awd_dir, ort_dir, speakers = paths
+            database = root / 'database'
+            filename = audio_dir / 'nl' / 'fn000001.wav'
+            store = Store(path=database)
+            resolved_filename = str(filename.resolve())
+            audio = models.Audio(filename=resolved_filename,
+                duration=2000, n_channels=1, sample_rate=16000,
+                dataset='cgn', language='nld', dialect='nl-NL',
+                store=store)
+            store.save(audio)
+            store.close()
+            output = io.StringIO()
+            redirect = contextlib.redirect_stdout(output)
+            with redirect:
+                report = builder.build_cgn_awd_database(
+                    audio_dir, database, awd_dir=awd_dir,
+                    ort_dir=ort_dir, speaker_file=speakers,
+                    resume=True, report_file=None, show_progress=False)
+            self.assertEqual(report.counts['recordings_repaired'], 1)
             store = Store(path=database)
             try:
                 phrases = list(store.phrases.all())
                 self.assertEqual(len(phrases), 2)
             finally:
                 store.close()
+
+    def test_source_error_retries_and_does_not_stop_later_recordings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = write_test_corpus(
+                root, ['fn000001', 'fn000002'])
+            audio_dir, awd_dir, ort_dir, speakers = paths
+            database = root / 'database'
+            report_file = root / 'report.json'
+            audio_info = dict(duration=2000, n_channels=1, sample_rate=16000)
+            original_load = builder.load_textgrid
+            failed = []
+
+            def load_with_error(filename):
+                if Path(filename).stem == 'fn000001':
+                    failed.append(Path(filename).stem)
+                    raise ValueError('bad source recording')
+                return original_load(filename)
+
+            output = io.StringIO()
+            patch_info = mock.patch.object(builder.audio_helper, 'audio_info',
+                return_value=audio_info)
+            patch_load = mock.patch.object(builder, 'load_textgrid',
+                side_effect=load_with_error)
+            redirect = contextlib.redirect_stdout(output)
+            with patch_info, patch_load, redirect:
+                with self.assertRaisesRegex(
+                    RuntimeError, 'recording imports failed'):
+                    builder.build_cgn_awd_database(
+                        audio_dir, database, awd_dir=awd_dir,
+                        ort_dir=ort_dir, speaker_file=speakers,
+                        report_file=report_file, show_progress=False)
+                with self.assertRaisesRegex(
+                    RuntimeError, 'recording imports failed'):
+                    builder.build_cgn_awd_database(
+                        audio_dir, database, awd_dir=awd_dir,
+                        ort_dir=ort_dir, speaker_file=speakers,
+                        resume=True, report_file=report_file,
+                        show_progress=False)
+            self.assertEqual(failed, ['fn000001', 'fn000001'])
+            report_text = report_file.read_text(encoding='utf-8')
+            report = json.loads(report_text)
+            self.assertEqual(report['counts']['source_recording_errors'], 1)
+            self.assertEqual(report['counts']['recordings_audited'], 1)
+            store = Store(path=database)
+            try:
+                filenames = []
+                for audio in store.audios.all():
+                    filenames.append(Path(audio.filename).stem)
+                self.assertEqual(filenames, ['fn000002'])
+            finally:
+                store.close()
+
+    def test_database_write_error_aborts_before_next_recording(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = write_test_corpus(
+                root, ['fn000001', 'fn000002'])
+            audio_dir, awd_dir, ort_dir, speakers = paths
+            database = root / 'database'
+            report_file = root / 'report.json'
+            audio_info = dict(duration=2000, n_channels=1, sample_rate=16000)
+            output = io.StringIO()
+            patch_info = mock.patch.object(builder.audio_helper, 'audio_info',
+                return_value=audio_info)
+            write_error = OSError('write failed')
+            patch_save = mock.patch.object(
+                Store, 'save_phrase_trees', side_effect=write_error)
+            redirect = contextlib.redirect_stdout(output)
+            with patch_info, patch_save as save_recording, redirect:
+                with self.assertRaisesRegex(OSError, 'write failed'):
+                    builder.build_cgn_awd_database(
+                        audio_dir, database, awd_dir=awd_dir,
+                        ort_dir=ort_dir, speaker_file=speakers,
+                        report_file=report_file, show_progress=False)
+            self.assertEqual(save_recording.call_count, 1)
+            report_text = report_file.read_text(encoding='utf-8')
+            report = json.loads(report_text)
+            self.assertEqual(report['counts']['recording_write_errors'], 1)
 
 
 if __name__ == '__main__':

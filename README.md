@@ -196,7 +196,7 @@ word and phone timing from the matching speaker, `_FON`, and `_SEG` tiers in
 Syllable tiers are derived during import with `dutch_syllabifier`.
 
 The builder is a Python/IPython workflow rather than a CLI. It recursively
-discovers files below `audio_dir`, `awd_dir`, and `ort_dir`, then matches them
+collects files below `audio_dir`, `awd_dir`, and `ort_dir`, then matches them
 by bare recording stem, for example `fn000001.awd`, `fn000001.ort`, and
 `fn000001.wav`. Their relative subdirectories do not need to match. Duplicate
 stems within any one source directory are rejected. The source directories
@@ -222,13 +222,24 @@ report.to_dict()
 
 The default target is separate from the legacy CGN database. The builder
 refuses the configured legacy CGN database and refuses any non-empty target
-unless `resume=True` is supplied. Resume mode skips a recording only when its
-complete staged phrase signature matches the existing recording; a partial
-or changed recording is reported as an error. Set `strict_pairs=True` to
-require the ORT and AWD directories to contain the same recording stems.
+unless `resume=True` is supplied. Resume mode loads the database Audio records
+once and fast-skips earlier recordings by normalized audio filename. It fully
+audits the final three stored recordings, skipping each only when its staged
+phrase signature matches. Missing label-index entries in that tail are
+repaired in one batch; a partial or changed phrase signature is reported as
+an error. This tail audit relies on deterministic source order and the rule
+that database-write errors stop the import immediately.
+
+Source-data errors occur before database writes, are reported and skipped,
+and are retried on the next resume. Once database writing for a recording
+starts, any write error aborts the run so an incomplete write cannot be
+followed by later recordings. Set `strict_pairs=True` to require the audio,
+ORT, and AWD directories to contain the same recording stems.
+
 The import saves one recording at a time. `show_progress` controls the
 corpus-level recording bar. LMDB retains its existing segment-batch progress
-display.
+display. Equal-sized segment bars are the main segment rows followed by their
+label-index entries; small bars usually represent newly saved speakers.
 
 ### Query loaded objects
 

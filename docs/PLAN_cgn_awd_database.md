@@ -41,11 +41,11 @@
 - Expose an importable Python/IPython workflow rather than a command-line
   interface.
 - Accept configurable AWD, ORT, and audio directories, with production CGN
-  defaults, and discover WAV files recursively by recording stem; do not
+  defaults, and collect WAV files recursively by recording stem; do not
   require an audio-filename manifest.
 - Do not import `scripts.process_cgn`,
   `scripts.load_cgn_to_db`, or the WebMAUS-specific TextGrid converter.
-- Discover `.ort` and `.awd` files recursively and pair annotations and audio
+- Collect `.ort`, `.awd`, and `.wav` files recursively and pair them
   by bare CGN recording stem, independent of their relative subdirectories.
 - Reject duplicate stems within any one source directory.
 - Use non-empty speaker tiers from `.ort` as phrase anchors, excluding
@@ -75,6 +75,12 @@
 - Refuse a non-empty target unless resume mode is explicitly selected.
 - Save one recording at a time so a complete CGN import does not accumulate
   the corpus in memory.
+- On resume, index database Audio records once by normalized filename,
+  fast-skip earlier recordings, and fully audit the final three stored
+  recordings in deterministic source order.
+- Repair missing label-index entries found by the tail audit in one batch.
+- Continue after source-data errors, which happen before writes, but abort on
+  a database-write error so later recordings cannot follow a partial write.
 - Make recording-level progress optional through the callable workflow while
   retaining LMDB's existing batch-write behavior.
 - Report missing pairs, missing audio or speakers, tier mismatches, unknown
@@ -93,6 +99,10 @@
 - Handle `!`, `_`, `[]`, `#`, pauses, and shared cross-boundary Phones.
 - Refuse the legacy or a non-empty target database by default.
 - Resume a previously completed recording without duplicating phrase trees.
+- Repair a removed label-index entry during resume.
+- Audit only the final three database Audio records during a normal resume.
+- Retry a recurring source-data error while still processing later recordings.
+- Abort on a database-write error before processing the next recording.
 - Perform a read-after-write hierarchy check using a temporary Store.
 
 ## Feature 4: Legacy WebMAUS Script Naming
