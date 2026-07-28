@@ -63,9 +63,10 @@ class DB:
             return txn.get(key, db = db) is not None
 
     def check_any_key_exist(self, keys, db_name = 'main'):
-        db_keys = set(self.all_keys(db_name = db_name))
-        for key in keys:
-            if key in db_keys: return True
+        db = self.db[db_name]
+        with self.env.begin() as txn:
+            for key in keys:
+                if txn.get(key, db=db) is not None: return True
         return False
 
     def load(self, key, db_name = 'main'):
@@ -119,17 +120,16 @@ class DB:
         overwrite:  If False, raises an error if the key already exists. 
                     If True, overwrites existing value.
         '''
-        #fail early if any key exists and overwrite is False
-        if not overwrite and self.check_any_key_exist(keys, db_name):
-            m = f'At least one key already exists in LMDB store at {db_name}. '
-            m += f'Use overwrite=True to overwrite.'
-            m += f'written nothing.'
-            raise KeyError(m)
-
         db = self.db[db_name]
+        message = f'At least one key already exists in LMDB store at '
+        message += f'{db_name}. Use overwrite=True to overwrite. '
+        message += 'written nothing.'
+        items = zip(keys, values)
+        item_count = len(keys)
         with self.env.begin(write=True) as txn:
-            for k, v in progressbar(zip(keys, values), max_value=len(keys)):
-                txn.put(k, v, db = db)
+            for k, v in progressbar(items, max_value=item_count):
+                written = txn.put(k, v, db=db, overwrite=overwrite)
+                if not written: raise KeyError(message)
 
     def replace_many(self, delete_keys, delete_label_keys, keys, values,
             label_keys):
