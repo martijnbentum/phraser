@@ -175,6 +175,55 @@ class TestDatabaseBuild(unittest.TestCase):
         self.assertEqual(parameters['report_file'].default,
             builder.cgn_report_file)
 
+    def test_pairs_annotations_recursively_by_bare_stem(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ort_dir = root / 'ort'
+            awd_dir = root / 'awd'
+            ort_nested = ort_dir / 'one'
+            awd_nested = awd_dir / 'another'
+            ort_nested.mkdir(parents=True)
+            awd_nested.mkdir(parents=True)
+            ort = ort_nested / 'fn000001.ORT'
+            awd = awd_nested / 'fn000001.AWD'
+            ort.touch()
+            awd.touch()
+            report = builder.ImportReport()
+            pairs = builder.pair_annotation_files(
+                ort_dir, awd_dir, report=report)
+            resolved_ort = ort.resolve()
+            resolved_awd = awd.resolve()
+            self.assertEqual(len(pairs), 1)
+            self.assertEqual(pairs[0].stem, 'fn000001')
+            self.assertEqual(pairs[0].ort, resolved_ort)
+            self.assertEqual(pairs[0].awd, resolved_awd)
+            self.assertEqual(report.counts['paired_recordings'], 1)
+
+    def test_reports_or_rejects_unmatched_annotation_stems(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ort_dir = root / 'ort'
+            awd_dir = root / 'awd'
+            ort_dir.mkdir()
+            awd_dir.mkdir()
+            (ort_dir / 'fn000001.ort').touch()
+            report = builder.ImportReport()
+            pairs = builder.pair_annotation_files(
+                ort_dir, awd_dir, report=report)
+            self.assertEqual(pairs, [])
+            self.assertEqual(report.counts['missing_awd'], 1)
+            with self.assertRaisesRegex(ValueError, 'stems do not match'):
+                builder.pair_annotation_files(
+                    ort_dir, awd_dir, strict=True)
+
+    def test_rejects_missing_annotation_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(
+                ValueError, 'ort_dir is not a directory'):
+                builder.pair_annotation_files(
+                    root / 'missing-ort', root / 'missing-awd')
+
     def test_discovers_wav_files_recursively_by_stem(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

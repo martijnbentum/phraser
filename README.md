@@ -195,11 +195,12 @@ word and phone timing from the matching speaker, `_FON`, and `_SEG` tiers in
 `.awd`, and maps CGN phones to IPA with `phone_mapper.cgn.cgn_to_ipa`.
 Syllable tiers are derived during import with `dutch_syllabifier`.
 
-The builder is a Python/IPython workflow rather than a CLI. It discovers WAV
-files recursively below `audio_dir` and matches AWD, ORT, and audio files by
-recording stem, for example `fn000001.awd`, `fn000001.ort`, and
-`fn000001.wav`. The source directories default to the production CGN
-locations:
+The builder is a Python/IPython workflow rather than a CLI. It recursively
+discovers files below `audio_dir`, `awd_dir`, and `ort_dir`, then matches them
+by bare recording stem, for example `fn000001.awd`, `fn000001.ort`, and
+`fn000001.wav`. Their relative subdirectories do not need to match. Duplicate
+stems within any one source directory are rejected. The source directories
+default to the production CGN locations:
 
 - audio: `/vol/bigdata/corpora2/CGN2/data/audio/wav/`
 - AWD: `../data/awd/`

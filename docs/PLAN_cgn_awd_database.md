@@ -45,7 +45,9 @@
   require an audio-filename manifest.
 - Do not import `scripts.process_cgn`,
   `scripts.load_cgn_to_db`, or the WebMAUS-specific TextGrid converter.
-- Read paired `.ort` and `.awd` files by CGN recording stem.
+- Discover `.ort` and `.awd` files recursively and pair annotations and audio
+  by bare CGN recording stem, independent of their relative subdirectories.
+- Reject duplicate stems within any one source directory.
 - Use non-empty speaker tiers from `.ort` as phrase anchors, excluding
   `BACKGROUND` and `COMMENT`.
 - Validate each AWD speaker triple:

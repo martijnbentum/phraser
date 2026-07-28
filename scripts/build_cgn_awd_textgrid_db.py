@@ -68,11 +68,38 @@ def load_textgrid(filename):
     return TextGrid.fromFile(str(filename))
 
 
+def _discover_files_by_stem(directory, suffix, source):
+    '''Recursively index one source directory by bare filename stem.'''
+    root = Path(directory).expanduser().resolve()
+    if not root.is_dir():
+        message = f'{source}_dir is not a directory: {root}'
+        raise ValueError(message)
+    output = {}
+    for path in sorted(root.rglob('*')):
+        if not path.is_file(): continue
+        if path.suffix.lower() != suffix: continue
+        if path.stem in output:
+            first = output[path.stem]
+            message = f'duplicate {source} stem {path.stem}: '
+            message += f'{first} and {path}'
+            raise ValueError(message)
+        output[path.stem] = path
+    return root, output
+
+
 def pair_annotation_files(ort_dir, awd_dir, strict=False, report=None):
     '''Pair ORT and AWD files by recording stem.'''
     report = report or ImportReport()
-    ort = {path.stem: path for path in Path(ort_dir).glob('*.ort')}
-    awd = {path.stem: path for path in Path(awd_dir).glob('*.awd')}
+    ort_root, ort = _discover_files_by_stem(ort_dir, '.ort', 'ort')
+    awd_root, awd = _discover_files_by_stem(awd_dir, '.awd', 'awd')
+    ort_count = len(ort)
+    awd_count = len(awd)
+    ort_root_text = str(ort_root)
+    awd_root_text = str(awd_root)
+    report.record('ort_files_discovered', ort_count,
+        ort_dir=ort_root_text)
+    report.record('awd_files_discovered', awd_count,
+        awd_dir=awd_root_text)
     for stem in sorted(ort.keys() - awd.keys()):
         filename = str(ort[stem])
         report.record('missing_awd', stem=stem, ort=filename)
@@ -357,22 +384,7 @@ def textgrids_to_phrase_trees(ort_textgrid, awd_textgrid, audio, speakers,
 def discover_audio_files(audio_dir, report=None):
     '''Return recording stem -> audio path from a directory tree.'''
     report = report or ImportReport()
-    root = Path(audio_dir).expanduser()
-    root = root.resolve()
-    if not root.is_dir():
-        message = f'audio_dir is not a directory: {root}'
-        raise ValueError(message)
-    output = {}
-    candidates = sorted(root.rglob('*'))
-    for audio_path in candidates:
-        if not audio_path.is_file(): continue
-        if audio_path.suffix.lower() != '.wav': continue
-        if audio_path.stem in output:
-            first = output[audio_path.stem]
-            message = f'duplicate audio stem {audio_path.stem}: '
-            message += f'{first} and {audio_path}'
-            raise ValueError(message)
-        output[audio_path.stem] = audio_path
+    root, output = _discover_files_by_stem(audio_dir, '.wav', 'audio')
     count = len(output)
     root_text = str(root)
     report.record('audio_files_discovered', count, audio_dir=root_text)
