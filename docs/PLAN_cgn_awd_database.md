@@ -38,6 +38,10 @@
 ### Requirements
 
 - Add `scripts/build_cgn_awd_textgrid_db.py`.
+- Expose an importable Python/IPython workflow rather than a command-line
+  interface.
+- Accept an audio directory and discover WAV files recursively by recording
+  stem; do not require an audio-filename manifest.
 - Do not import `scripts.process_cgn`,
   `scripts.load_cgn_to_db`, or the WebMAUS-specific TextGrid converter.
 - Read paired `.ort` and `.awd` files by CGN recording stem.
@@ -68,6 +72,8 @@
 - Refuse a non-empty target unless resume mode is explicitly selected.
 - Save one recording at a time so a complete CGN import does not accumulate
   the corpus in memory.
+- Make recording-level progress optional through the callable workflow while
+  retaining LMDB's existing batch-write behavior.
 - Report missing pairs, missing audio or speakers, tier mismatches, unknown
   symbols, unreliable units, fallbacks, saved recordings, and skipped
   recordings.
@@ -111,6 +117,7 @@
 
 ### Tests
 
-- The command-line help runs from the project virtual environment.
+- The public builder function accepts AWD, ORT, audio, database, and speaker
+  metadata paths.
 - A small real ORT/AWD pair completes the staging path without writing to the
   configured legacy database.

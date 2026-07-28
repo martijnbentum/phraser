@@ -161,6 +161,29 @@ class TestPhraseTreeConstruction(unittest.TestCase):
 
 
 class TestDatabaseBuild(unittest.TestCase):
+    def test_discovers_wav_files_recursively_by_stem(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / 'nl'
+            nested.mkdir()
+            expected = nested / 'fn000001.WAV'
+            expected.touch()
+            (nested / 'ignore.txt').touch()
+            discovered = builder.discover_audio_files(root)
+            self.assertEqual(discovered, {'fn000001': expected.resolve()})
+
+    def test_rejects_duplicate_audio_stems(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / 'nl'
+            second = root / 'vl'
+            first.mkdir()
+            second.mkdir()
+            (first / 'fn000001.wav').touch()
+            (second / 'fn000001.wav').touch()
+            with self.assertRaisesRegex(ValueError, 'duplicate audio stem'):
+                builder.discover_audio_files(root)
+
     def test_refuses_legacy_and_nonempty_targets(self):
         with self.assertRaisesRegex(ValueError, 'legacy CGN DB'):
             builder.validate_target_path(builder.locations.cgn_lmdb)
@@ -182,10 +205,10 @@ class TestDatabaseBuild(unittest.TestCase):
             ort, awd = make_pair()
             ort.write(str(ort_dir / 'fn000001.ort'))
             awd.write(str(awd_dir / 'fn000001.awd'))
-            audio = root / 'fn000001.wav'
+            audio_dir = root / 'audio' / 'nl'
+            audio_dir.mkdir(parents=True)
+            audio = audio_dir / 'fn000001.wav'
             audio.touch()
-            audio_list = root / 'audio.txt'
-            audio_list.write_text(str(audio) + '\n', encoding='utf-8')
             speakers = root / 'speakers.txt'
             speakers.write_text(
                 'ID\tsex\tbirthYear\tresRegion\n'
@@ -196,11 +219,16 @@ class TestDatabaseBuild(unittest.TestCase):
             patcher = mock.patch.object(builder.audio_helper, 'audio_info',
                 return_value=audio_info)
             redirect = contextlib.redirect_stdout(output)
-            with patcher, redirect:
-                first = builder.build_database(ort_dir, awd_dir, audio_list,
-                    speakers, database)
-                second = builder.build_database(ort_dir, awd_dir, audio_list,
-                    speakers, database, resume=True)
+            recording_progress = mock.patch.object(builder, 'progressbar')
+            with patcher, redirect, recording_progress as recording_bar:
+                first = builder.build_cgn_awd_database(audio_dir.parent,
+                    database, awd_dir=awd_dir, ort_dir=ort_dir,
+                    speaker_file=speakers, show_progress=False)
+                second = builder.build_cgn_awd_database(audio_dir.parent,
+                    database, awd_dir=awd_dir, ort_dir=ort_dir,
+                    speaker_file=speakers, resume=True,
+                    show_progress=False)
+            recording_bar.assert_not_called()
             self.assertEqual(first.counts['recordings_saved'], 1)
             self.assertEqual(second.counts['recordings_skipped'], 1)
             store = Store(path=database)

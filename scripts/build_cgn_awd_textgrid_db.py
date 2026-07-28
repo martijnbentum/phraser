@@ -1,6 +1,8 @@
-'''Build a fresh Phraser database from original CGN ORT and AWD files.'''
+'''Build a fresh Phraser database from original CGN ORT and AWD files.
 
-import argparse
+Import this module and call build_cgn_awd_database from Python or IPython.
+'''
+
 from bisect import bisect_right
 from collections import Counter
 from dataclasses import dataclass, field
@@ -345,23 +347,28 @@ def textgrids_to_phrase_trees(ort_textgrid, awd_textgrid, audio, speakers,
     return phrases
 
 
-def load_audio_filenames(filename, report=None):
-    '''Return recording stem -> audio path from a newline-delimited file.'''
+def discover_audio_files(audio_dir, report=None):
+    '''Return recording stem -> audio path from a directory tree.'''
     report = report or ImportReport()
-    path = Path(filename)
-    if not path.exists():
-        path_text = str(path)
-        report.record('missing_audio_filename_list', filename=path_text)
-        return {}
+    root = Path(audio_dir).expanduser()
+    root = root.resolve()
+    if not root.is_dir():
+        message = f'audio_dir is not a directory: {root}'
+        raise ValueError(message)
     output = {}
-    text = path.read_text(encoding='utf-8')
-    for line in text.splitlines():
-        if not line.strip(): continue
-        audio_path = Path(line.strip()).expanduser()
-        audio_path = audio_path.resolve()
+    candidates = sorted(root.rglob('*'))
+    for audio_path in candidates:
+        if not audio_path.is_file(): continue
+        if audio_path.suffix.lower() != '.wav': continue
         if audio_path.stem in output:
-            raise ValueError(f'duplicate audio stem: {audio_path.stem}')
+            first = output[audio_path.stem]
+            message = f'duplicate audio stem {audio_path.stem}: '
+            message += f'{first} and {audio_path}'
+            raise ValueError(message)
         output[audio_path.stem] = audio_path
+    count = len(output)
+    root_text = str(root)
+    report.record('audio_files_discovered', count, audio_dir=root_text)
     return output
 
 
@@ -431,7 +438,7 @@ def validate_target_path(db_path, resume=False):
         raise ValueError(f'database target is not a directory: {target}')
     nonempty = target.exists() and any(target.iterdir())
     if nonempty and not resume:
-        raise ValueError('database target is non-empty; pass --resume')
+        raise ValueError('database target is non-empty; set resume=True')
     return target
 
 
@@ -451,22 +458,35 @@ def _phrase_signatures(phrases):
     return sorted(output)
 
 
-def _write_report(report, filename=None):
+def _save_report(report, filename=None):
+    if filename is None: return
     data = report.to_dict()
     text = json.dumps(data, ensure_ascii=False, indent=2)
-    if filename:
-        Path(filename).write_text(text + '\n', encoding='utf-8')
-    print(text)
+    Path(filename).write_text(text + '\n', encoding='utf-8')
 
 
-def build_database(ort_dir, awd_dir, audio_filename_list, speaker_file,
-    db_path, resume=False, strict_pairs=False, report_file=None):
-    '''Build a complete independent CGN database one recording at a time.'''
+def build_cgn_awd_database(audio_dir, db_path, awd_dir=None, ort_dir=None,
+    speaker_file=None, resume=False, strict_pairs=False, report_file=None,
+    show_progress=True):
+    '''Build the original-alignment CGN database one recording at a time.
+    audio_dir:      root searched recursively for WAV files
+    db_path:        explicit target LMDB directory
+    awd_dir:        original CGN AWD directory; defaults to data/awd
+    ort_dir:        original CGN ORT directory; defaults to data/ort
+    speaker_file:   CGN speakers.txt; missing entries become placeholders
+    resume:         allow an existing database and verify completed recordings
+    strict_pairs:   require identical AWD and ORT recording stems
+    report_file:    optional JSON output path
+    show_progress:  show recording and per-recording LMDB batch progress
+    '''
     report = ImportReport()
+    if awd_dir is None: awd_dir = locations.data / 'awd'
+    if ort_dir is None: ort_dir = locations.cgn_ort_directory
+    if speaker_file is None: speaker_file = locations.cgn_speaker_file
     target = validate_target_path(db_path, resume=resume)
     pairs = pair_annotation_files(ort_dir, awd_dir, strict=strict_pairs,
         report=report)
-    audio_filenames = load_audio_filenames(audio_filename_list, report)
+    audio_paths = discover_audio_files(audio_dir, report)
     metadata = load_speaker_metadata(speaker_file, report)
     store = Store(path=target)
     store.refresh_query_roots()
@@ -477,10 +497,11 @@ def build_database(ort_dir, awd_dir, audio_filename_list, speaker_file,
     speakers = {}
     for speaker in store.speakers.all():
         if speaker.dataset == 'cgn': speakers[speaker.name] = speaker
+    recordings = progressbar(pairs) if show_progress else pairs
     try:
-        for pair in progressbar(pairs):
+        for pair in recordings:
             try:
-                audio_path = audio_filenames.get(pair.stem)
+                audio_path = audio_paths.get(pair.stem)
                 if audio_path is None or not audio_path.exists():
                     report.record('missing_audio', recording=pair.stem,
                         filename=str(audio_path) if audio_path else '')
@@ -531,37 +552,9 @@ def build_database(ort_dir, awd_dir, audio_filename_list, speaker_file,
                 report.record('recordings_skipped', recording=pair.stem)
     finally:
         store.close()
-    _write_report(report, report_file)
+    _save_report(report, report_file)
     if report.counts['recording_errors']:
         count = report.counts['recording_errors']
         message = f'{count} recording imports failed; see the import report'
         raise RuntimeError(message)
     return report
-
-
-def make_argument_parser():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--ort-dir', type=Path,
-        default=locations.cgn_ort_directory)
-    parser.add_argument('--awd-dir', type=Path,
-        default=locations.data / 'awd')
-    parser.add_argument('--audio-filenames', type=Path,
-        default=locations.audio_filenames)
-    parser.add_argument('--speaker-file', type=Path,
-        default=locations.cgn_speaker_file)
-    parser.add_argument('--db-path', type=Path, required=True)
-    parser.add_argument('--report-file', type=Path)
-    parser.add_argument('--resume', action='store_true')
-    parser.add_argument('--strict-pairs', action='store_true')
-    return parser
-
-
-def main():
-    args = make_argument_parser().parse_args()
-    build_database(args.ort_dir, args.awd_dir, args.audio_filenames,
-        args.speaker_file, args.db_path, resume=args.resume,
-        strict_pairs=args.strict_pairs, report_file=args.report_file)
-
-
-if __name__ == '__main__':
-    main()

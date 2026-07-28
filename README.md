@@ -195,25 +195,35 @@ word and phone timing from the matching speaker, `_FON`, and `_SEG` tiers in
 `.awd`, and maps CGN phones to IPA with `phone_mapper.cgn.cgn_to_ipa`.
 Syllable tiers are derived during import with `dutch_syllabifier`.
 
-The target database is always explicit. The builder refuses the configured
-legacy CGN database and refuses any other non-empty target unless `--resume`
-is supplied:
+The builder is a Python/IPython workflow rather than a CLI. It discovers WAV
+files recursively below `audio_dir` and matches AWD, ORT, and audio files by
+recording stem, for example `fn000001.awd`, `fn000001.ort`, and
+`fn000001.wav`:
 
-```bash
-.venv/bin/python scripts/build_cgn_awd_textgrid_db.py \
-    --ort-dir data/ort \
-    --awd-dir data/awd \
-    --audio-filenames data/audio_filenames.txt \
-    --speaker-file /path/to/CGN/data/meta/text/speakers.txt \
-    --db-path data/cgn_awd_lmdb \
-    --report-file data/cgn_awd_import_report.json
+```python
+from scripts.build_cgn_awd_textgrid_db import build_cgn_awd_database
+
+report = build_cgn_awd_database(
+    audio_dir='/path/to/CGN/data/audio/wav',
+    awd_dir='data/awd',
+    ort_dir='data/ort',
+    speaker_file='/path/to/CGN/data/meta/text/speakers.txt',
+    db_path='data/cgn_awd_lmdb',
+    report_file='data/cgn_awd_import_report.json',
+    show_progress=True)
+
+report.to_dict()
 ```
 
-The import saves one recording at a time. `--resume` skips a recording only
-when its complete staged phrase signature matches the existing recording; a
-partial or changed recording is reported as an error. Use `--strict-pairs`
-to fail when the ORT and AWD directories do not contain the same recording
-stems.
+The target database is always explicit. The builder refuses the configured
+legacy CGN database and refuses any other non-empty target unless
+`resume=True` is supplied. Resume mode skips a recording only when its
+complete staged phrase signature matches the existing recording; a partial
+or changed recording is reported as an error. Set `strict_pairs=True` to
+require the ORT and AWD directories to contain the same recording stems.
+The import saves one recording at a time. `show_progress` controls the
+corpus-level recording bar. LMDB retains its existing segment-batch progress
+display.
 
 ### Query loaded objects
 
