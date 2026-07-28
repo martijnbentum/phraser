@@ -170,6 +170,10 @@ class TestDatabaseBuild(unittest.TestCase):
         self.assertEqual(parameters['awd_dir'].default, builder.cgn_awd_dir)
         self.assertEqual(parameters['ort_dir'].default, builder.cgn_ort_dir)
         self.assertEqual(parameters['db_path'].default, builder.cgn_db_path)
+        self.assertEqual(parameters['speaker_file'].default,
+            builder.cgn_speaker_file)
+        self.assertEqual(parameters['report_file'].default,
+            builder.cgn_report_file)
 
     def test_discovers_wav_files_recursively_by_stem(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -233,11 +237,12 @@ class TestDatabaseBuild(unittest.TestCase):
             with patcher, redirect, recording_progress as recording_bar:
                 first = builder.build_cgn_awd_database(audio_dir.parent,
                     database, awd_dir=awd_dir, ort_dir=ort_dir,
-                    speaker_file=speakers, show_progress=False)
+                    speaker_file=speakers, report_file=None,
+                    show_progress=False)
                 second = builder.build_cgn_awd_database(audio_dir.parent,
                     database, awd_dir=awd_dir, ort_dir=ort_dir,
                     speaker_file=speakers, resume=True,
-                    show_progress=False)
+                    report_file=None, show_progress=False)
             recording_bar.assert_not_called()
             self.assertEqual(first.counts['recordings_saved'], 1)
             self.assertEqual(second.counts['recordings_skipped'], 1)

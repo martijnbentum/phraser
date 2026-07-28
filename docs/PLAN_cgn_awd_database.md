@@ -78,6 +78,8 @@
 - Report missing pairs, missing audio or speakers, tier mismatches, unknown
   symbols, unreliable units, fallbacks, saved recordings, and skipped
   recordings.
+- Write the import report to a default JSON file in the data directory, while
+  allowing report output to be disabled explicitly.
 
 ### Tests
 

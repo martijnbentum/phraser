@@ -205,6 +205,8 @@ locations:
 - AWD: `../data/awd/`
 - ORT: `../data/ort/`
 - database: `../data/cgn_awd_lmdb`
+- speakers: `/vol/bigdata/corpora2/CGN2/data/meta/text/speakers.txt`
+- report: `../data/cgn_awd_import_report.json`
 
 Relative paths are resolved from the IPython process's current working
 directory. With all defaults, the import can be started as follows:
@@ -212,9 +214,7 @@ directory. With all defaults, the import can be started as follows:
 ```python
 from scripts.build_cgn_awd_textgrid_db import build_cgn_awd_database
 
-report = build_cgn_awd_database(
-    report_file='data/cgn_awd_import_report.json',
-    show_progress=True)
+report = build_cgn_awd_database(show_progress=True)
 
 report.to_dict()
 ```
