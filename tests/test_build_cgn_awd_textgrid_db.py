@@ -1,4 +1,5 @@
 import contextlib
+import inspect
 import io
 from pathlib import Path
 import tempfile
@@ -161,6 +162,15 @@ class TestPhraseTreeConstruction(unittest.TestCase):
 
 
 class TestDatabaseBuild(unittest.TestCase):
+    def test_uses_cgn_source_directory_defaults(self):
+        signature = inspect.signature(builder.build_cgn_awd_database)
+        parameters = signature.parameters
+        self.assertEqual(parameters['audio_dir'].default,
+            builder.cgn_audio_dir)
+        self.assertEqual(parameters['awd_dir'].default, builder.cgn_awd_dir)
+        self.assertEqual(parameters['ort_dir'].default, builder.cgn_ort_dir)
+        self.assertEqual(parameters['db_path'].default, builder.cgn_db_path)
+
     def test_discovers_wav_files_recursively_by_stem(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

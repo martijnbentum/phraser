@@ -24,6 +24,10 @@ ORT_NON_SPEAKER_TIERS = {'BACKGROUND', 'COMMENT'}
 SKIPPED_SEGMENT_MARKS = {'[]', '#'}
 FON_BOUNDARY_MARKS = {'!', '#', '[]', '=', '-', '_', ' '}
 MAPPING_KEYS = sorted(cgn_to_ipa, key=len, reverse=True)
+cgn_audio_dir = Path('/vol/bigdata/corpora2/CGN2/data/audio/wav/')
+cgn_ort_dir = Path('../data/ort/')
+cgn_awd_dir = Path('../data/awd/')
+cgn_db_path = Path('../data/cgn_awd_lmdb')
 
 
 @dataclass(frozen=True)
@@ -465,14 +469,14 @@ def _save_report(report, filename=None):
     Path(filename).write_text(text + '\n', encoding='utf-8')
 
 
-def build_cgn_awd_database(audio_dir, db_path, awd_dir=None, ort_dir=None,
-    speaker_file=None, resume=False, strict_pairs=False, report_file=None,
-    show_progress=True):
+def build_cgn_awd_database(audio_dir=cgn_audio_dir, db_path=cgn_db_path,
+    awd_dir=cgn_awd_dir, ort_dir=cgn_ort_dir, speaker_file=None, resume=False,
+    strict_pairs=False, report_file=None, show_progress=True):
     '''Build the original-alignment CGN database one recording at a time.
     audio_dir:      root searched recursively for WAV files
-    db_path:        explicit target LMDB directory
-    awd_dir:        original CGN AWD directory; defaults to data/awd
-    ort_dir:        original CGN ORT directory; defaults to data/ort
+    db_path:        target LMDB directory
+    awd_dir:        original CGN AWD directory
+    ort_dir:        original CGN ORT directory
     speaker_file:   CGN speakers.txt; missing entries become placeholders
     resume:         allow an existing database and verify completed recordings
     strict_pairs:   require identical AWD and ORT recording stems
@@ -480,8 +484,10 @@ def build_cgn_awd_database(audio_dir, db_path, awd_dir=None, ort_dir=None,
     show_progress:  show recording and per-recording LMDB batch progress
     '''
     report = ImportReport()
-    if awd_dir is None: awd_dir = locations.data / 'awd'
-    if ort_dir is None: ort_dir = locations.cgn_ort_directory
+    if db_path is None: db_path = cgn_db_path
+    if audio_dir is None: audio_dir = cgn_audio_dir
+    if awd_dir is None: awd_dir = cgn_awd_dir
+    if ort_dir is None: ort_dir = cgn_ort_dir
     if speaker_file is None: speaker_file = locations.cgn_speaker_file
     target = validate_target_path(db_path, resume=resume)
     pairs = pair_annotation_files(ort_dir, awd_dir, strict=strict_pairs,

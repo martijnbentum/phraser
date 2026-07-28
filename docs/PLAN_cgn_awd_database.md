@@ -40,8 +40,9 @@
 - Add `scripts/build_cgn_awd_textgrid_db.py`.
 - Expose an importable Python/IPython workflow rather than a command-line
   interface.
-- Accept an audio directory and discover WAV files recursively by recording
-  stem; do not require an audio-filename manifest.
+- Accept configurable AWD, ORT, and audio directories, with production CGN
+  defaults, and discover WAV files recursively by recording stem; do not
+  require an audio-filename manifest.
 - Do not import `scripts.process_cgn`,
   `scripts.load_cgn_to_db`, or the WebMAUS-specific TextGrid converter.
 - Read paired `.ort` and `.awd` files by CGN recording stem.
@@ -67,8 +68,8 @@
 - Assign a cross-boundary Phone to the AWD word interval containing its start;
   store each Phone exactly once.
 - Skip non-phone markers such as `[]` and `#`, recording them in the report.
-- Require an explicit target LMDB path and refuse to use the configured legacy
-  CGN LMDB path.
+- Default to a separate CGN AWD LMDB path and refuse to use the configured
+  legacy CGN LMDB path.
 - Refuse a non-empty target unless resume mode is explicitly selected.
 - Save one recording at a time so a complete CGN import does not accumulate
   the corpus in memory.

@@ -198,26 +198,30 @@ Syllable tiers are derived during import with `dutch_syllabifier`.
 The builder is a Python/IPython workflow rather than a CLI. It discovers WAV
 files recursively below `audio_dir` and matches AWD, ORT, and audio files by
 recording stem, for example `fn000001.awd`, `fn000001.ort`, and
-`fn000001.wav`:
+`fn000001.wav`. The source directories default to the production CGN
+locations:
+
+- audio: `/vol/bigdata/corpora2/CGN2/data/audio/wav/`
+- AWD: `../data/awd/`
+- ORT: `../data/ort/`
+- database: `../data/cgn_awd_lmdb`
+
+Relative paths are resolved from the IPython process's current working
+directory. With all defaults, the import can be started as follows:
 
 ```python
 from scripts.build_cgn_awd_textgrid_db import build_cgn_awd_database
 
 report = build_cgn_awd_database(
-    audio_dir='/path/to/CGN/data/audio/wav',
-    awd_dir='data/awd',
-    ort_dir='data/ort',
-    speaker_file='/path/to/CGN/data/meta/text/speakers.txt',
-    db_path='data/cgn_awd_lmdb',
     report_file='data/cgn_awd_import_report.json',
     show_progress=True)
 
 report.to_dict()
 ```
 
-The target database is always explicit. The builder refuses the configured
-legacy CGN database and refuses any other non-empty target unless
-`resume=True` is supplied. Resume mode skips a recording only when its
+The default target is separate from the legacy CGN database. The builder
+refuses the configured legacy CGN database and refuses any non-empty target
+unless `resume=True` is supplied. Resume mode skips a recording only when its
 complete staged phrase signature matches the existing recording; a partial
 or changed recording is reported as an error. Set `strict_pairs=True` to
 require the ORT and AWD directories to contain the same recording stems.
