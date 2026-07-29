@@ -294,6 +294,57 @@ phone.embedding("wav2vec2", layer=7, fallback=True)   # sliced from an ancestor
 This is a read-only accessor for already-stored hidden states; the
 compute-and-store path lives in `phraser.segment_embeddings`.
 
+### Extract MFCC features
+
+Segments expose a lazily computed, cached MFCC matrix:
+
+```python
+phone = store.phones.get(label='p')
+features = phone.mfcc
+
+features.shape   # (39, number_of_frames)
+```
+
+The 39 rows contain 13 static MFCCs, 13 deltas, and 13 delta-deltas.
+Extraction uses 25 ms windows, 40 mel bands, and a 10 ms computation grid.
+`Segment.mfcc` returns frames on the wav2vec2-aligned 20 ms grid and caches
+the result as the transient `segment._mfcc` attribute.
+
+The module-level functions provide explicit control:
+
+```python
+from phraser.audio.mfcc import (
+    mfcc,
+    recording_mfcc,
+    slice_recording_mfcc,
+)
+
+aligned = mfcc(phone)   # default 20 ms frame grid
+full_rate = mfcc(phone, wav2vec2_frames=False)   # full 10 ms grid
+
+recording = recording_mfcc(phone.audio)   # always the full 10 ms grid
+phone_frames = slice_recording_mfcc(recording, phone)
+```
+
+For multiple segments, `mfcc_batch` groups work by recording, merges nearby
+frame ranges, and can process recordings in parallel:
+
+```python
+from phraser.audio.batch import mfcc_batch
+
+matrices = mfcc_batch(phones, workers=8)
+
+len(matrices) == len(phones)
+matrices[0] is phones[0].mfcc
+```
+
+Batch results preserve input order. By default, existing segment caches are
+reused and newly computed 20 ms matrices are cached on the segments. The
+function warns once that cached matrices remain in memory. Use
+`cache_on_segment=False` for transient results. A batch requested with
+`wav2vec2_frames=False` returns 10 ms matrices and does not update
+`segment.mfcc`.
+
 ### Access phone linguistic features
 
 A `Phone` exposes static IPA reference data, derived purely from its label

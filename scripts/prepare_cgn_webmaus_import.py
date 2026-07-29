@@ -6,7 +6,7 @@ from dutch_text_clean import clean
 from progressbar import progressbar
 from textgrid import TextGrid
 
-from phraser import audio
+from phraser.audio import audio_info
 from phraser import locations
 from phraser import utils
 
@@ -62,7 +62,7 @@ def audio_filename_to_database_dict(audio_filename):
     if language == 'nl': dialect = 'nl-NL'
     elif language == 'vl': dialect = 'nl-BE'
     else: dialect = 'unknown'
-    info = audio.audio_info(audio_filename)
+    info = audio_info(audio_filename)
     info['component'] = component
     info['language'] = 'nld'
     info['dialect'] = dialect

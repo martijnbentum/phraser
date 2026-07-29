@@ -1,7 +1,7 @@
 from progressbar import progressbar
 from textgrid import TextGrid
 
-from phraser import audio
+from phraser.audio import audio_info
 from phraser import force_align
 from phraser import locations
 from phraser import models
@@ -409,13 +409,13 @@ def audio_filename_to_db_object(audio_filename, save_to_db = False, kwargs=None,
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
     kwargs = copy_kwargs(kwargs)
-    audio_info = audio.audio_info(audio_filename)
-    if audio_info.keys() & kwargs.keys():
+    info = audio_info(audio_filename)
+    if info.keys() & kwargs.keys():
         m = 'WARNING: Conflicting keys in audio info and kwargs: '
-        m += f'{audio_info.keys() & kwargs.keys()}'
+        m += f'{info.keys() & kwargs.keys()}'
         print(m)
-    audio_info.update(kwargs)
-    audio_object = models.Audio(**audio_info, save = save_to_db, store=store)
+    info.update(kwargs)
+    audio_object = models.Audio(**info, save = save_to_db, store=store)
     return audio_object
 
 def load_audios_textgrids_to_db(audio_filenames, textgrid_filenames, speakers, 

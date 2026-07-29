@@ -133,6 +133,14 @@ class Segment:
     def label_index_key(self):
         return key_helper.instance_to_label_index_key(self)
 
+    @property
+    def mfcc(self):
+        '''Return the cached wav2vec2-aligned MFCC matrix for this segment.'''
+        if hasattr(self, '_mfcc'): return self._mfcc
+        from .audio.mfcc import mfcc as compute_mfcc
+        self._mfcc = compute_mfcc(self)
+        return self._mfcc
+
     def embedding(self, model_name, layer, collar=500, store=None,
         fallback=False):
         '''Load the stored hidden-state Embedding for this segment.
