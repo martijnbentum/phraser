@@ -302,10 +302,10 @@ Segments expose a lazily computed, cached MFCC matrix:
 phone = store.phones.get(label='p')
 features = phone.mfcc
 
-features.shape   # (39, number_of_frames)
+features.shape   # (number_of_frames, 39)
 ```
 
-The 39 rows contain 13 static MFCCs, 13 deltas, and 13 delta-deltas.
+The 39 columns contain 13 static MFCCs, 13 deltas, and 13 delta-deltas.
 Extraction uses 25 ms windows, 40 mel bands, and a 10 ms computation grid.
 `Segment.mfcc` returns frames on the wav2vec2-aligned 20 ms grid and caches
 the result as the transient `segment._mfcc` attribute.

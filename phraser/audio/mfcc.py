@@ -8,7 +8,7 @@ from .audio import load_audio_samples
 
 N_MFCC = 13
 N_MELS = 40
-FEATURE_ROWS = N_MFCC * 3
+FEATURE_DIM = N_MFCC * 3
 WINDOW_SECONDS = 0.025
 HOP_SECONDS = 0.010
 DELTA_WIDTH = 9
@@ -26,8 +26,8 @@ def mfcc(segment, wav2vec2_frames=True):
     wav2vec2_frames:    return the aligned 20 ms wav2vec2 grid when True;
                         return every computed 10 ms frame when False
 
-    The returned NumPy matrix has shape ``(39, frames)``. Rows contain 13
-    static MFCCs, 13 deltas, then 13 delta-deltas.
+    The returned NumPy matrix has shape ``(frames, 39)``. Columns contain
+    13 static MFCCs, 13 deltas, then 13 delta-deltas.
     '''
     _validate_frame_flag(wav2vec2_frames)
     audio = _validate_segment(segment)
@@ -38,7 +38,7 @@ def mfcc(segment, wav2vec2_frames=True):
     matrix, first_frame = _mfcc_frame_range(
         audio, frame_indices[0], frame_indices[-1])
     columns = [index - first_frame for index in frame_indices]
-    return matrix[:, columns]
+    return matrix[:, columns].T.copy()
 
 
 def recording_mfcc(audio):
@@ -46,14 +46,14 @@ def recording_mfcc(audio):
 
     audio:    Audio object with filename, sample_rate, and duration metadata
 
-    The returned matrix always contains the full 10 ms frame grid. Use
-    ``slice_recording_mfcc`` to select segment frames and optionally reduce
-    them to the wav2vec2-aligned 20 ms grid.
+    The returned matrix has shape ``(frames, 39)`` and always contains the
+    full 10 ms frame grid. Use ``slice_recording_mfcc`` to select segment
+    frames and optionally reduce them to the wav2vec2-aligned 20 ms grid.
     '''
     _validate_audio(audio)
     signal, loaded_rate = load_audio_samples(audio.filename)
     _validate_loaded_rate(loaded_rate, audio.sample_rate)
-    return _mfcc_matrix(signal, loaded_rate)
+    return _mfcc_matrix(signal, loaded_rate).T.copy()
 
 
 def slice_recording_mfcc(matrix, segment, wav2vec2_frames=True):
@@ -63,6 +63,8 @@ def slice_recording_mfcc(matrix, segment, wav2vec2_frames=True):
     segment:             time-aligned segment linked to the same Audio
     wav2vec2_frames:     return the aligned 20 ms wav2vec2 grid when True;
                          return every overlapping 10 ms frame when False
+
+    The returned NumPy matrix has shape ``(frames, 39)``.
     '''
     _validate_frame_flag(wav2vec2_frames)
     _validate_mfcc_matrix(matrix)
@@ -71,8 +73,8 @@ def slice_recording_mfcc(matrix, segment, wav2vec2_frames=True):
     hop_length = _sample_count(HOP_SECONDS, audio.sample_rate)
     frame_indices = _frame_indices(
         segment.start, segment.end, audio.sample_rate, window_length,
-        hop_length, 0, matrix.shape[1] - 1, wav2vec2_frames)
-    return matrix[:, frame_indices]
+        hop_length, 0, matrix.shape[0] - 1, wav2vec2_frames)
+    return matrix[frame_indices]
 
 
 def _sample_count(seconds, sample_rate):
@@ -107,8 +109,8 @@ def _validate_segment(segment):
 def _validate_mfcc_matrix(matrix):
     if not isinstance(matrix, np.ndarray):
         raise TypeError('matrix must be a NumPy array')
-    if matrix.ndim != 2 or matrix.shape[0] != FEATURE_ROWS:
-        message = f'MFCC matrix must have shape ({FEATURE_ROWS}, frames)'
+    if matrix.ndim != 2 or matrix.shape[1] != FEATURE_DIM:
+        message = f'MFCC matrix must have shape (frames, {FEATURE_DIM})'
         raise ValueError(message)
 
 

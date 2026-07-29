@@ -5,7 +5,7 @@
 - Replace `phraser.audio` with an `audio` package containing `audio.py`,
   `mfcc.py`, and `batch.py`.
 - Add `phraser.audio.mfcc.mfcc(segment, wav2vec2_frames=True)`.
-- Return 13 MFCCs, 13 deltas, and 13 delta-deltas as a `(39, frames)`
+- Return 13 MFCCs, 13 deltas, and 13 delta-deltas as a `(frames, 39)`
   NumPy matrix.
 - Use fixed speech settings: 40 mel bands, a 25 ms non-centered window,
   and a 10 ms computation hop anchored at audio time zero.
@@ -25,8 +25,8 @@
 
 ## Tests
 
-- Check the 39-row output and expected frame counts at both frame rates.
-- Check that 20 ms output matches alternating columns of the 10 ms output.
+- Check the 39-column output and expected frame counts at both frame rates.
+- Check that 20 ms output matches alternating rows of the 10 ms output.
 - Check that an interior segment receives the same contextual features as
   its corresponding frames in a broader segment.
 - Check extraction at both recording boundaries.

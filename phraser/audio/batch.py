@@ -24,6 +24,7 @@ def mfcc_batch(segments, wav2vec2_frames=True, workers=None,
 
     Segments are grouped by recording. Each worker merges overlapping frame
     ranges so shared audio and MFCC context are computed only once.
+    Each returned NumPy matrix has shape ``(frames, 39)``.
     '''
     mfcc_module._validate_frame_flag(wav2vec2_frames)
     _validate_workers(workers)
@@ -120,7 +121,7 @@ def _process_audio_task(task):
         matrix_first, matrix = _find_matrix(matrices, first, last)
         first_column = first - matrix_first
         last_column = last - matrix_first + 1
-        segment_matrix = matrix[:, first_column:last_column:step].copy()
+        segment_matrix = matrix[:, first_column:last_column:step].T.copy()
         results.append((index, segment_matrix))
     return results
 

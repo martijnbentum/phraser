@@ -47,16 +47,17 @@ class TestMfcc(unittest.TestCase):
                 segment = self.make_segment(
                     100, 200, segment_class=segment_class)
                 result = mfcc(segment)
-                self.assertEqual(result.shape, (39, 6))
+                self.assertEqual(result.shape, (6, 39))
                 self.assertEqual(result.dtype, np.float32)
+                self.assertTrue(result.flags.c_contiguous)
 
     def test_full_rate_has_twice_the_aligned_frames(self):
         segment = self.make_segment(100, 200)
         aligned = mfcc(segment)
         full_rate = mfcc(segment, wav2vec2_frames=False)
-        self.assertEqual(aligned.shape, (39, 6))
-        self.assertEqual(full_rate.shape, (39, 12))
-        np.testing.assert_allclose(aligned, full_rate[:, ::2],
+        self.assertEqual(aligned.shape, (6, 39))
+        self.assertEqual(full_rate.shape, (12, 39))
+        np.testing.assert_allclose(aligned, full_rate[::2],
             rtol=1e-5, atol=1e-5)
 
     def test_segment_property_computes_once_and_returns_cached_matrix(self):
@@ -73,10 +74,13 @@ class TestMfcc(unittest.TestCase):
     def test_recording_matrix_can_be_sliced_at_both_frame_rates(self):
         segment = self.make_segment(100, 200)
         recording = recording_mfcc(self.audio)
-        self.assertEqual(recording.shape, (39, 98))
+        self.assertEqual(recording.shape, (98, 39))
+        self.assertTrue(recording.flags.c_contiguous)
         aligned = slice_recording_mfcc(recording, segment)
         full_rate = slice_recording_mfcc(
             recording, segment, wav2vec2_frames=False)
+        self.assertTrue(aligned.flags.c_contiguous)
+        self.assertTrue(full_rate.flags.c_contiguous)
         expected_aligned = mfcc(segment)
         expected_full_rate = mfcc(segment, wav2vec2_frames=False)
         np.testing.assert_allclose(aligned, expected_aligned,
@@ -89,20 +93,20 @@ class TestMfcc(unittest.TestCase):
         broader_segment = self.make_segment(100, 400)
         inner = mfcc(inner_segment, wav2vec2_frames=False)
         broader = mfcc(broader_segment, wav2vec2_frames=False)
-        np.testing.assert_allclose(inner, broader[:, 10:22],
+        np.testing.assert_allclose(inner, broader[10:22],
             rtol=1e-5, atol=1e-5)
 
     def test_short_segment_at_recording_start_uses_boundary_padding(self):
         segment = self.make_segment(0, 5)
         result = mfcc(segment)
-        self.assertEqual(result.shape, (39, 1))
+        self.assertEqual(result.shape, (1, 39))
         finite = np.isfinite(result)
         self.assertTrue(finite.all())
 
     def test_short_segment_at_recording_end_uses_boundary_padding(self):
         segment = self.make_segment(975, 985)
         result = mfcc(segment)
-        self.assertEqual(result.shape, (39, 1))
+        self.assertEqual(result.shape, (1, 39))
         finite = np.isfinite(result)
         self.assertTrue(finite.all())
 
