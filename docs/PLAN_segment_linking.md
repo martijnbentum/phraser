@@ -1,11 +1,14 @@
 # Segment linking and batch persistence — continuation notes
 
 Status notes for continuing the phrase-tree work. Rewritten
-2026-07-17. The phrase-hierarchy arc is COMPLETE and tagged:
+2026-07-17 and audited 2026-07-28. The phrase-hierarchy arc is tagged:
 `pre-phrase-hierarchy` (0.2.38) → `post-phrase-hierarchy` (`086a9b5`,
-v0.2.65); the diff between the tags is the whole arc. This commit
-adds the speaker identity guard on top and rewrites these notes.
-Suite green: 201 tests + 33 subtests
+v0.2.65); the diff between the tags contains 27 commits and is the
+architecture arc. The speaker identity guard (`e341ca4`, v0.2.66)
+sits one commit AFTER the end tag. Therefore the end tag is not the
+fully hardened endpoint if the guard is considered part of the new
+setup; do not silently describe v0.2.65 as including it.
+Suite green on current main: 248 tests + 37 subtests
 (`.venv/bin/python -m pytest tests/ -q`). Every guard added in this
 arc was negative-verified: with the guard temporarily disabled, its
 tests fail (for the replace semantics, the deletion and its
@@ -50,7 +53,7 @@ section.
   `_prepare_batch`/`_finalize_batch`, shared by
   `_replace_phrase_trees` (which cannot reuse `save_many`: deletes
   and writes must share a transaction).
-- Speaker identity guard (this commit): the loader and every save
+- Speaker identity guard (post-tag commit `e341ca4`): the loader and every save
   path stamp `_persisted_speaker_id` via
   `store.stamp_persisted_identity` (speaker_id is value-only; `_key`
   already snapshots the audio id);
@@ -58,6 +61,38 @@ section.
   Force-mutated speaker_id now raises on `save`, `save_many` and
   `update`, mirroring the audio guard. Cost: one attribute copy at
   load/save, one equality check at save.
+
+## Audit findings (2026-07-28)
+
+- **Tag boundary clash**: `post-phrase-hierarchy` is called the
+  completed endpoint, but it excludes the speaker identity guard
+  immediately above it. Leave the existing tag immutable if it has
+  been shared; use a later tag/release when a fully hardened endpoint
+  is required.
+- **Non-atomic update**: `Store.update` deletes the old row and saves
+  the new row in two transactions. A crash between them loses the
+  row, and the old label-index entry is not removed.
+- **Stale label-index entries on delete**: `Store.delete` and
+  `Store.delete_many` remove main rows without removing their label
+  index entries. `DB.replace_many`, used by phrase-tree replacement,
+  already performs both operations in one transaction.
+- **Low-level rebuild hazard**: a plain `save_many` of rebuilt
+  children can leave the old persisted layer in place. This is a
+  documented API constraint rather than a failed guard: use
+  `replace_children` followed by
+  `save_phrase_trees(overwrite=True)`.
+- **Cache-clearing reparent edge**: after `store._cache.clear()`, an
+  old parent held only by an external variable cannot have its staged
+  child cache repaired during reparenting. One object can then appear
+  in two staged trees; an intra-batch duplicate-key check catches a
+  joint save.
+- **Small backlog findings**: candidate/overlap names remain
+  misleading, the README staging example has no automated smoke test,
+  and the non-overwrite collision error does not identify the
+  colliding object.
+- **Formatting**: `git diff --check
+  pre-phrase-hierarchy..post-phrase-hierarchy` reports an extra blank
+  line at EOF in `phraser/model_helper.py`. This is cosmetic.
 
 ## Decisions made (do not relitigate)
 
@@ -90,25 +125,35 @@ section.
 
 ## Next steps
 
-1. **Modernize `store.update`**: it is the last delete-then-write
+1. **Modernize `Store.update`**: it is the last delete-then-write
    path — two transactions (crash window) and no label-index cleanup
    for the deleted old row. Rebuild it on `DB.replace_many` (one read
    of the old row recovers the label for index cleanup).
-2. **Naming backlog** (each mechanical, do when touching the file):
+2. **Make deletion clean the label index**: update `Store.delete` and
+   `Store.delete_many` to remove the label-index entries belonging to
+   deleted rows, preferably in the same transaction as the main-row
+   deletion.
+3. **Resolve the release boundary**: do not move a shared
+   `post-phrase-hierarchy` tag. Add a later tag/release including
+   `e341ca4` if consumers need an endpoint containing both the
+   architecture arc and the speaker identity guard.
+4. **Naming backlog** (each mechanical, do when touching the file):
    - `DB.instance_to_child_keys` → a candidate-scan name; do NOT
      rename `audio_id_to_child_keys` (audio→phrase ownership is
      unambiguous).
    - `Segment.overlapping` hides a level shift: `phrase.overlapping`
      yields WORDS (child class), not other phrases. Rename when a
      better name surfaces; `overlapping_children` is also ambiguous.
-3. **Optional**: a README-example smoke test (the staging snippet run
+5. **Optional**: a README-example smoke test (the staging snippet run
    against a temp store) to stop future README rot; a friendlier
    pre-check message for the non-overwrite existing-key case (the DB
    error does not name the colliding object).
-4. **Candidate simplification**: `resyllabifier` and
+6. **Candidate simplification**: `resyllabifier` and
    `fix_syllable_labels` predate replace semantics; their
    save-new/delete-old dances could collapse into
    `save_phrase_trees(overwrite=True)` when next touched.
+7. **Cosmetic cleanup**: remove the extra blank line at EOF in
+   `phraser/model_helper.py`.
 
 ## Gotchas
 
@@ -144,9 +189,10 @@ section.
 - Deletion paths must clean label-index entries
   (`scripts/fix_syllable_labels.py` pattern); saves never do. The
   replace path cleans them inside `DB.replace_many`;
-  `Store.delete_many` and `store.update` still do NOT (next step 1).
+  `Store.delete`, `Store.delete_many`, and `Store.update` still do
+  NOT (next steps 1-2).
 - Run tests with the project venv:
-  `.venv/bin/python -m pytest tests/ -q` (201 + 33 green).
+  `.venv/bin/python -m pytest tests/ -q` (248 + 37 green).
 - `scripts/check_style.py` on touched files; compare ERROR counts
   against `git show HEAD:<file>` — bar is "no new errors"
   (pre-existing findings shift line numbers when code is inserted;
