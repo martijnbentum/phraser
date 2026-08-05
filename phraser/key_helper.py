@@ -17,7 +17,8 @@ LABEL_INDEX_LEN =  39
 SPEAKER_LEN = struct.calcsize(SPEAKER_FMT)  # 11
 AUDIO_LEN   = struct.calcsize(AUDIO_FMT)    # 10
 SPEAKER_AUDIO_LEN = struct.calcsize(SPEAKER_AUDIO_FMT)  # 16
-SEGMENT_LEN = struct.calcsize(SEGMENT_FMT)  # 22
+SEGMENT_KEY_LENGTH = struct.calcsize(SEGMENT_FMT)  # 22
+SEGMENT_LEN = SEGMENT_KEY_LENGTH
 TIME_SCAN_LEN = struct.calcsize(TIME_SCAN_FMT)  # 17
 
     

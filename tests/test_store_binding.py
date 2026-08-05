@@ -255,6 +255,8 @@ class TestStoreBinding(unittest.TestCase):
         self.assertTrue(hasattr(phraser, 'Store'))
         self.assertTrue(hasattr(phraser, 'UnboundStoreError'))
         self.assertTrue(hasattr(phraser, 'ClosedStoreError'))
+        self.assertEqual(phraser.SEGMENT_KEY_LENGTH, 22)
+        self.assertIn('SEGMENT_KEY_LENGTH', phraser.__all__)
         self.assertFalse(
             hasattr(phraser, 'open_store'),
             'open_store should no longer be exported from phraser',
