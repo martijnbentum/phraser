@@ -243,7 +243,7 @@ class DB:
                 for count, key in enumerate(keys, start=1):
                     rank = key[9]
                     d[rank].append(key)
-                    if count % 100_000 == 0:
+                    if count % 1_000_000 == 0:
                         bar.update(count)
                 bar.update(n)
         return d
