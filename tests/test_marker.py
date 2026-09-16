@@ -9,7 +9,7 @@ from phraser import Audio, Marker, SEGMENT_KEY_LENGTH, Speaker, Store
 from phraser import key_helper, struct_helper, struct_value
 from phraser.marker import make_marker
 from phraser.model_helper import EMPTY_ID
-from phraser.segment import Phone, Phrase, Syllable, Word
+from phraser.segment import Phone, Phrase, Segment, Syllable, Word
 
 
 class TestMarkerKeys(unittest.TestCase):
@@ -55,6 +55,21 @@ class TestMarkerKeys(unittest.TestCase):
 
 
 class TestMarkerSerialization(unittest.TestCase):
+    def test_only_markers_accept_empty_speaker(self):
+        for cls in (Segment, Phrase, Word, Syllable, Phone, Marker):
+            with self.subTest(cls=cls.__name__):
+                with self.assertRaises(ValueError):
+                    cls('event', 0, 100, b'audio-id', None)
+                if cls is Marker: continue
+                with self.assertRaises(ValueError):
+                    cls('event', 0, 100, b'audio-id', EMPTY_ID)
+        marker = Marker('event', 0, 100, b'audio-id', EMPTY_ID)
+        self.assertIsNone(marker.speaker_key)
+        self.assertIsNone(marker.speaker)
+        phrase = Phrase('speech', 0, 100, b'audio-id', b'speaker!')
+        with self.assertRaisesRegex(ValueError, 'speaker_id must match'):
+            marker.attach_phrase(phrase)
+
     def test_value_round_trip(self):
         marker = Marker('gelach café 🎵', 1250, 1500, b'audio-id', b'speaker!')
         value = struct_value.pack_instance(marker)
@@ -213,17 +228,35 @@ class TestMarkerPersistence(unittest.TestCase):
         self.assertIs(marker.phrase, first)
         self.assertEqual(marker.speaker_id, first.speaker_id)
 
-    def test_make_marker_requires_overlap_during_lookup(self):
+    def test_make_marker_without_overlap_has_empty_speaker(self):
         phrase = Phrase('phrase', 100, 400, self.audio.identifier,
             self.speaker.identifier)
         self.audio._phrases = [phrase]
         for start, end in ((0, 100), (400, 500)):
             with self.subTest(start=start, end=end):
-                with self.assertRaisesRegex(ValueError, 'No overlapping'):
-                    make_marker('event', start, end, self.audio, self.store)
+                marker = make_marker('event', start, end, self.audio,
+                    self.store)
+                self.assertEqual(marker.speaker_id, EMPTY_ID)
+                self.assertIsNone(marker.phrase)
         self.audio._phrases = []
-        with self.assertRaisesRegex(ValueError, 'No overlapping'):
-            make_marker('event', 200, 300, self.audio, self.store)
+        marker = make_marker('event', 200, 300, self.audio, self.store)
+        self.assertEqual(marker.speaker_id, EMPTY_ID)
+        marker.save()
+        self._reopen_store()
+        loaded = self.store.load(marker.key)
+        self.assertEqual(loaded.speaker_id, EMPTY_ID)
+        self.assertIsNone(loaded.speaker_key)
+        self.assertIsNone(loaded.speaker)
+        self.assertIsNone(loaded.phrase)
+        loaded.speaker_id = self.speaker.identifier
+        with self.assertRaisesRegex(ValueError, 'cannot change'):
+            loaded.save(overwrite=True)
+
+    def test_make_marker_without_overlap_keeps_explicit_speaker(self):
+        marker = make_marker('event', 200, 300, self.audio, self.store,
+            speaker=self.speaker)
+        self.assertEqual(marker.speaker_id, self.speaker.identifier)
+        self.assertIsNone(marker.phrase)
 
 
 def make_phrase_tree(audio_id=b'audio-id', speaker_id=b'speaker!'):

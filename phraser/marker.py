@@ -12,11 +12,12 @@ from progressbar import progressbar
 
 
 class Marker(Segment):
-    '''A time interval with Audio and Speaker links and no segment relatives.'''
+    '''A time interval with audio, an optional speaker, and no relatives.'''
 
     DB_FIELDS = {'identifier', 'label', 'start', 'end', 'audio_id', 'speaker_id',
         'phrase_id', 'phrase_start'}
     allowed_child_type = None
+    allow_empty_speaker = True
     phrase_id = EMPTY_ID
     phrase_start = 0
 
@@ -134,7 +135,7 @@ def make_marker(label, start, end, audio, store, phrase=None, speaker=None):
     phrase:    explicit phrase, or find the first overlap in audio.phrases
     speaker:   explicit speaker, or use the phrase's speaker ID
 
-    Raise ValueError if no overlapping phrase or explicit speaker is available.
+    Use EMPTY_ID if no overlapping phrase or explicit speaker is available.
     '''
     start, end = int(start), int(end)
     if phrase is None:
@@ -144,9 +145,7 @@ def make_marker(label, start, end, audio, store, phrase=None, speaker=None):
                 break
     if speaker is not None: speaker_id = speaker.identifier
     elif phrase is not None: speaker_id = phrase.speaker_id
-    else:
-        message = 'No overlapping phrase found; supply a speaker explicitly.'
-        raise ValueError(message)
+    else: speaker_id = EMPTY_ID
     return Marker(label, start, end, audio.identifier, speaker_id,
         store=store, phrase=phrase)
 

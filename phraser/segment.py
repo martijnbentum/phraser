@@ -26,6 +26,7 @@ class Segment:
     METADATA_FIELDS = {}# subclasses override
     allowed_child_type = []# subclasses override
     overlap_code = 9
+    allow_empty_speaker = False
 
     def __init__(self, label, start, end, audio_id, speaker_id,
         parent_id=EMPTY_ID, parent_start=0,
@@ -35,7 +36,10 @@ class Segment:
         if audio_id is None or audio_id == EMPTY_ID:
             m = f'{self.object_type} requires an audio_id at construction.'
             raise ValueError(m)
-        if speaker_id is None or speaker_id == EMPTY_ID:
+        missing_speaker = speaker_id is None
+        if speaker_id == EMPTY_ID and not self.allow_empty_speaker:
+            missing_speaker = True
+        if missing_speaker:
             m = f'{self.object_type} requires a speaker_id at construction.'
             raise ValueError(m)
         self.label = label
