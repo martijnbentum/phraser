@@ -235,8 +235,10 @@ class DB:
         db = self.db['main']
         d = {k:[] for k in key_helper.RANK_CLASS_MAP.keys()}
         with self.env.begin() as txn:
+            n = txn.stat(db)['entries']
             cursor = txn.cursor(db = db)
-            for key in cursor.iternext(keys=True, values=False):
+            for key in progressbar(cursor.iternext(keys=True, values=False),
+                max_value=n):
                 rank = key[9]
                 d[rank].append(key)
         return d
