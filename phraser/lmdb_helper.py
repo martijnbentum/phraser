@@ -2,7 +2,7 @@ from pathlib import Path
 import pickle
 
 import lmdb
-from progressbar import progressbar
+from progressbar import ProgressBar, progressbar
 
 from . import key_helper
 from . import locations
@@ -238,10 +238,14 @@ class DB:
         with self.env.begin() as txn:
             n = txn.stat(db)['entries']
             cursor = txn.cursor(db = db)
-            for key in progressbar(cursor.iternext(keys=True, values=False),
-                max_value=n):
-                rank = key[9]
-                d[rank].append(key)
+            with ProgressBar(max_value=n) as bar:
+                keys = cursor.iternext(keys=True, values=False)
+                for count, key in enumerate(keys, start=1):
+                    rank = key[9]
+                    d[rank].append(key)
+                    if count % 100_000 == 0:
+                        bar.update(count)
+                bar.update(n)
         return d
 
     def all_object_type_keys(self, object_type, d = None):
