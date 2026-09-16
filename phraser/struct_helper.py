@@ -9,6 +9,7 @@ CLASS_RANK_MAP = {
     "Syllable": 3,
     "Phone":    4,   
     "Speaker":  5,
+    "Marker":   6,
 }
 
 RANK_CLASS_MAP = utils.reverse_dict(CLASS_RANK_MAP)
@@ -32,7 +33,8 @@ def key_token_for_field(field_name):
 
 def make_key_fields_for_class(class_name):
     '''Return ordered key field names for a class-specific LMDB key layout.
-    class_name: one of audio, speaker, phrase, word, syllable, phone
+    class_name: audio, speaker, phrase, word, syllable, phone, marker,
+                segment, or speaker_audio
     '''
     class_name = class_name.lower()
 
@@ -45,7 +47,8 @@ def make_key_fields_for_class(class_name):
     if class_name == 'speaker_audio':
         return ['uuid', 'uuid']
 
-    if class_name in ['phrase', 'word', 'syllable', 'phone', 'segment']:
+    segment_names = ('phrase', 'word', 'syllable', 'phone', 'marker', 'segment')
+    if class_name in segment_names:
         return ['class_id', 'uuid', 'class_id', 'start', 'uuid']
 
     raise ValueError(f'Unknown class: {class_name}')
@@ -60,8 +63,9 @@ def make_key_fmt_for_time_scan(byte_order='>'):
 
 def make_key_fmt_for_class(class_name, byte_order='>'):
     '''Return struct fmt string for a class-specific LMDB key layout.
-    class_name: one of audio, speaker, phrase, word, syllable, phone
-    byte_order: endianness, '>' for big-endian
+    class_name:    audio, speaker, phrase, word, syllable, phone, marker,
+                   segment, or speaker_audio
+    byte_order:    endianness, '>' for big-endian
     '''
     fields = make_key_fields_for_class(class_name)
     tokens = [byte_order] + [key_token_for_field(f) for f in fields]

@@ -48,6 +48,20 @@ def unpack_audio(value_bytes):
     layout = LAYOUTS['audio']
     return _unpack_with_layout(layout, value_bytes, 'audio')
 
+def pack_marker(instance):
+    '''Pack a marker's timing, speaker and phrase links, and label.'''
+    fixed = {'version': VERSION, 'flags': 0, 'end': instance.end,
+        'speaker_id': instance.speaker_id, 'phrase_id': instance.phrase_id,
+        'phrase_start': instance.phrase_start}
+    var = {'label': instance.label}
+    return _pack_with_layout(LAYOUTS['marker'], fixed, var, 'marker')
+
+
+def unpack_marker(value_bytes):
+    '''Decode a marker value; audio, start, and identifier live in its key.'''
+    return _unpack_with_layout(LAYOUTS['marker'], value_bytes, 'marker')
+
+
 def pack_phrase(instance):
     '''Pack Phrase value bytes from dict.
     layout: layout dict for phrase
@@ -347,6 +361,18 @@ def audio_layout():
         variable_specs.append({'name': name, 'kind': 'str', 'bits': 16})
     return build_layout(fixed_specs=fixed_specs, variable_specs=variable_specs)
 
+def marker_layout():
+    fixed_specs = []
+    for name in ('version', 'flags'):
+        fixed_specs.append({'name': name, 'kind': 'int', 'bits': 8})
+    fixed_specs.append({'name': 'end', 'kind': 'int', 'bits': 32})
+    fixed_specs.append({'name': 'speaker_id', 'kind': 'bytes', 'n_bytes': 8})
+    fixed_specs.append({'name': 'phrase_id', 'kind': 'bytes', 'n_bytes': 8})
+    fixed_specs.append({'name': 'phrase_start', 'kind': 'int', 'bits': 32})
+    variable_specs = [{'name': 'label', 'kind': 'str', 'bits': 16}]
+    return build_layout(fixed_specs=fixed_specs, variable_specs=variable_specs)
+
+
 def phrase_layout():
     fixed_specs = []
     for name in 'version flags overlap_code'.split():
@@ -478,6 +504,7 @@ def build_layout(byte_order='>', fixed_specs=None, variable_specs=None):
 
 LAYOUTS = {
     'audio': audio_layout(),
+    'marker': marker_layout(),
     'speaker': speaker_layout(),
     'phrase': phrase_layout(),
     'word': word_layout(),

@@ -6,6 +6,7 @@ from progressbar import progressbar
 
 from . import key_helper
 from . import locations
+from . import struct_value
 
 default_db_name = 'main'
 
@@ -292,6 +293,28 @@ class DB:
             print(f'Error {e}, while deleting key: {k}')
             txn.abort()
             raise e
+
+    def delete_labelled_keys(self, keys, label, object_type):
+        '''Delete exact label matches and their index entries atomically.
+
+        keys:           candidate keys from the label index, for one batch
+        label:          exact label to delete
+        object_type:    class name used for decoding and index keys
+        '''
+        deleted = []
+        main, index = self.db['main'], self.db['label_segment']
+        with self.env.begin(write=True) as txn:
+            for key in keys:
+                raw = txn.get(key, db=main)
+                index_key = key_helper.label_to_label_index_key(
+                    label, object_type, key)
+                if raw is not None:
+                    fields = struct_value.unpack_instance(object_type, raw)
+                    if fields['label'] != label: continue
+                    txn.delete(key, db=main)
+                    deleted.append(key)
+                txn.delete(index_key, db=index)
+        return deleted
 
     def delete_main(self):
         """Delete all keys in the main LMDB database."""

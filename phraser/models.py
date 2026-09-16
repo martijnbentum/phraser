@@ -1,6 +1,7 @@
 from . import key_helper
 from . import query
 from . import utils
+from .marker import Marker
 from .segment import Segment, Phrase, Word, Syllable, Phone
 from .store import ClosedStoreError, UnboundStoreError
 from .utils import R, B, GR, RE

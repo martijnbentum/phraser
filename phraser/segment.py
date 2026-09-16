@@ -444,9 +444,8 @@ class Segment:
 
 
     def to_struct_value(self):
-        '''Serialize to a struct value (for LMDB storage).
-        '''
-        return struct_value.pack_segment(self)
+        '''Serialize to a struct value for LMDB storage.'''
+        return struct_value.pack_instance(self)
 
     @property
     def metadata_present(self):
