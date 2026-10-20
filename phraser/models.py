@@ -114,6 +114,18 @@ class Audio:
                 phones.append(phone)
         return phones
 
+    def phones_for_speaker(self, speaker):
+        '''Return this speaker's phones in recording time order.
+
+        speaker:  Speaker instance whose identifier selects the phrases
+        '''
+        phones = []
+        for phrase in self.phrases:
+            if phrase.speaker_id != speaker.identifier: continue
+            phones.extend(phrase.phones)
+        phones.sort(key=lambda phone: (phone.start, phone.end))
+        return phones
+
     @property
     def speakers_query(self):
         """Return a query object for all phrases for this speaker."""
@@ -250,7 +262,9 @@ class Speaker:
         if hasattr(self, '_phrase_keys'): return self._phrase_keys
         self._phrase_keys = []
         for audio in self.audios:
-            self._phrase_keys += audio.phrase_keys
+            for phrase in audio.phrases:
+                if phrase.speaker_id == self.identifier:
+                    self._phrase_keys.append(phrase.key)
         return self._phrase_keys
 
     @property
