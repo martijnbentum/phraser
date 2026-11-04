@@ -390,6 +390,34 @@ phone.stress   # 'unstressed' / 'primary' / 'secondary' / 'unknown'
 The underlying helpers (`get_phone_features`, `get_feature_vector`,
 `FEATURE_ORDER`) live in `phraser.phone_features`.
 
+## Copy recording materials to another store
+
+```python
+from phraser import Store, copy_audio_materials
+
+source = Store(path='/path/to/source')
+goal = copy_audio_materials(audio_keys, '/path/to/experiment/phraser_store',
+    source_store=source)
+# Work with goal.audios, goal.words, etc.; the caller owns both stores.
+goal.close()
+source.close()
+```
+
+`copy_audio_materials` lives in `phraser.copy_materials`. It copies the supplied
+Audio records, all their phrases, words, syllables, and phones, and linked
+speakers. Keys, identifiers, persisted metadata, and audio filenames are
+preserved. Shared speakers and repeated Audio keys are copied once. Markers
+are excluded, and links from speakers into unselected recordings are not
+followed. The destination works independently of the source annotation
+store; the audio files themselves stay at their original paths.
+
+The destination directory must be new or empty. The function returns an open
+Store with refreshed query roots and normal label indexes. Source records
+and cached objects remain unchanged. Recording selection, such as corpus
+component or language filtering, belongs to the caller. Copying is performed
+one recording at a time; an interrupted or failed copy can leave a partial
+destination, which is not automatically overwritten on the next call.
+
 ## Repository layout
 
 ```text

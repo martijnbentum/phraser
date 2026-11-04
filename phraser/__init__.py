@@ -2,6 +2,7 @@ from .key_helper import SEGMENT_KEY_LENGTH
 from .marker import bulk_delete_markers, make_marker, make_markers
 from .models import Audio, Marker, Phone, Phrase, Speaker, Syllable, Word
 from .store import ClosedStoreError, Store, UnboundStoreError
+from .copy_materials import copy_audio_materials
 
 __all__ = [
     "Audio",
@@ -16,6 +17,7 @@ __all__ = [
     "UnboundStoreError",
     "Word",
     "bulk_delete_markers",
+    "copy_audio_materials",
     "make_marker",
     "make_markers",
 ]
