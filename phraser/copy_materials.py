@@ -1,6 +1,9 @@
 '''Copy complete recording hierarchies between Phraser stores.'''
 
 from pathlib import Path
+from time import monotonic
+
+from progressbar import progressbar
 
 from . import key_helper
 from .store import Store, value_key_to_instance
@@ -23,17 +26,26 @@ def copy_audio_materials(audio_keys, goal_store_root, source_store):
     if root.exists() and (not root.is_dir() or any(root.iterdir())):
         raise FileExistsError('goal store root must be new or empty')
     keys = list(dict.fromkeys(audio_keys))
+    started = monotonic()
+    print(f'Checking {len(keys):,} source Audio keys...', flush=True)
     _check_audio_keys(keys, source_store)
+    print(f'Creating destination store: {root}', flush=True)
     goal = Store(path=root)
     copied_speakers = set()
     try:
-        for key in keys:
+        print('Copying recording hierarchies...', flush=True)
+        for key in progressbar(keys):
             _copy_audio(key, source_store, goal, copied_speakers)
             goal._cache.clear()
+        print('Refreshing destination query roots...', flush=True)
         goal.refresh_query_roots()
     except Exception:
         goal.close()
         raise
+    elapsed = monotonic() - started
+    n_objects = len(goal.save_key_counter)
+    print(f'Copied {len(keys):,} recordings; {n_objects:,} objects including '
+        f'{len(copied_speakers):,} speakers in {elapsed:.1f}s.', flush=True)
     return goal
 
 

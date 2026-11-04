@@ -411,6 +411,11 @@ are excluded, and links from speakers into unselected recordings are not
 followed. The destination works independently of the source annotation
 store; the audio files themselves stay at their original paths.
 
+Copying reports key checking, destination creation, a recording-level
+progress bar, query-root refresh, and final object/speaker counts and elapsed
+time. Each recording's annotations are read and written in bulk, with the
+destination object cache cleared between recordings.
+
 The destination directory must be new or empty. The function returns an open
 Store with refreshed query roots and normal label indexes. Source records
 and cached objects remain unchanged. Recording selection, such as corpus
