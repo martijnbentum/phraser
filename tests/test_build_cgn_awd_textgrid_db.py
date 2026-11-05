@@ -156,6 +156,29 @@ class TestPhraseTreeConstruction(unittest.TestCase):
         self.assertEqual([phone.position for phone in first.phones],
             ['onset', 'nucleus', 'coda'])
 
+    def test_computes_single_speaker_overlap_at_every_level(self):
+        phrases, _ = self.build()
+        for phrase in phrases:
+            for item in phrase.items:
+                self.assertEqual(item.overlap_code, 0)
+
+    def test_computes_overlap_after_staging_all_speakers(self):
+        ort, awd = make_pair()
+        second_ort, second_awd = make_pair()
+        second_ort.tiers[0].name = 'N00002'
+        ort.append(second_ort.tiers[0])
+        for tier in second_awd.tiers:
+            tier.name = tier.name.replace('N00001', 'N00002')
+            awd.append(tier)
+        other = self.store.create(models.Speaker, name='N00002')
+        speakers = {'N00001': self.speaker, 'N00002': other}
+        phrases = builder.textgrids_to_phrase_trees(ort, awd, self.audio,
+            speakers, Path('/tmp/fn000001.awd'), self.store)
+        self.assertEqual(len(phrases), 4)
+        for phrase in phrases:
+            for item in phrase.items:
+                self.assertEqual(item.overlap_code, 1)
+
     def test_handles_unreliable_shared_and_skipped_units(self):
         phrases, report = self.build(special=True)
         unreliable, shared, vowel = phrases[0].words

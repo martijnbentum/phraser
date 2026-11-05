@@ -3,6 +3,7 @@ import time
 from ssh_audio_play import play
 
 from . import key_helper
+from . import overlap as speech_overlap
 from . import phone_features
 from . import query
 from . import struct_value
@@ -461,29 +462,67 @@ class Segment:
 
     @property
     def overlap(self):
+        '''Whether this span intersects another speaker's non-silence word.
+
+        Only words in the same audio count, and the intersection must have
+        positive duration; touching boundaries do not count. A phrase's
+        full span includes pauses, so it can overlap while its words do not.
+        Phrase, syllable, and phone intersections do not determine status.
+
+        Codes 0 and 1 return the stored result; code 9 computes from current
+        persisted words without saving. Recompute stored codes explicitly
+        after annotation changes.
+        '''
         overlap = utils.reverse_overlap_dict[self.overlap_code]
-        if overlap is None: return self.overlap_items != []
+        if overlap is None: return bool(self.overlap_items)
         return overlap
 
 
     @property
     def overlap_items(self):
-        if hasattr(self, '_overlap_items'): return self._overlap_items
-        if self.object_type == 'Phrase':
-            if not self.audio: return []
-            items = self.audio.phrases
-        else:
-            items = self.parent.overlapping
-        if items is None: return []
-        overlapping = []
-        for item in items:
-            if item == self: continue
-            if item.start > self.end: break
-            if item.end < self.start: continue
-            if utils.overlap(self, item):
-                overlapping.append(item)
-        self._overlap_items = overlapping
-        return self._overlap_items
+        '''Return other-speaker speech words intersecting this object's span.
+
+        These words are the evidence used to compute overlap status;
+        this property is equivalent to overlap_words. Phrase spans include
+        pauses, so a phrase can overlap while none of its own words does.
+        Use overlap_phrases, overlap_syllables, or overlap_phones to inspect
+        time intersections at other levels; those do not determine status.
+        Stored overlap codes may be stale until explicitly recomputed.
+        '''
+        return self.overlap_words
+
+    @property
+    def overlap_words(self):
+        '''Other-speaker speech words intersecting this span.'''
+        return speech_overlap.overlap_items(self)
+
+    @property
+    def overlap_phrases(self):
+        '''Other-speaker phrase spans intersecting this span, pauses included.'''
+        return speech_overlap.overlap_at_level(self, 'Phrase')
+
+    @property
+    def overlap_syllables(self):
+        '''Other-speaker syllable spans intersecting this span.'''
+        return speech_overlap.overlap_at_level(self, 'Syllable')
+
+    @property
+    def overlap_phones(self):
+        '''Other-speaker phone spans intersecting this span.'''
+        return speech_overlap.overlap_at_level(self, 'Phone')
+
+    def overlap_all_items(self):
+        '''Return intersecting other-speaker items across the hierarchy.
+
+        Results are grouped as phrases, words, syllables, then phones,
+        ordered by start time and end time within each level. These are
+        time intersections; only the non-silence words determine overlap
+        status. A nonempty result therefore does not imply overlap=True.
+        '''
+        items = self.overlap_phrases + self.overlap_words
+        items.extend(self.overlap_syllables)
+        items.extend(self.overlap_phones)
+        return items
 
     @property
     def siblings(self):

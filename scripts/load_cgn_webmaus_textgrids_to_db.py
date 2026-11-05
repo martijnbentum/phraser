@@ -5,6 +5,7 @@ from progressbar import progressbar
 from phraser import models
 from phraser import Store
 from phraser import textgrid_loader as load_to_db
+from phraser.overlap import update_audio_overlap
 from phraser.utils import seconds_to_miliseconds
 
 from . import prepare_cgn_webmaus_import
@@ -146,6 +147,9 @@ def ort_infos_to_db_items(ort_infos, refresh_db = True, save = True,
     if save:
         print(f'saving {len(add_items)} db items to database')
         store.save_many(add_items)
+        affected = {item.audio_id for item in add_items}
+        for audio in fn_to_audio_dict.values():
+            if audio.identifier in affected: update_audio_overlap(audio)
     print(f'{len(add_items)} new db items')
     print(f'{len(skipped)} existing db items skipped')
     print(f'{len(errors)} ort infos with missing speaker or audio')

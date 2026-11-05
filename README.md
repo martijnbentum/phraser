@@ -241,6 +241,104 @@ corpus-level recording bar. LMDB retains its existing segment-batch progress
 display. Equal-sized segment bars are the main segment rows followed by their
 label-index entries; small bars usually represent newly saved speakers.
 
+### Speech overlap
+
+`segment.overlap` is true when the segment's time span intersects a
+non-silence word from another speaker in the same audio. This applies to
+phrases, words, syllables, and phones. Touching boundaries do not count.
+A phrase includes its pauses, so it can overlap while all its words do not.
+`segment.overlap_items` returns the word evidence for that status and is
+equivalent to `segment.overlap_words`.
+
+Use `segment.overlap_phrases`, `segment.overlap_syllables`, and
+`segment.overlap_phones` to inspect intersecting other-speaker segments at
+other levels. These report time intersections in the same audio, without
+changing the word-based status rule. For example, a word during another
+speaker's phrase pause can have nonempty `overlap_phrases` while its
+`overlap_words` is empty and `overlap` is false. Phone results include
+explicit silence phones when their spans intersect. Results use persisted
+annotations and are ordered by start time, then end time.
+
+`segment.overlap_all_items()` combines these results across the hierarchy:
+phrases, words, syllables, then phones, ordered by time within each level.
+A nonempty result does not imply `overlap=True`; only words determine status.
+
+Marker overlap properties retain their separate annotation-link behavior.
+
+Stored `overlap_code` values are `0` (computed false), `1` (computed true),
+and `9` (not computed). Code `9` computes on demand from persisted words,
+without writing. Existing `0` and `1` codes are used until recomputed.
+
+```python
+from phraser import set_overlap_codes, update_audio_overlap
+
+# Before saving: provide every segment from every speaker in the audio.
+items = []
+for phrase in phrases:
+    items.extend(phrase.items)
+set_overlap_codes(items)
+
+# After saving: scan all stored segments, including unlinked segments.
+update_audio_overlap(audio)
+```
+
+The AWD builder computes codes after staging all speakers. The WebMAUS bulk
+importer recomputes affected audios after saving. Other write workflows must
+call `update_audio_overlap(audio)` after adding, deleting, or retiming
+annotations. Code updates do not happen automatically on individual saves.
+The legacy `check_overlap_audio` and `check_overlap_audios` entry points
+preserve their names and calling pattern, and delegate to the new
+computation. They intentionally replace the old phrase-reference results;
+there is no separate legacy definition.
+
+Existing databases need a full recomputation of all three codes; updating
+only `9` leaves results from the old phrase-based reference definition.
+No database migration runs automatically.
+
+Run the migration on a consistent database copy with annotations unchanged.
+From Python or IPython with the repository importable, first create a dry-run
+report. Close any existing Store for this database before calling:
+
+```python
+from scripts.migrate_overlap import migrate_overlap
+
+db_path = '/path/to/database-copy'
+report = migrate_overlap(db_path)
+report['summary']
+report['report_path']
+```
+
+Dry runs open LMDB read-only. The JSON report contains old-to-new code
+counts per level, examples, and the number of overlapping phrases without
+overlapping owned words. To apply all codes and verify after reopening:
+
+```python
+report = migrate_overlap(db_path, apply=True)
+report['complete'], report['verified']
+```
+
+Apply mode commits one audio at a time, including unlinked segments, and
+changes only overlap-code bytes. Other stored fields and indexes remain
+intact. Default reports are saved beside the database as
+`<database>.overlap-dry-run.json` and `<database>.overlap-apply.json`.
+Set `report_path='/path/to/report.json'` to choose another location. Existing
+reports are protected against accidental overwrites. To continue an
+interrupted apply run:
+
+```python
+report = migrate_overlap(db_path, apply=True, resume=True)
+```
+
+Resume checks the database path, definition version, audio inventory, and
+fingerprints of completed audios. A changed completed audio is rejected.
+An audio committed just before interruption but not yet checkpointed is
+safely recomputed; its original transition counts may be lost. `limit=N`
+processes at most N new audios in a batch. `complete` means every audio was
+processed; `verified` means the processed audios passed verification after
+reopening. Reports must be outside the database directory. Progress prints
+by default; use `show_progress=False` to suppress it. After migrating, open
+a fresh Store to read the updated results.
+
 ### Query loaded objects
 
 ```python

@@ -1,237 +1,196 @@
-import contextlib
-import importlib.util
-import sys
-import types
-import unittest
+from contextlib import redirect_stdout
+import io
 from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
 
-MODULE_PATH = (Path(__file__).resolve().parents[1]
-               / 'phraser' / 'check_overlap.py')
-
-_fake_utils = types.ModuleType('phraser.utils')
-_fake_utils.overlap_dict = {False: 0, True: 1, None: 9}
-_fake_utils.overlap = lambda a, b: a.start < b.end and b.start < a.end
-
-
-@contextlib.contextmanager
-def fake_phraser_modules():
-    original_phraser = sys.modules.get('phraser')
-    original_utils = sys.modules.get('phraser.utils')
-    original_check_overlap = sys.modules.get('phraser.check_overlap')
-
-    fake_phraser = types.ModuleType('phraser')
-    fake_phraser.utils = _fake_utils
-    sys.modules['phraser'] = fake_phraser
-    sys.modules['phraser.utils'] = _fake_utils
-    try:
-        yield
-    finally:
-        restore_module('phraser', original_phraser)
-        restore_module('phraser.utils', original_utils)
-        restore_module('phraser.check_overlap', original_check_overlap)
+from phraser import Audio, Phone, Phrase, Speaker, Store, Syllable, Word
+from phraser import overlap
+from phraser.check_overlap import check_overlap_audio, check_overlap_audios
+from scripts import load_cgn_webmaus_textgrids_to_db as webmaus
 
 
-def restore_module(name, module):
-    if module is None:
-        sys.modules.pop(name, None)
-    else:
-        sys.modules[name] = module
-
-
-def load_module():
-    with fake_phraser_modules():
-        spec = importlib.util.spec_from_file_location('phraser.check_overlap',
-            MODULE_PATH)
-        module = importlib.util.module_from_spec(spec)
-        module.__package__ = 'phraser'
-        sys.modules['phraser.check_overlap'] = module
-        spec.loader.exec_module(module)
-        return module
-
-
-NO_OVERLAP = 0
-OVERLAP = 1
-
-
-class FakeStore:
-    def __init__(self):
-        self.save_many_calls = []
-
-    def save_many(self, objs, overwrite=False):
-        self.save_many_calls.append((list(objs), overwrite))
-
-
-class FakePhrase:
-    def __init__(self, start, end, speaker_id, words=None, store=None):
-        self.start = start
-        self.end = end
-        self.speaker_id = speaker_id
-        self.words = words or []
-        self.overlap_code = 9
-        self.store = store
-        for word in self.words:
-            bind_store(word, store)
-
-    @property
-    def all_objects(self):
-        objs = [self]
-        syllables, phones = [], []
-        for word in self.words:
-            objs.append(word)
-            for syllable in word.syllables:
-                syllables.append(syllable)
-                phones.extend(syllable.phones)
-        return objs + syllables + phones
-
-def bind_store(obj, store):
-    obj.store = store
-    for syllable in getattr(obj, 'syllables', []):
-        bind_store(syllable, store)
-    for phone in getattr(obj, 'phones', []):
-        bind_store(phone, store)
-    return obj
-
-
-def make_phone(start, end, store=None):
-    return types.SimpleNamespace(start=start, end=end, overlap_code=9,
-                                 store=store)
-
-
-def make_syllable(start, end, phones=None, store=None):
-    syllable = types.SimpleNamespace(start=start, end=end, overlap_code=9,
-                                     phones=phones or [], store=store)
-    for phone in syllable.phones:
-        bind_store(phone, store)
-    return syllable
-
-
-def make_word(start, end, syllables=None, store=None):
-    word = types.SimpleNamespace(start=start, end=end, overlap_code=9,
-                                 syllables=syllables or [], store=store)
-    for syllable in word.syllables:
-        bind_store(syllable, store)
-    return word
-
-
-def make_audio(phrases, n_speakers=1):
-    speakers = [object() for _ in range(n_speakers)]
-    return types.SimpleNamespace(phrases=phrases, speakers=speakers)
-
-
-m = load_module()
-
-
-class TestCheckOverlap(unittest.TestCase):
+class TestOverlap(unittest.TestCase):
     def setUp(self):
-        self.store = FakeStore()
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = str(Path(self.directory.name) / 'db')
+        with redirect_stdout(io.StringIO()):
+            self.store = Store(path=self.path)
+        self.addCleanup(self.store.close)
+        self.audio = self.store.create(Audio, filename='overlap.wav',
+            duration=6000, save=True)
+        self.a = self.store.create(Speaker, name='a', save=True)
+        self.b = self.store.create(Speaker, name='b', save=True)
 
-    def test_empty_audio_no_save(self):
-        audio = make_audio(phrases=[], n_speakers=1)
-        m.check_overlap_audio(audio)
-        self.assertEqual(self.store.save_many_calls, [])
+    def segment(self, cls, start, end, speaker=None, label='speech'):
+        if speaker is None: speaker = self.a
+        return self.store.create(cls, label=label, start=start, end=end,
+            audio_id=self.audio.identifier, speaker_id=speaker.identifier)
 
-    def test_single_speaker_all_no_overlap(self):
-        phone = make_phone(0, 100)
-        syllable = make_syllable(0, 100, phones=[phone])
-        word = make_word(0, 100, syllables=[syllable])
-        phrase = FakePhrase(0, 100, speaker_id='spk1', words=[word],
-            store=self.store)
-        m.check_overlap_audio(make_audio([phrase], n_speakers=1))
-        self.assertEqual(phrase.overlap_code, NO_OVERLAP)
-        self.assertEqual(word.overlap_code, NO_OVERLAP)
-        self.assertEqual(syllable.overlap_code, NO_OVERLAP)
-        self.assertEqual(phone.overlap_code, NO_OVERLAP)
+    def pause_example(self):
+        phrase_a = self.segment(Phrase, 0, 5000)
+        first = self.segment(Word, 0, 2000)
+        last = self.segment(Word, 3000, 5000)
+        phrase_a.add_children([first, last])
+        phrase_b = self.segment(Phrase, 2200, 2800, self.b)
+        word_b = self.segment(Word, 2200, 2800, self.b)
+        phrase_b.add_children([word_b])
+        self.store.save_phrase_trees([phrase_a, phrase_b])
+        return [phrase_a, first, last, phrase_b, word_b]
 
-    def test_multi_speaker_no_phrase_overlap_all_no_overlap(self):
-        phrase_a = FakePhrase(0, 100, speaker_id='spk1', store=self.store)
-        phrase_b = FakePhrase(200, 300, speaker_id='spk2', store=self.store)
-        m.check_overlap_audio(make_audio([phrase_a, phrase_b], n_speakers=2))
-        self.assertEqual(phrase_a.overlap_code, NO_OVERLAP)
-        self.assertEqual(phrase_b.overlap_code, NO_OVERLAP)
+    def test_pause_example_before_after_and_reopen(self):
+        items = self.pause_example()
+        expected = [True, False, False, False, False]
+        self.assertEqual([item.overlap for item in items], expected)
+        self.assertEqual([item.overlap_code for item in items], [9] * 5)
+        self.assertEqual(items[0].overlap_items, [items[-1]])
+        keys = [item.key for item in items]
+        check_overlap_audio(self.audio)
+        self.assertEqual([item.overlap for item in items], expected)
+        self.assertEqual([item.overlap_code for item in items],
+            [1, 0, 0, 0, 0])
+        self.store.close()
+        with redirect_stdout(io.StringIO()):
+            reopened = Store(path=self.path)
+        self.addCleanup(reopened.close)
+        loaded = reopened.load_many(keys)
+        self.assertEqual([item.overlap for item in loaded], expected)
+        for item, result in zip(loaded, expected):
+            self.assertEqual(bool(item.overlap_items), result)
 
-    def test_save_many_called_exactly_once(self):
-        phrase = FakePhrase(0, 100, speaker_id='spk1', store=self.store)
-        m.check_overlap_audio(make_audio([phrase], n_speakers=1))
-        self.assertEqual(len(self.store.save_many_calls), 1)
+    def test_phrase_intersections_do_not_change_word_based_status(self):
+        phrase, first, last, other_phrase, word = self.pause_example()
+        self.assertEqual(word.overlap_phrases, [phrase])
+        self.assertEqual(word.overlap_words, [])
+        self.assertEqual(word.overlap_items, word.overlap_words)
+        self.assertEqual(word.overlap_all_items(), [phrase])
+        self.assertFalse(word.overlap)
+        self.assertEqual(word.overlap_code, 9)
 
-    def test_save_many_receives_all_items(self):
-        phone = make_phone(0, 100)
-        syllable = make_syllable(0, 100, phones=[phone])
-        word = make_word(0, 100, syllables=[syllable])
-        phrase = FakePhrase(0, 100, speaker_id='spk1', words=[word],
-            store=self.store)
-        m.check_overlap_audio(make_audio([phrase], n_speakers=1))
-        saved = self.store.save_many_calls[0][0]
-        self.assertIn(phrase, saved)
-        self.assertIn(word, saved)
-        self.assertIn(syllable, saved)
-        self.assertIn(phone, saved)
+    def test_inspect_other_speaker_segments_at_each_level(self):
+        target = self.segment(Phone, 100, 200)
+        for cls in (Phrase, Word, Syllable, Phone):
+            hit = self.segment(cls, 150, 250, self.b)
+            earlier = self.segment(cls, 110, 190, self.b)
+            own = self.segment(cls, 110, 190)
+            left = self.segment(cls, 0, 100, self.b)
+            right = self.segment(cls, 200, 300, self.b)
+            foreign = self.segment(cls, 110, 190, self.b)
+            foreign.audio_id = b'other-id'
+            self.store.save_many([hit, earlier, own, left, right, foreign])
+            attr = 'overlap_' + cls.__name__.lower() + 's'
+            with self.subTest(level=cls.__name__):
+                self.assertEqual(getattr(target, attr), [earlier, hit])
+        silence = self.segment(Phone, 120, 140, self.b, '<p:>')
+        self.store.save(silence)
+        self.assertIn(silence, target.overlap_phones)
+        self.assertEqual(target.overlap_items, target.overlap_words)
 
+    def test_unknown_overlap_level_is_rejected(self):
+        target = self.segment(Word, 100, 200)
+        with self.assertRaisesRegex(ValueError, 'Unsupported overlap level'):
+            overlap.overlap_at_level(target, 'Speaker')
 
-class TestSetPhraseOverlapCode(unittest.TestCase):
-    def test_same_speaker_not_counted(self):
-        phrase_a = FakePhrase(0, 100, speaker_id='spk1')
-        phrase_b = FakePhrase(50, 150, speaker_id='spk1')
-        m._set_phrase_overlap_code(phrase_a, [phrase_a, phrase_b])
-        self.assertEqual(phrase_a.overlap_code, NO_OVERLAP)
+    def test_overlap_at_every_level_and_orphans(self):
+        phrase = self.segment(Phrase, 0, 1000)
+        word = self.segment(Word, 0, 1000)
+        syllable = self.segment(Syllable, 0, 1000)
+        first = self.segment(Phone, 0, 500)
+        last = self.segment(Phone, 500, 1000)
+        phrase.add_children([word])
+        word.add_children([syllable])
+        syllable.add_children([first, last])
+        other = self.segment(Word, 600, 900, self.b)
+        orphan = self.segment(Phone, 650, 700)
+        items = list(phrase.items) + [other, orphan]
+        self.store.save_many(items)
+        before = [item.overlap for item in items]
+        with patch.object(self.store, 'save_many',
+            wraps=self.store.save_many) as save:
+            check_overlap_audio(self.audio)
+        save.assert_called_once()
+        self.assertEqual([item.overlap for item in items], before)
+        self.assertEqual([item.overlap_code for item in items],
+            [1, 1, 1, 0, 1, 1, 1])
 
-    def test_other_speaker_no_time_overlap(self):
-        phrase_a = FakePhrase(0, 100, speaker_id='spk1')
-        phrase_b = FakePhrase(200, 300, speaker_id='spk2')
-        m._set_phrase_overlap_code(phrase_a, [phrase_a, phrase_b])
-        self.assertEqual(phrase_a.overlap_code, NO_OVERLAP)
+    def test_boundaries_speakers_audio_silence_and_zero_duration(self):
+        target = self.segment(Phrase, 100, 200)
+        same = self.segment(Word, 110, 190)
+        left = self.segment(Word, 0, 100, self.b)
+        right = self.segment(Word, 200, 300, self.b)
+        zero = self.segment(Word, 150, 150, self.b)
+        foreign = self.segment(Word, 110, 190, self.b)
+        foreign.audio_id = b'other-id'
+        words = [same, left, right, zero, foreign]
+        for label in overlap.SILENCE_LABELS:
+            words.append(self.segment(Word, 110, 190, self.b, label))
+        self.assertEqual(overlap.overlap_items(target, words), [])
+        valid = self.segment(Word, 150, 250, self.b)
+        words.append(valid)
+        self.assertEqual(overlap.overlap_items(target, words), [valid])
+        target.end = target.start
+        self.assertEqual(overlap.overlap_items(target, words), [])
 
-    def test_other_speaker_time_overlap(self):
-        phrase_a = FakePhrase(0, 100, speaker_id='spk1')
-        phrase_b = FakePhrase(50, 150, speaker_id='spk2')
-        m._set_phrase_overlap_code(phrase_a, [phrase_a, phrase_b])
-        self.assertEqual(phrase_a.overlap_code, OVERLAP)
+    def test_nested_reference_intervals_and_unsorted_input(self):
+        target = self.segment(Phone, 800, 900)
+        wide = self.segment(Word, 0, 1000, self.b)
+        early = self.segment(Word, 100, 200, self.b)
+        self.assertEqual(overlap.overlap_items(target, [early, wide]), [wide])
 
+    def test_staged_calculation_uses_all_speakers(self):
+        phrase = self.segment(Phrase, 0, 5000)
+        word = self.segment(Word, 2200, 2800, self.b)
+        phrase.overlap_code = 0
+        word.overlap_code = 1
+        overlap.set_overlap_codes([phrase, word])
+        self.assertEqual(phrase.overlap_code, 1)
+        self.assertEqual(word.overlap_code, 0)
+        self.assertFalse(self.store.DB.key_exists(word.key))
 
-class TestDescent(unittest.TestCase):
-    def test_phrase_overlaps_word_outside_other_phrase(self):
-        phone = make_phone(150, 200)
-        syllable = make_syllable(150, 200, phones=[phone])
-        word = make_word(150, 200, syllables=[syllable])
-        phrase_a = FakePhrase(0, 300, speaker_id='spk1', words=[word])
-        phrase_b = FakePhrase(0, 100, speaker_id='spk2')
-        m._set_phrase_overlap_code(phrase_a, [phrase_a, phrase_b])
-        self.assertEqual(phrase_a.overlap_code, OVERLAP)
-        self.assertEqual(word.overlap_code, NO_OVERLAP)
-        self.assertEqual(syllable.overlap_code, NO_OVERLAP)
-        self.assertEqual(phone.overlap_code, NO_OVERLAP)
+    def test_recomputation_ignores_stale_audio_tree_caches(self):
+        items = self.pause_example()
+        check_overlap_audio(self.audio)
+        self.assertTrue(items[0].overlap)
+        self.assertEqual(len(self.audio.phrases), 2)
+        self.assertEqual(len(self.audio.words), 3)
+        self.store.delete(items[-1].key)
+        check_overlap_audio(self.audio)
+        self.assertFalse(items[0].overlap)
+        self.assertEqual(items[0].overlap_items, [])
 
-    def test_full_overlap_chain(self):
-        phone = make_phone(50, 80)
-        syllable = make_syllable(50, 80, phones=[phone])
-        word = make_word(50, 80, syllables=[syllable])
-        phrase_a = FakePhrase(0, 100, speaker_id='spk1', words=[word])
-        phrase_b = FakePhrase(0, 100, speaker_id='spk2')
-        m._set_phrase_overlap_code(phrase_a, [phrase_a, phrase_b])
-        self.assertEqual(phrase_a.overlap_code, OVERLAP)
-        self.assertEqual(word.overlap_code, OVERLAP)
-        self.assertEqual(syllable.overlap_code, OVERLAP)
-        self.assertEqual(phone.overlap_code, OVERLAP)
+    def test_empty_audio_does_not_save(self):
+        with patch.object(self.store, 'save_many') as save:
+            check_overlap_audios([self.audio])
+        save.assert_not_called()
 
-
-class TestEmptyChildren(unittest.TestCase):
-    def test_phrase_no_words(self):
-        phrase_a = FakePhrase(0, 100, speaker_id='spk1', words=[])
-        phrase_b = FakePhrase(50, 150, speaker_id='spk2')
-        m._set_phrase_overlap_code(phrase_a, [phrase_a, phrase_b])
-        self.assertEqual(phrase_a.overlap_code, OVERLAP)
-
-    def test_word_no_syllables(self):
-        word = make_word(50, 80, syllables=[])
-        phrase_b = FakePhrase(0, 100, speaker_id='spk2')
-        m._set_word_overlap_code(word, [phrase_b])
-        self.assertEqual(word.overlap_code, OVERLAP)
-
-    def test_syllable_no_phones(self):
-        syllable = make_syllable(50, 80, phones=[])
-        phrase_b = FakePhrase(0, 100, speaker_id='spk2')
-        m._set_syllable_overlap_code(syllable, [phrase_b])
-        self.assertEqual(syllable.overlap_code, OVERLAP)
+    def test_webmaus_import_updates_previously_stored_segments(self):
+        items = self.pause_example()
+        check_overlap_audio(self.audio)
+        self.assertFalse(items[1].overlap)
+        phrase = self.segment(Phrase, 1000, 1500, self.b)
+        word = self.segment(Word, 1000, 1500, self.b)
+        phrase.add_children([word])
+        filename = str(Path(self.directory.name) / 'new.TextGrid')
+        Path(filename).touch()
+        info = {'output_filename': filename, 'tier_name': 'b',
+            'audio_filename': self.audio.filename}
+        speakers = {self.b.name: self.b}
+        audios = {self.audio.filename: self.audio}
+        with patch.object(webmaus,
+            'make_cgn_speaker_name_to_db_speaker_dict',
+            return_value=speakers), patch.object(webmaus,
+            'make_cgn_audio_filename_to_db_audio_dict',
+            return_value=audios), patch.object(webmaus,
+            'get_cgn_textgrid_filenames_in_db', return_value=[]), \
+            patch.object(webmaus, 'ort_info_to_db_items',
+            return_value=list(phrase.items)):
+            with redirect_stdout(io.StringIO()):
+                webmaus.ort_infos_to_db_items([info], refresh_db=False,
+                    store=self.store)
+        self.assertTrue(items[1].overlap)
+        self.assertTrue(word.overlap)
 
 
 if __name__ == '__main__':

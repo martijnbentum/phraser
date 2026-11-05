@@ -18,6 +18,7 @@ from textgrid import TextGrid
 from phraser import Store, models
 from phraser import audio as audio_helper
 from phraser import locations, syllable_structure, utils
+from phraser.overlap import set_overlap_codes
 
 
 ORT_NON_SPEAKER_TIERS = {'BACKGROUND', 'COMMENT'}
@@ -389,7 +390,7 @@ def _add_syllables(word, phones, report, context):
 
 
 def _speaker_phrase_trees(ort_tier, awd_tiers, audio, speaker, awd_path,
-    store, report, multiple_speakers):
+    store, report):
     word_tier, fon_tier, segment_tier = awd_tiers
     context = {'recording': awd_path.stem, 'speaker': speaker.name}
     phones_by_word = _phones_by_word(word_tier, segment_tier, audio, speaker,
@@ -415,8 +416,6 @@ def _speaker_phrase_trees(ort_tier, awd_tiers, audio, speaker, awd_path,
         transcription = fon_interval.mark.strip()
         word.ipa = map_cgn_transcription(transcription,
             report=report, word=mark, **context)
-        if not multiple_speakers:
-            word.overlap_code = utils.overlap_dict[False]
         _add_syllables(word, phones_by_word[index], report, context)
         phrase_words[phrase_index].append(word)
         report.record('words_staged')
@@ -437,8 +436,6 @@ def _speaker_phrase_trees(ort_tier, awd_tiers, audio, speaker, awd_path,
             audio_id=audio.identifier, speaker_id=speaker.identifier,
             store=store)
         phrase.filename = str(awd_path.resolve())
-        if not multiple_speakers:
-            phrase.overlap_code = utils.overlap_dict[False]
         phrase.add_children(words)
         phrases.append(phrase)
         report.record('phrases_staged')
@@ -462,14 +459,17 @@ def textgrids_to_phrase_trees(ort_textgrid, awd_textgrid, audio, speakers,
         message = f'missing Speaker objects: {missing}'
         raise ValueError(message)
     validate_speaker_tiers(ort_tiers, active_awd)
-    multiple = len(active_awd) > 1
     phrases = []
     path = Path(awd_path)
     for name, tiers in active_awd.items():
         speaker_phrases = _speaker_phrase_trees(ort_tiers[name], tiers,
-            audio, speakers[name], path, store, report, multiple)
+            audio, speakers[name], path, store, report)
         phrases.extend(speaker_phrases)
     phrases.sort(key=lambda phrase: (phrase.start, phrase.speaker_id))
+    items = []
+    for phrase in phrases:
+        items.extend(phrase.items)
+    set_overlap_codes(items)
     return phrases
 
 
