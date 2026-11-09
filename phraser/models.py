@@ -13,6 +13,7 @@ class Audio:
         'language', 'dialect'}
     DB_FIELDS = {'filename', 'identifier'}
 
+    flags = 0
     dialect = ''
     language = ''
     dataset = ''
@@ -183,6 +184,7 @@ class Speaker:
         'channel'}
     FIELDS = DB_FIELDS.union(METADATA_FIELDS)
 
+    flags = 0
     gender_code = 9
     age = 0
     dataset = ''

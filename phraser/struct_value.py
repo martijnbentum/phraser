@@ -23,7 +23,7 @@ def pack_audio(instance):
     '''
 
     layout = LAYOUTS['audio']
-    flags = 0
+    flags = getattr(instance, 'flags', 0)
     fixed = {
         'version': VERSION,
         'flags': flags,
@@ -50,7 +50,8 @@ def unpack_audio(value_bytes):
 
 def pack_marker(instance):
     '''Pack a marker's timing, speaker and phrase links, and label.'''
-    fixed = {'version': VERSION, 'flags': 0, 'end': instance.end,
+    flags = getattr(instance, 'flags', 0)
+    fixed = {'version': VERSION, 'flags': flags, 'end': instance.end,
         'speaker_id': instance.speaker_id, 'phrase_id': instance.phrase_id,
         'phrase_start': instance.phrase_start}
     var = {'label': instance.label}
@@ -68,7 +69,7 @@ def pack_phrase(instance):
     instance: Phrase instance with fields matching phrase layout
     '''
     layout = LAYOUTS['phrase']
-    flags = 0
+    flags = getattr(instance, 'flags', 0)
     fixed = {
         'version': VERSION,
         'flags': flags,
@@ -97,7 +98,7 @@ def pack_word(instance):
     instance: Word instance with fields matching word layout
     '''
     layout = LAYOUTS['word']
-    flags = 0
+    flags = getattr(instance, 'flags', 0)
     fixed = {
         'version': VERSION,
         'flags': flags,
@@ -129,7 +130,7 @@ def pack_syllable(instance):
     instance: Syllable instance with fields matching syllable layout
     '''
     layout = LAYOUTS['syllable']
-    flags = 0
+    flags = getattr(instance, 'flags', 0)
     fixed = {
         'version': VERSION,
         'flags': flags,
@@ -161,7 +162,7 @@ def pack_phone(instance):
     instance: Phone instance with fields matching phone layout
     '''
     layout = LAYOUTS['phone']
-    flags = 0
+    flags = getattr(instance, 'flags', 0)
     fixed = {
         'version': VERSION,
         'flags': flags,
@@ -193,7 +194,7 @@ def pack_speaker(instance):
     instance: Speaker instance with fields matching speaker layout
     '''
     layout = LAYOUTS['speaker']
-    flags = 0
+    flags = getattr(instance, 'flags', 0)
     fixed = {
         'version': VERSION,
         'flags': flags,

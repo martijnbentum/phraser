@@ -6,6 +6,7 @@ from . import key_helper
 from . import overlap as speech_overlap
 from . import phone_features
 from . import query
+from . import segment_flags
 from . import struct_value
 from . import utils
 from .model_helper import EMPTY_ID
@@ -26,6 +27,7 @@ class Segment:
         'parent_start', 'audio_id', 'speaker_id'}
     METADATA_FIELDS = {}# subclasses override
     allowed_child_type = []# subclasses override
+    flags = 0
     overlap_code = 9
     allow_empty_speaker = False
 
@@ -459,6 +461,29 @@ class Segment:
             if hasattr(self, name):
                 names.append(name)
         return names
+
+    @property
+    def duration_outlier_code(self):
+        '''Duration assessment code stored in the flags byte (0 through 3).'''
+        return segment_flags.get_duration_outlier_code(self)
+
+    @duration_outlier_code.setter
+    def duration_outlier_code(self, code):
+        segment_flags.set_duration_outlier_code(self, code)
+
+    @property
+    def duration_outlier(self):
+        '''This segment's unset, short, long, or within_range assessment.'''
+        return segment_flags.get_duration_outlier(self)
+
+    @duration_outlier.setter
+    def duration_outlier(self, state):
+        segment_flags.set_duration_outlier(self, state)
+
+    @property
+    def is_duration_outlier(self):
+        '''Whether this segment itself has a short or long assessment.'''
+        return segment_flags.is_duration_outlier(self)
 
     @property
     def overlap(self):
