@@ -144,16 +144,16 @@ def derive_syllables_for_word(word, language='dutch', phone_types=None,
                  copies in memory only
 
     The whole phrase is copied; only the word's syllables are new, built from
-    the syllabifier's grouping of its phones. Returns the derived word, or
-    None when its phones cannot be syllabified (unknown phone / no nucleus).
+    the syllabifier's grouping of its phones. Returns the derived word.
+    Raises ValueError, with the syllabifier's reason, when its phones cannot
+    be syllabified (unknown phone / no nucleus).
     '''
     syllabifier = _syllabifier(language)
     _check_target_store(word.store, store)
     if word.phrase is None: raise ValueError('word must belong to a phrase')
     phrase = _copy_phrase_tree(word.phrase)
     derived = _find_by_id(phrase.words, word.identifier)
-    groups = _group_phones(syllabifier, derived.phones)
-    if groups is None: return None
+    groups = _group_phones(syllabifier, derived.phones, _describe(word))
     derived.replace_children(_build_syllables(groups, phone_types))
     _finish([phrase], word, store)
     return derived
@@ -172,14 +172,14 @@ def derive_words_and_syllables_for_phrase(phrase, language='dutch',
     consonant may move to a syllable of the next word (het ei -> hE.tEi).
     Each syllable is owned by the word of its nucleus, and words are sized to
     their syllables; a word that loses all its phones becomes zero-width.
-    Returns the derived phrase, or None when its phones cannot be
-    syllabified (unknown phone / no nucleus).
+    Returns the derived phrase. Raises ValueError, with the syllabifier's
+    reason, when its phones cannot be syllabified (unknown phone / no
+    nucleus).
     '''
     syllabifier = _syllabifier(language)
     _check_target_store(phrase.store, store)
     derived = _copy_phrase_tree(phrase)
-    groups = _group_phones(syllabifier, derived.phones)
-    if groups is None: return None
+    groups = _group_phones(syllabifier, derived.phones, _describe(phrase))
     phone_word = _phone_to_word(derived)
     syllables = _build_syllables(groups, phone_types)
     syls_by_word = _bucket_by_nucleus(syllables, phone_word)
@@ -205,14 +205,15 @@ def derive_phrases_for_phones(phones, max_pause=500, language='dutch',
     gaps >= max_pause becomes a phrase, so two donor phrases with a short gap
     merge and a phrase with a long internal pause splits. Within a run,
     connected-speech grouping applies as in
-    derive_words_and_syllables_for_phrase. Returns the derived phrases, or
-    None if any run cannot be syllabified. Raises ValueError if the phones
+    derive_words_and_syllables_for_phrase. Returns the derived phrases ([]
+    for no phones). Raises ValueError if any run cannot be syllabified (with
+    the run's time range and the syllabifier's reason), or if the phones
     span more than one speaker or audio file.
     '''
     syllabifier = _syllabifier(language)
     if hasattr(phones, 'phones'): phones = phones.phones
     phones = sorted(phones, key=lambda p: p.start)
-    if not phones: return None
+    if not phones: return []
     if len({p.speaker_id for p in phones}) > 1:
         raise ValueError('phones span multiple speakers')
     if len({p.audio_id for p in phones}) > 1:
@@ -222,9 +223,8 @@ def derive_phrases_for_phones(phones, max_pause=500, language='dutch',
     runs = _split_runs(copies, max_pause)
     groups_per_run = []
     for run in runs:
-        groups = _group_phones(syllabifier, run)
-        if groups is None: return None
-        groups_per_run.append(groups)
+        what = f'phones {run[0].start}-{run[-1].end} ms'
+        groups_per_run.append(_group_phones(syllabifier, run, what))
     phrases = _build_phrases(runs, groups_per_run, donor_phrases, phone_types)
     _finish(phrases, phones[0], store)
     return phrases
@@ -238,10 +238,18 @@ def _syllabifier(language):
     raise NotImplementedError(f'no syllabifier for language {language!r}')
 
 
-def _group_phones(syllabifier, phones):
-    '''The syllabifier's phone groups, or None if it cannot syllabify them.'''
+def _group_phones(syllabifier, phones, what):
+    '''The syllabifier's phone groups. Its ValueError is re-raised with
+    `what` (e.g. "word 'st' (0-200 ms)") added as context.'''
     try: return syllabifier.resyllabify_phones(phones)
-    except ValueError: return None
+    except ValueError as error:
+        raise ValueError(f'cannot syllabify {what}: {error}') from error
+
+
+def _describe(segment):
+    '''Short description of a segment for error messages.'''
+    name = segment.object_type.lower()
+    return f'{name} {segment.label!r} ({segment.start}-{segment.end} ms)'
 
 
 def _assert_single_speaker(word):

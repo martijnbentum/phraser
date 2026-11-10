@@ -161,10 +161,14 @@ class TestDeriveSyllablesForWord(StoreTestCase):
         self.assertEqual([p.parent_id for p in self.phones],
             [self.syls[0].identifier] * 2 + [self.syls[1].identifier] * 3)
 
-    def test_unsyllabifiable_returns_none(self):
+    def test_unsyllabifiable_raises_with_reason(self):
         _, words, _, _ = self.build([('s', 0, 100), ('t', 100, 200)],
             [('st', 0, 200)], [(0, 200)])
-        self.assertIsNone(derive_syllables_for_word(words[0]))
+        with self.assertRaises(ValueError) as caught:
+            derive_syllables_for_word(words[0])
+        message = str(caught.exception)
+        self.assertIn("word 'st' (0-200 ms)", message)
+        self.assertIn('no vowel nucleus', message)
 
 
 class TestDerivedIds(StoreTestCase):
@@ -300,15 +304,17 @@ class TestDerivePhrasesForPhones(StoreTestCase):
         with self.assertRaises(ValueError):
             derive_phrases_for_phones(self.phones)
 
-    def test_empty_input_returns_none(self):
-        self.assertIsNone(derive_phrases_for_phones([]))
+    def test_empty_input_returns_no_phrases(self):
+        self.assertEqual(derive_phrases_for_phones([]), [])
 
-    def test_unsyllabifiable_run_returns_none(self):
+    def test_unsyllabifiable_run_raises_with_time_range(self):
         phones = self.build([('ɑ', 2000, 2100), ('p', 2100, 2200),
             ('s', 3200, 3300), ('t', 3300, 3400)],
             [('ap', 2000, 2200), ('st', 3200, 3400)],
             [(2000, 2200), (3200, 3400)])[3]
-        self.assertIsNone(derive_phrases_for_phones(phones, max_pause=500))
+        with self.assertRaises(ValueError) as caught:
+            derive_phrases_for_phones(phones, max_pause=500)
+        self.assertIn('phones 3200-3400 ms', str(caught.exception))
 
 
 class TestDeriveToTargetStore(StoreTestCase):
