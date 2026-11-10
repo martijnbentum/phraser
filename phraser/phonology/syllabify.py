@@ -7,32 +7,48 @@ phrase spans its syllables or phones. A syllable boundary is therefore a
 split point in the phone sequence (ɑ p | r ɪ l -> ɑ | p r ɪ l moves p to the
 second syllable); its time is wherever the phones put it.
 
-repair_*   keep the existing syllables and reassign phones between them
-           (same count, same syllable objects and ids, metadata kept);
-           skipped if the regrouping would change the syllable count
-rebuild_*  discard the existing layer(s) and build fresh objects around the
-           regrouped phones (counts and spans may change)
+The grouping comes from a language syllabifier. Only Dutch
+(dutch_syllabifier) is implemented; other languages raise
+NotImplementedError. apply_new_syllable_boundaries takes a grouping from any
+source.
 
-repair_word_syllables(word)         syllables of one word
-rebuild_word_syllables(word)        syllables of one word
-rebuild_phrase_syllables(phrase)    words + syllables; a phone may move to a
-                                    syllable of the neighbouring word
-rebuild_phrases_from_phones(phones, max_pause)
-                                    phrases + words + syllables; phrases are
-                                    re-derived from pauses. Meant for
-                                    temporary, in-memory restructuring only.
+repair_*   change the donor store's syllables in place: phones move between
+           the existing syllables (same count, same objects and ids, metadata
+           kept); skipped if the syllable count would change. Persist with
+           store.save_phrase_trees([phrase], overwrite=True).
+derive_*   leave the donor untouched and build an alternative segmentation
+           on copies (counts and spans may change). With store=None the
+           copies live in memory only and cannot be saved; with store=target
+           they are saved to that store, which must not be the donor store.
 
-All functions work in memory only. Persist a repaired or rebuilt phrase with
-    store.save_phrase_trees([phrase], overwrite=True)
-which replaces the phrase's stored tree (old syllables and words included)
-in one transaction; batch the phrases of a corpus run into one call.
-rebuild_phrases_from_phones cannot be persisted this way: its phrases are
-new objects, so the old phrases would stay on disk.
+repair_word_syllables(word)                        in place: syllables
+apply_new_syllable_boundaries(word, phone_groups)  in place, any grouping
+derive_syllables_for_word(word)                    new: syllables
+derive_words_and_syllables_for_phrase(phrase)      new: words + syllables; a
+                                                   phone may move to a
+                                                   syllable of the next word
+derive_phrases_for_phones(phones, max_pause)       new: phrases + words +
+                                                   syllables; phrases are
+                                                   re-derived from pauses
+
+Derived objects keep the donor id when they correspond one-to-one to a donor
+object (same id means "corresponds to", not "identical to"): phones always;
+words unless a pause splits them; syllables that take their nucleus from a
+donor syllable no other new syllable draws from; phrases with exactly one
+donor phrase's phones. Other derived objects get an id hashed from their
+phones, so a re-run gives the same ids and overwrites its earlier result in
+the target store. Different settings (e.g. max_pause) give overlapping
+phrases, so save each setting to its own target store.
 '''
+import hashlib
+from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
+
+import dutch_syllabifier
 
 from .. import models
-from .syllable_structure import assign_syllable_positions_to_phones
+from . import syllable_structure
 
 
 # ------------------------------- repair ---------------------------------
@@ -62,18 +78,20 @@ class RepairOutcome:
         return c is not None and s is not None and len(c) != len(s)
 
 
-def repair_word_syllables(word, phone_types=None):
+def repair_word_syllables(word, language='dutch', phone_types=None):
     '''Reassign a word's phones to its syllables by the Maximal Onset
     Principle, if needed. Returns a RepairOutcome with the analysis and
     whether the new boundaries were applied.
+    word         the Word to repair, in place
+    language     syllabifier language; only 'dutch' is implemented
+    phone_types  optional vowel/consonant mapping for phone positions
 
     The new boundaries are applied only when the word is analysable, its
     current split is wrong, and the syllable count is preserved (the 1:1
     invariant). A count change is reported via outcome.count_mismatch and left
     unapplied rather than raising.
     '''
-    from dutch_syllabifier import analyse_word
-    result = analyse_word(word)
+    result = _syllabifier(language).analyse_word(word)
     applied = False
     if not result.ok and result.suggested_groups is not None \
             and len(word.syllables) == len(result.suggested_groups):
@@ -89,13 +107,15 @@ def apply_new_syllable_boundaries(word, phone_groups, phone_types=None):
     phone_groups  list of phone lists: the word's SAME phone objects,
                   regrouped; group i becomes syllable i
 
-    Each phone is reassigned to the syllable of its group, and each syllable
-    is re-spanned to its phones. Moving phones between onset and coda never
-    adds or drops a nucleus, so the count is invariant and syllable i keeps
-    its nucleus with new boundaries. The syllables are updated in place: same
-    objects and ids, metadata and speaker links unchanged. A syllable whose
-    start moves gets a new key; save_phrase_trees(overwrite=True) removes
-    the old row. In memory only; see the module docstring for persisting.
+    The entry point for repairing with a grouping of your own (a manual fix
+    or another syllabifier). Each phone is reassigned to the syllable of its
+    group, and each syllable is re-spanned to its phones. Moving phones
+    between onset and coda never adds or drops a nucleus, so the count is
+    invariant and syllable i keeps its nucleus with new boundaries. The
+    syllables are updated in place: same objects and ids, metadata and
+    speaker links unchanged. A syllable whose start moves gets a new key;
+    save_phrase_trees(overwrite=True) removes the old row. In memory only;
+    see the module docstring for persisting.
     Returns the word's syllables. Raises ValueError on a multi-speaker word or
     a count mismatch.
     '''
@@ -112,130 +132,117 @@ def apply_new_syllable_boundaries(word, phone_groups, phone_types=None):
     return syllables
 
 
-# ------------------------------- rebuild --------------------------------
+# ------------------------------- derive ---------------------------------
 
-def rebuild_word_syllables(word, phone_types=None):
-    '''Rebuild a word's syllable layer from its phone sequence by the Maximal
-    Onset Principle, in memory only (nothing is written).
+def derive_syllables_for_word(word, language='dutch', phone_types=None,
+    store=None):
+    '''Derive a new syllable layer for a word, on a copy of its phrase.
+    word         donor Word; it and its store are left untouched
+    language     syllabifier language; only 'dutch' is implemented
+    phone_types  optional vowel/consonant mapping for phone positions
+    store        target Store to save the derived phrase to; None keeps the
+                 copies in memory only
 
-    Ignores the existing syllables: regroups word.phones from scratch, builds
-    fresh Syllable objects around the groups (labelled and spanned by their
-    phones), and rewires the hierarchy (word, phrase) around them.
-    The old syllables are abandoned.
-
-    In memory only: until the word's phrase is saved with
-    save_phrase_trees(overwrite=True), a close/reopen reverts to the old
-    syllabification. Returns the new syllables, or None when the phones
-    cannot be syllabified (unknown phone / no nucleus).
+    The whole phrase is copied; only the word's syllables are new, built from
+    the syllabifier's grouping of its phones. Returns the derived word, or
+    None when its phones cannot be syllabified (unknown phone / no nucleus).
     '''
-    from dutch_syllabifier import resyllabify_phones
-    phones = word.phones                              # read before rewiring caches
-    try: groups = resyllabify_phones(phones)
-    except ValueError: return None
+    syllabifier = _syllabifier(language)
+    _check_target_store(word.store, store)
+    if word.phrase is None: raise ValueError('word must belong to a phrase')
+    phrase = _copy_phrase_tree(word.phrase)
+    derived = _find_by_id(phrase.words, word.identifier)
+    groups = _group_phones(syllabifier, derived.phones)
+    if groups is None: return None
+    derived.replace_children(_build_syllables(groups, phone_types))
+    _finish([phrase], word, store)
+    return derived
 
-    new_syllables = []
-    for group in groups:
-        new_syllables.append(_build_syllable(word.store, group, phone_types))
-    word.replace_children(new_syllables)
-    return new_syllables
 
+def derive_words_and_syllables_for_phrase(phrase, language='dutch',
+    phone_types=None, store=None):
+    '''Derive new word and syllable layers for a phrase, on a copy of it.
+    phrase       donor Phrase; it and its store are left untouched
+    language     syllabifier language; only 'dutch' is implemented
+    phone_types  optional vowel/consonant mapping for phone positions
+    store        target Store to save the derived phrase to; None keeps the
+                 copies in memory only
 
-def rebuild_phrase_syllables(phrase, phone_types=None):
-    '''Connected-speech rebuild of a phrase's word+syllable layers (in memory).
-
-    Single-speaker. Regroups phrase.phones from scratch by the Maximal Onset
-    Principle, so a consonant may move to a syllable of the next word (het ei
-    -> hE.tEi). Each syllable is owned by the word of its nucleus; fresh
-    Words and Syllables are built sized to their content, so every time window
-    matches its membership. A word that loses all its phones collapses to a
-    zero-width span. The old words/syllables are abandoned.
-
-    In memory only: persist with save_phrase_trees([phrase], overwrite=True).
-    Returns the new words, or None when the phones cannot be syllabified
-    (unknown phone / no nucleus).
+    Connected speech: the phrase's phones are grouped as one sequence, so a
+    consonant may move to a syllable of the next word (het ei -> hE.tEi).
+    Each syllable is owned by the word of its nucleus, and words are sized to
+    their syllables; a word that loses all its phones becomes zero-width.
+    Returns the derived phrase, or None when its phones cannot be
+    syllabified (unknown phone / no nucleus).
     '''
-    from dutch_syllabifier import resyllabify_phones
-    try: groups = resyllabify_phones(phrase.phones)
-    except ValueError: return None
-
-    phone_word = _phone_to_word(phrase)                 # capture before rewiring
-    syllables = [_build_syllable(phrase.store, g, phone_types) for g in groups]
+    syllabifier = _syllabifier(language)
+    _check_target_store(phrase.store, store)
+    derived = _copy_phrase_tree(phrase)
+    groups = _group_phones(syllabifier, derived.phones)
+    if groups is None: return None
+    phone_word = _phone_to_word(derived)
+    syllables = _build_syllables(groups, phone_types)
     syls_by_word = _bucket_by_nucleus(syllables, phone_word)
-
-    new_words, cursor = [], phrase.start
-    for old_word in phrase.words:
-        word = _rebuild_word(phrase, old_word,
-            syls_by_word.get(old_word.identifier, []), cursor)
-        cursor = word.end                               # next empty word sits here
-        new_words.append(word)
-    # drop the old word layer in one step; the persisted words stay on
-    # disk until the old tree is deleted
-    phrase.replace_children(new_words)
-    return new_words
+    old_words = derived.words
+    word_ids = [word.identifier for word in old_words]
+    words = _rebuild_words(old_words, word_ids, syls_by_word, derived.start)
+    derived.replace_children(words)
+    _finish([derived], phrase, store)
+    return derived
 
 
-def rebuild_phrases_from_phones(phones, max_pause=500, phone_types=None):
-    '''Rebuild a whole phrase/word/syllable hierarchy from a phone sequence.
+def derive_phrases_for_phones(phones, max_pause=500, language='dutch',
+    phone_types=None, store=None):
+    '''Derive new phrase, word and syllable layers for a phone sequence.
+    phones       donor phones, or a segment exposing .phones; left untouched
+    max_pause    a gap of at least this many ms starts a new phrase
+    language     syllabifier language; only 'dutch' is implemented
+    phone_types  optional vowel/consonant mapping for phone positions
+    store        target Store to save the derived phrases to; None keeps the
+                 copies in memory only
 
-    WARNING -- this RE-DERIVES the phrase layer from silence and DISCARDS the
-    original phrasing. The phones are split into runs wherever a gap >= max_pause
-    ms occurs, and EACH RUN BECOMES A NEW PHRASE. So two original phrases with a
-    short gap merge into one, and one phrase with a long internal pause splits in
-    two. Original Phrase/Word/Syllable objects are abandoned and replaced.
-    Meant for temporary, in-memory restructuring: the new phrases cannot be
-    persisted over the old ones.
-
-    Within a run, connected-speech MOP applies (a consonant may move to a
-    syllable of the next word, never across a pause). Each syllable is owned by the
-    word of its nucleus; words and phrases are sized to their content; a word
-    that loses all its phones collapses to a zero-width span. In memory only.
-
-    Accepts a phone list or any segment exposing .phones. Raises ValueError if
-    the phones span more than one speaker or more than one audio file. Returns
-    the new phrases, or None if any run cannot be syllabified.
+    The phrase layer is re-derived from pauses: each run of phones between
+    gaps >= max_pause becomes a phrase, so two donor phrases with a short gap
+    merge and a phrase with a long internal pause splits. Within a run,
+    connected-speech grouping applies as in
+    derive_words_and_syllables_for_phrase. Returns the derived phrases, or
+    None if any run cannot be syllabified. Raises ValueError if the phones
+    span more than one speaker or audio file.
     '''
-    from dutch_syllabifier import resyllabify_phones
-    if hasattr(phones, 'phones'): phones = phones.phones    # segment -> its phones
+    syllabifier = _syllabifier(language)
+    if hasattr(phones, 'phones'): phones = phones.phones
     phones = sorted(phones, key=lambda p: p.start)
     if not phones: return None
     if len({p.speaker_id for p in phones}) > 1:
         raise ValueError('phones span multiple speakers')
     if len({p.audio_id for p in phones}) > 1:
         raise ValueError('phones span multiple audio files')
-
-    phone_word = {p.identifier: next(p.iter_ancestors_of_type(models.Word))
-        for p in phones}                                   # capture before rewiring
-    store = phones[0].store
-
-    # syllabify every run before rewiring any, so a failing run leaves the
-    # in-memory graph untouched
-    runs = _split_runs(phones, max_pause)
+    _check_target_store(phones[0].store, store)
+    copies, donor_phrases = _copy_phones_with_phrases(phones)
+    runs = _split_runs(copies, max_pause)
     groups_per_run = []
     for run in runs:
-        try: groups_per_run.append(resyllabify_phones(run))
-        except ValueError: return None
-
-    new_phrases = []
-    for run, groups in zip(runs, groups_per_run):          # one run -> one phrase
-        syllables = [_build_syllable(store, g, phone_types) for g in groups]
-        syls_by_word = _bucket_by_nucleus(syllables, phone_word)
-
-        filename = phone_word[run[0].identifier].phrase.filename   # provenance
-        phrase = _build_phrase(run, store, filename)        # shell: span/audio/speaker
-        cursor, words = phrase.start, []
-        for old_word in _words_in_order(run, phone_word):  # incl. emptied words
-            word = _rebuild_word(phrase, old_word,
-                syls_by_word.get(old_word.identifier, []), cursor)
-            cursor = word.end
-            words.append(word)
-        phrase.replace_children(words)
-        phrase.label = ' '.join(w.label for w in words)
-        new_phrases.append(phrase)
-    return new_phrases
-
+        groups = _group_phones(syllabifier, run)
+        if groups is None: return None
+        groups_per_run.append(groups)
+    phrases = _build_phrases(runs, groups_per_run, donor_phrases, phone_types)
+    _finish(phrases, phones[0], store)
+    return phrases
 
 
 # ------------------------------- helpers --------------------------------
+
+def _syllabifier(language):
+    '''Return the syllabifier module for a language.'''
+    if language == 'dutch': return dutch_syllabifier
+    raise NotImplementedError(f'no syllabifier for language {language!r}')
+
+
+def _group_phones(syllabifier, phones):
+    '''The syllabifier's phone groups, or None if it cannot syllabify them.'''
+    try: return syllabifier.resyllabify_phones(phones)
+    except ValueError: return None
+
 
 def _assert_single_speaker(word):
     '''Resyllabification works one word at a time, so the word, its syllables
@@ -261,49 +268,256 @@ def _set_syllable_phones(syllable, phones, phone_types):
     if hasattr(syllable, '_key'):
         del syllable._key
     syllable.replace_children(phones)
-    assign_syllable_positions_to_phones(phones, phone_types=phone_types)
+    syllable_structure.assign_syllable_positions_to_phones(phones,
+        phone_types=phone_types)
     return syllable
 
 
-def _build_syllable(store, group, phone_types):
-    '''Fresh Syllable wrapping a phone group; phones re-parented and positions
-    assigned. Not yet wired to a word/phrase -- the caller owns that.'''
-    syllable = models.Syllable(store=store, save=False,
-        label=' '.join(p.label for p in group),
+def _check_target_store(donor_store, store):
+    '''Refuse to save derived objects into the store they came from.'''
+    if store is None: return
+    same_path = Path(store.path).resolve() == Path(donor_store.path).resolve()
+    if store is donor_store or same_path:
+        message = 'derived objects cannot be saved to the donor store; '
+        message += 'pass a different store'
+        raise ValueError(message)
+
+
+def _copy_segment(segment):
+    '''Unbound copy of a segment: same id and stored fields, no links.'''
+    cls = type(segment)
+    duplicate = cls(label=segment.label, start=segment.start, end=segment.end,
+        audio_id=segment.audio_id, speaker_id=segment.speaker_id)
+    duplicate.identifier = segment.identifier
+    duplicate.flags = getattr(segment, 'flags', 0)
+    for field in cls.METADATA_FIELDS:
+        setattr(duplicate, field, getattr(segment, field))
+    return duplicate
+
+
+def _copy_word_tree(word):
+    '''Unbound copy of a donor word with its syllables and phones.'''
+    duplicate = _copy_segment(word)
+    syllables = []
+    for syllable in word.children:
+        syllable_copy = _copy_segment(syllable)
+        phones = [_copy_segment(phone) for phone in syllable.children]
+        syllable_copy.replace_children(phones)
+        syllables.append(syllable_copy)
+    duplicate.replace_children(syllables)
+    return duplicate
+
+
+def _copy_phrase_tree(phrase):
+    '''Unbound copy of a donor phrase and all its descendants.'''
+    duplicate = _copy_segment(phrase)
+    duplicate.replace_children([_copy_word_tree(w) for w in phrase.children])
+    return duplicate
+
+
+def _copy_phones_with_phrases(phones):
+    '''Copy the phrase trees holding `phones`. Returns the copies of `phones`
+    (same order) and the copied phrases by id.'''
+    donor_phrases = {}
+    for phone in phones:
+        donor_phrases.setdefault(phone.phrase_id, phone.phrase)
+    copied = {}
+    for phrase_id, phrase in donor_phrases.items():
+        copied[phrase_id] = _copy_phrase_tree(phrase)
+    phone_copies = {}
+    for phrase in copied.values():
+        for phone in phrase.phones: phone_copies[phone.identifier] = phone
+    return [phone_copies[p.identifier] for p in phones], copied
+
+
+def _find_by_id(segments, identifier):
+    '''The segment with this identifier.'''
+    return next(s for s in segments if s.identifier == identifier)
+
+
+def _derived_id(kind, phones):
+    '''Deterministic id for a derived object without a one-to-one donor
+    counterpart, hashed from its kind and its phones' ids.'''
+    digest = hashlib.blake2b(kind.encode(), digest_size=8)
+    for phone in phones: digest.update(phone.identifier)
+    return digest.digest()
+
+
+def _carry_metadata(segment, source):
+    '''Copy metadata from source; overlap_code is left unset because the
+    span may have changed.'''
+    for field in type(segment).METADATA_FIELDS:
+        if field == 'overlap_code': continue
+        setattr(segment, field, getattr(source, field))
+
+
+def _syllable_sources(groups, phone_types):
+    '''Per phone group, the old syllable holding its nucleus when that match
+    is one-to-one, else None. Read before any phone is re-parented.'''
+    owners = []
+    for group in groups:
+        indices = syllable_structure.phones_to_vowel_indices(group,
+            phone_types=phone_types)
+        owners.append({group[i].parent_id: group[i].parent for i in indices})
+    counts = Counter(next(iter(o)) for o in owners if len(o) == 1)
+    sources = []
+    for owner in owners:
+        one_to_one = len(owner) == 1 and counts[next(iter(owner))] == 1
+        sources.append(next(iter(owner.values())) if one_to_one else None)
+    return sources
+
+
+def _build_syllables(groups, phone_types):
+    '''New syllables around the phone groups (see _syllable_sources).'''
+    sources = _syllable_sources(groups, phone_types)
+    syllables = []
+    for group, source in zip(groups, sources):
+        syllables.append(_build_syllable(group, source, phone_types))
+    return syllables
+
+
+def _build_syllable(group, source, phone_types):
+    '''New Syllable around a phone group, positions assigned. With a source
+    (its one-to-one old syllable) it takes that id and metadata; otherwise
+    its id is hashed from the group. Not yet wired to a word.'''
+    syllable = models.Syllable(label=' '.join(p.label for p in group),
         start=min(p.start for p in group), end=max(p.end for p in group),
         audio_id=group[0].audio_id, speaker_id=group[0].speaker_id)
-    # replace_children, not add_children: it starts from empty caches, so the
-    # new syllable never scans the store for the old phones in its range
+    if source is None: syllable.identifier = _derived_id('Syllable', group)
+    else:
+        syllable.identifier = source.identifier
+        _carry_metadata(syllable, source)
+    # replace_children, not add_children: it starts from empty caches
     syllable.replace_children(group)
-    assign_syllable_positions_to_phones(group, phone_types=phone_types)
+    syllable_structure.assign_syllable_positions_to_phones(group,
+        phone_types=phone_types)
     return syllable
 
 
-def _rebuild_word(phrase, old_word, syllables, cursor):
-    '''Fresh UNLINKED Word replacing `old_word`, sized to its syllables; the
-    caller wires it to the phrase (add_children). A word that lost all its
-    phones collapses to a zero-width span at `cursor` (the previous word's new
-    end -- the point its phones vacated, where its neighbours meet).'''
-    start, end = ((min(s.start for s in syllables), max(s.end for s in syllables))
-        if syllables else (cursor, cursor))
-    word = models.Word(store=phrase.store, label=old_word.label,
-        start=start, end=end, audio_id=old_word.audio_id,
-        speaker_id=old_word.speaker_id)
-    # carry set metadata; overlap_code is left unset because the span changed
-    for field, value in old_word.__dict__.items():
-        if field == 'overlap_code': continue
-        if field in models.Word.METADATA_FIELDS: setattr(word, field, value)
+def _rebuild_words(old_words, word_ids, syls_by_word, start):
+    '''New words replacing old_words in order, each sized to its syllables;
+    a word without syllables becomes zero-width where the previous word
+    ends (the point its phones vacated).'''
+    words, cursor = [], start
+    for old_word, word_id in zip(old_words, word_ids):
+        syllables = syls_by_word.get(old_word.identifier, [])
+        word = _rebuild_word(old_word, word_id, syllables, cursor)
+        cursor = word.end
+        words.append(word)
+    return words
+
+
+def _rebuild_word(old_word, word_id, syllables, cursor):
+    '''New Word replacing old_word under word_id, sized to its syllables and
+    carrying old_word's metadata. Not yet wired to a phrase.'''
+    if syllables:
+        start = min(s.start for s in syllables)
+        end = max(s.end for s in syllables)
+    else: start, end = cursor, cursor
+    word = models.Word(label=old_word.label, start=start, end=end,
+        audio_id=old_word.audio_id, speaker_id=old_word.speaker_id)
+    word.identifier = word_id
+    _carry_metadata(word, old_word)
     word.replace_children(syllables)
     return word
 
 
-def _build_phrase(run, store, filename):
-    '''Fresh Phrase sized to the run, carrying audio/speaker from it and the
-    given filename for provenance.'''
-    phrase = models.Phrase(store=store, save=False, label='',
-        start=run[0].start, end=run[-1].end, filename=filename,
+def _build_phrases(runs, groups_per_run, donor_phrases, phone_types):
+    '''One new phrase per run, its words and syllables rebuilt from the run's
+    phone groups.'''
+    phone_word, phrase_phone_ids = {}, {}
+    for phrase_id, phrase in donor_phrases.items():
+        phone_word.update(_phone_to_word(phrase))
+        phrase_phone_ids[phrase_id] = {p.identifier for p in phrase.phones}
+    all_groups = [group for groups in groups_per_run for group in groups]
+    sources = iter(_syllable_sources(all_groups, phone_types))
+    words_per_run = [_words_in_order(run, phone_word) for run in runs]
+    split_words = _words_in_several_runs(words_per_run)
+    phrases = []
+    for run, groups, old_words in zip(runs, groups_per_run, words_per_run):
+        syllables = []
+        for group in groups:
+            syllables.append(_build_syllable(group, next(sources), phone_types))
+        syls_by_word = _bucket_by_nucleus(syllables, phone_word)
+        phrase = _build_phrase(run, donor_phrases, phrase_phone_ids)
+        word_ids = _run_word_ids(run, old_words, split_words, phone_word)
+        words = _rebuild_words(old_words, word_ids, syls_by_word, phrase.start)
+        phrase.replace_children(words)
+        phrase.label = ' '.join(w.label for w in words)
+        phrases.append(phrase)
+    return phrases
+
+
+def _build_phrase(run, donor_phrases, phrase_phone_ids):
+    '''New Phrase sized to the run. It keeps the donor phrase id when the run
+    holds exactly that phrase's phones (phrase_phone_ids, read before any
+    rewiring), else its id is hashed from the run; metadata (filename) comes
+    from the first phone's donor phrase.'''
+    phrase = models.Phrase(label='', start=run[0].start, end=run[-1].end,
         audio_id=run[0].audio_id, speaker_id=run[0].speaker_id)
+    donor = donor_phrases[run[0].phrase_id]
+    run_ids = {p.identifier for p in run}
+    same_phones = run_ids == phrase_phone_ids[donor.identifier]
+    if same_phones: phrase.identifier = donor.identifier
+    else: phrase.identifier = _derived_id('Phrase', run)
+    _carry_metadata(phrase, donor)
     return phrase
+
+
+def _words_in_several_runs(words_per_run):
+    '''Ids of old words whose phones fall in more than one run.'''
+    counts = Counter(w.identifier for words in words_per_run for w in words)
+    return {identifier for identifier, n in counts.items() if n > 1}
+
+
+def _run_word_ids(run, old_words, split_words, phone_word):
+    '''Ids for a run's rebuilt words: the old word's id, or for a word split
+    across runs an id hashed from its phones in this run.'''
+    word_ids = []
+    for word in old_words:
+        if word.identifier not in split_words:
+            word_ids.append(word.identifier)
+            continue
+        own = [p for p in run if phone_word[p.identifier] is word]
+        word_ids.append(_derived_id('Word', own))
+    return word_ids
+
+
+def _finish(phrases, donor, store):
+    '''Cache the donor's Audio and Speaker on the derived segments; with a
+    store, also save the phrases there.'''
+    audio, speaker = donor.audio, donor.speaker
+    if store is not None:
+        audio = _copy_record(audio, store)
+        speaker = _copy_record(speaker, store)
+        if audio is not None and speaker is not None:
+            store.DB.write_speaker_audio_link(speaker, audio)
+    for phrase in phrases:
+        _attach(phrase, audio, speaker, store)
+    if store is not None: store.save_phrase_trees(phrases, overwrite=True)
+
+
+def _attach(phrase, audio, speaker, store):
+    '''Cache audio and speaker on every segment of the phrase tree, and bind
+    them to store when one is given.'''
+    for segment in phrase.items:
+        segment._audio, segment._speaker = audio, speaker
+        if store is not None: store.attach(segment)
+
+
+def _copy_record(record, store):
+    '''Same-id copy of an Audio or Speaker record bound to store, saved when
+    the store does not hold it yet. None stays None.'''
+    if record is None: return None
+    cls = type(record)
+    fields = {}
+    for field in cls.IDENTITY_FIELDS | cls.METADATA_FIELDS:
+        if hasattr(record, field): fields[field] = getattr(record, field)
+    duplicate = cls(store=store, **fields)
+    duplicate.identifier = record.identifier
+    duplicate.flags = getattr(record, 'flags', 0)
+    if not store.DB.key_exists(duplicate.key): duplicate.save()
+    return duplicate
 
 
 def _phone_to_word(phrase):
