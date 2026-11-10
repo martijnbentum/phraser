@@ -22,6 +22,9 @@ SEGMENT_LEN = SEGMENT_KEY_LENGTH
 TIME_SCAN_LEN = struct.calcsize(TIME_SCAN_FMT)  # 17
 
     
+EMPTY_ID = b'\x00\x00\x00\x00\x00\x00\x00\x00'
+
+
 def make_identifier():
     return os.urandom(8)
 

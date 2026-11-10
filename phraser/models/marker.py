@@ -3,10 +3,12 @@
 Markers can reference a phrase without belonging to its segment tree.
 '''
 
-from . import utils
-from .model_helper import EMPTY_ID
-from .segment import Phrase, Segment
 from progressbar import progressbar
+
+from .. import utils
+from ..key_helper import EMPTY_ID
+from .segment import Segment
+from .segment_hierarchy import Phrase
 
 
 

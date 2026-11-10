@@ -1,7 +1,7 @@
 from .audit import audit, load_audit_data, load_report
 from .errors import ClosedStoreError, UnboundStoreError
 from .key_helper import SEGMENT_KEY_LENGTH
-from .marker import bulk_delete_markers, make_marker, make_markers
+from .models.marker import bulk_delete_markers, make_marker, make_markers
 from .models import Audio, Marker, Phone, Phrase, Speaker, Syllable, Word
 from .overlap import set_overlap_codes, update_audio_overlap
 from .store import Store

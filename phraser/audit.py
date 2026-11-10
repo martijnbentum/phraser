@@ -24,7 +24,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from . import key_helper
-from .model_helper import EMPTY_ID
+from .key_helper import EMPTY_ID
 from .overlap import SILENCE_LABELS, set_overlap_codes
 from .phone_types import PHONE_TYPES
 from .store import value_key_to_instance

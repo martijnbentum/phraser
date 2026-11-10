@@ -9,8 +9,8 @@ from unittest.mock import patch
 from phraser import Store
 from phraser import models
 from phraser import textgrid_loader
-from phraser.model_helper import EMPTY_ID
-from phraser.segment import Phone, Syllable
+from phraser.key_helper import EMPTY_ID
+from phraser.models import Phone, Syllable
 
 
 AUDIO_ID = b'\x01' * 8

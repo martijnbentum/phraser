@@ -7,7 +7,7 @@ from phraser import locations
 from phraser import models
 from phraser import syllable_structure
 from phraser import utils
-from phraser.model_helper import EMPTY_ID
+from phraser.key_helper import EMPTY_ID
 
 
 TEXTGRID_EXISTING_POLICIES = {'append', 'add_missing', 'replace', 'upsert'}
