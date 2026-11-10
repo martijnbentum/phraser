@@ -1,19 +1,19 @@
 from webmaus import pipeline 
 
 def force_align_multiple(texts, audiofilenames, start_times= None, 
-    end_times = None, lanuguage = 'nld-NL', output_dir = '', overwrite = False):
+    end_times = None, language = 'nld-NL', output_dir = '', overwrite = False):
     '''Performs forced alignment of multiple texts with their corresponding 
     audio files.
     texts: A list of texts to be aligned.
     audiofilenames: A list of paths to the audio files.
     start_times: Optional list of start times for alignment.
     end_times: Optional list of end times for alignment.
-    lanuguage: Language code for alignment. see webmaus.utils.languages
+    language:  Language code for alignment. see webmaus.utils.languages
     output_dir: Directory to save output files.
     overwrite: Whether to overwrite existing output files (ie textgrids).
     '''
     files = make_files(texts, audiofilenames, start_times, end_times)
-    p = pipeline.Pipeline(files, output_dir, language = lanuguage,
+    p = pipeline.Pipeline(files, output_dir, language = language,
         overwrite = overwrite)
     p.run()
     return p.infos
@@ -25,7 +25,7 @@ def force_align_single(text, audio_filename, start_time = None, end_time = None,
     audio_filename: The path to the audio file.
     start_time: Optional start time for alignment.
     end_time: Optional end time for alignment.
-    lanuguage: Language code for alignment. see webmaus.utils.languages
+    language:  Language code for alignment. see webmaus.utils.languages
     output_dir: Directory to save output files.
     overwrite: Whether to overwrite existing output files (ie textgrid).
     
