@@ -112,10 +112,16 @@ def syllabify_phones(phones, max_pause=500, phone_types=None):
         for p in phones}                                   # capture before rewiring
     store = phones[0].store
 
+    # syllabify every run before rewiring any, so a failing run leaves the
+    # in-memory graph untouched
+    runs = _split_runs(phones, max_pause)
+    groups_per_run = []
+    for run in runs:
+        try: groups_per_run.append(resyllabify_phones(run))
+        except ValueError: return None
+
     new_phrases = []
-    for run in _split_runs(phones, max_pause):              # one run -> one phrase
-        try: groups = resyllabify_phones(run)
-        except ValueError: return None                     # atomic fail (no orphans)
+    for run, groups in zip(runs, groups_per_run):          # one run -> one phrase
         syllables = [_build_syllable(store, g, phone_types) for g in groups]
         syls_by_word = _bucket_by_nucleus(syllables, phone_word)
 

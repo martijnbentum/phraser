@@ -255,6 +255,25 @@ class TestSyllabifyPhones(unittest.TestCase):
         shutil.rmtree(tmpdir, ignore_errors=True)
         self.assertIsNone(result)
 
+    def test_failing_later_run_leaves_earlier_runs_untouched(self):
+        '''A run that cannot be syllabified must not leave earlier runs
+        rewired: the call is all-or-nothing in memory too.'''
+        with redirect_stdout(io.StringIO()):
+            store, tmpdir = fresh_store()
+            _, _, syls, phones = build_phrase(store,
+                [('ɑ', 0, 100), ('p', 100, 200), ('s', 1200, 1300),
+                ('t', 1300, 1400)], [('ap', 0, 200), ('st', 1200, 1400)],
+                [(0, 200), (1200, 1400)])
+            before = [p.parent for p in phones]
+            result = syllabify_phones(phones, max_pause=500)
+            after = [p.parent for p in phones]
+            first_children = [p.label for p in syls[0].children]
+            store.close()
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        self.assertIsNone(result)
+        self.assertEqual([id(p) for p in before], [id(p) for p in after])
+        self.assertEqual(first_children, ['ɑ', 'p'])
+
 
 if __name__ == '__main__':
     unittest.main()
