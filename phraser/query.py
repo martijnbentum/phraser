@@ -1,16 +1,11 @@
 from .comparison import OPS
 from .storage import key_helper
+from .utils import B, P, R, RE
 
 class DoesNotExist(Exception):
     pass
 class MultipleObjectsReturned(Exception):
     pass
-
-R= "\033[91m"
-G= "\033[92m"
-B= "\033[94m"
-GR= "\033[90m"
-RE= "\033[0m"
 
 def queryset_from_items(items, store = None):
     """
@@ -300,13 +295,6 @@ def ensure_relations_loaded(queryset, attr_name):
 
 def queryset_summary(qs):
     '''generates a colored string summary of the QuerySet'''
-
-    R= "\033[91m"
-    G= "\033[92m"
-    B= "\033[94m"
-    GR= "\033[90m"
-    P = "\033[35m"
-    RE= "\033[0m"
 
     parts = []
 

@@ -9,17 +9,12 @@ from .. import query
 from .. import utils
 from ..errors import ClosedStoreError, UnboundStoreError
 from ..models.segment import keep_owned_descendants
+from ..utils import B, G, GR, R, RE
 from . import key_helper
 from . import lmdb_helper
 from . import save_validation
 from . import struct_value
 from .struct_helper import CLASS_RANK_MAP, RANK_CLASS_MAP
-
-R= "\033[91m"
-G= "\033[92m"
-B= "\033[94m"
-GR= "\033[90m"
-RE= "\033[0m"
 
 
 class Store:
