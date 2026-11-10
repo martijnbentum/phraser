@@ -110,7 +110,7 @@ def apply_new_syllable_boundaries(word, phone_groups, phone_types=None,
     for old_syllable, phones in zip(old_syllables, phone_groups):
         syllable = _rebuild_syllable(old_syllable, phones, phone_types)
         new_syllables.append(syllable)
-    word._children, word._overlapping = new_syllables, []   # pair is load-bearing
+    word.replace_children(new_syllables)
     if update_database:
         _save_new_syllables(new_syllables)
         _delete_old_syllables(old_syllables)
@@ -141,11 +141,8 @@ def rebuild_word_syllables(word, phone_types=None):
 
     new_syllables = []
     for group in groups:
-        syllable = _build_syllable(word.store, group, phone_types)
-        syllable.add_parent(word)     # word + phrase
-        new_syllables.append(syllable)
-
-    word._children, word._overlapping = new_syllables, []   # load-bearing: not on disk
+        new_syllables.append(_build_syllable(word.store, group, phone_types))
+    word.replace_children(new_syllables)
     return new_syllables
 
 
@@ -261,9 +258,10 @@ def _assert_single_speaker(word):
 
 def _rebuild_syllable(old_syllable, phones, phone_types):
     '''Copy old_syllable onto `phones`: a fresh-id clone carrying every field
-    unchanged except label/start/end, with those phones repointed at it and
+    unchanged except label/start/end, with those phones linked to it and
     onset/nucleus/coda reassigned. The stale loaded `_key` is dropped so the new
-    key recomputes from the new id and start.'''
+    key recomputes from the new id and start. replace_children also drops the
+    child caches the shallow copy shares with old_syllable.'''
     syllable = copy.copy(old_syllable)
     syllable.identifier = key_helper.make_identifier()
     syllable.label = ' '.join(p.label for p in phones)
@@ -271,12 +269,8 @@ def _rebuild_syllable(old_syllable, phones, phone_types):
     syllable.end = max(p.end for p in phones)
     if hasattr(syllable, '_key'):
         del syllable._key
-    for phone in phones:
-        phone.parent_id = syllable.identifier
-        phone.parent_start = syllable.start
-        phone._parent = syllable
+    syllable.replace_children(phones)
     assign_syllable_positions_to_phones(phones, phone_types=phone_types)
-    syllable._children, syllable._overlapping = phones, []
     return syllable
 
 
@@ -307,8 +301,9 @@ def _build_syllable(store, group, phone_types):
         label=' '.join(p.label for p in group),
         start=min(p.start for p in group), end=max(p.end for p in group),
         audio_id=group[0].audio_id, speaker_id=group[0].speaker_id)
-    syllable._children, syllable._overlapping = group, []   # fill before wiring
-    for phone in group: phone.add_parent(syllable)
+    # replace_children, not add_children: it starts from empty caches, so the
+    # new syllable never scans the store for the old phones in its range
+    syllable.replace_children(group)
     assign_syllable_positions_to_phones(group, phone_types=phone_types)
     return syllable
 
@@ -327,9 +322,7 @@ def _rebuild_word(phrase, old_word, syllables, cursor):
     for field, value in old_word.__dict__.items():
         if field == 'overlap_code': continue
         if field in models.Word.METADATA_FIELDS: setattr(word, field, value)
-    word._children, word._overlapping = syllables, []
-    for syllable in syllables:
-        syllable.add_parent(word)
+    word.replace_children(syllables)
     return word
 
 
