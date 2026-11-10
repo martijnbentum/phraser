@@ -49,9 +49,9 @@ def validate_sequence_lengths_match(left_name, left, right_name, right):
     m += f'got {len(left)} and {len(right)}.'
     raise ValueError(m)
 
-def load_single_audio_and_transcription_to_db(audio_filename, text = None, 
-    speaker = None,textgrid_filename = None, do_force_align = False, 
-    save_to_db = True, textgrid_output_dir = None, store=None,
+def load_single_audio_and_transcription_to_db(audio_filename, text=None,
+    speaker=None, textgrid_filename=None, do_force_align=False,
+    save_to_db=True, textgrid_output_dir=None, store=None,
     existing='append', audio=None):
     '''Load a transcription, optionally force-aligning first.
 
@@ -62,22 +62,22 @@ def load_single_audio_and_transcription_to_db(audio_filename, text = None,
     validate_textgrid_audio(audio, existing, store=store,
         save_to_db=save_to_db)
     if textgrid_filename is None and not do_force_align:
-        m = f'Either a TextGrid filename must be provided '
-        m += f'or force alignment must be requested.'
+        m = 'Either a TextGrid filename must be provided '
+        m += 'or force alignment must be requested.'
         raise ValueError(m)
     if textgrid_output_dir is None:
         textgrid_output_dir = locations.textgrids
     if do_force_align:
-        o = force_align.force_align_single(text, audio_filename, 
-            output_dir = textgrid_output_dir) 
+        o = force_align.force_align_single(text, audio_filename,
+            output_dir=textgrid_output_dir)
         textgrid_filename = o['output_file']
-    db_objects = load_single_audio_textgrid_to_db(audio_filename, 
-        textgrid_filename, speaker = speaker, save_to_db = save_to_db,
+    db_objects = load_single_audio_textgrid_to_db(audio_filename,
+        textgrid_filename, speaker=speaker, save_to_db=save_to_db,
         store=store, existing=existing, audio=audio)
     return db_objects
 
 def load_single_audio_textgrid_to_db(audio_filename, textgrid_filename,
-    speaker = None, save_to_db = True, store=None, existing='append',
+    speaker=None, save_to_db=True, store=None, existing='append',
     audio=None):
     '''Load one audio/TextGrid pair.
 
@@ -107,7 +107,7 @@ def load_single_audio_textgrid_to_db(audio_filename, textgrid_filename,
         return stored_objects
     return db_objects
 
-def audio_filename_to_db_object(audio_filename, save_to_db = False, kwargs=None,
+def audio_filename_to_db_object(audio_filename, save_to_db=False, kwargs=None,
     store=None):
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
@@ -118,14 +118,15 @@ def audio_filename_to_db_object(audio_filename, save_to_db = False, kwargs=None,
         m += f'{info.keys() & kwargs.keys()}'
         print(m)
     info.update(kwargs)
-    audio_object = models.Audio(**info, save = save_to_db, store=store)
+    audio_object = models.Audio(**info, save=save_to_db, store=store)
     return audio_object
 
-def load_audios_textgrids_to_db(audio_filenames, textgrid_filenames, speakers, 
-    save_to_db = True, store=None, existing='append', audios=None):
+def load_audios_textgrids_to_db(audio_filenames, textgrid_filenames, speakers,
+    save_to_db=True, store=None, existing='append', audios=None):
     '''Load audio/TextGrid pairs.
 
-    Returns the concatenated object lists from `load_single_audio_textgrid_to_db()`.
+    Returns the concatenated object lists from
+    `load_single_audio_textgrid_to_db()`.
     '''
     if save_to_db and store is None:
         raise ValueError('store is required when save_to_db=True')
@@ -141,23 +142,16 @@ def load_audios_textgrids_to_db(audio_filenames, textgrid_filenames, speakers,
             textgrid_filenames, 'speakers', speakers)
     db_objects = []
     for i in progressbar(range(len(audio_filenames))):
-        audio_filename = audio_filenames[i]
-        textgrid_filename = textgrid_filenames[i]
-        if speakers is not None:
-            speaker = speakers[i]
-        else: speaker = None
-        if audios is not None:
-            audio_object = audios[i]
-        else: audio_object = None
-        objs = load_single_audio_textgrid_to_db(
-            audio_filename, textgrid_filename, speaker = speaker,
-            save_to_db = save_to_db, store=store, existing=existing,
-            audio=audio_object)
+        speaker = None if speakers is None else speakers[i]
+        audio = None if audios is None else audios[i]
+        objs = load_single_audio_textgrid_to_db(audio_filenames[i],
+            textgrid_filenames[i], speaker=speaker, save_to_db=save_to_db,
+            store=store, existing=existing, audio=audio)
         db_objects.extend(objs)
     return db_objects
-    
-def load_speaker_audios_textgrids_to_db(speaker, audio_filenames, 
-    textgrid_filenames, save_to_db = True, store=None, existing='append',
+
+def load_speaker_audios_textgrids_to_db(speaker, audio_filenames,
+    textgrid_filenames, save_to_db=True, store=None, existing='append',
     audios=None):
     '''Load audio/TextGrid pairs for one speaker.
 
@@ -170,7 +164,6 @@ def load_speaker_audios_textgrids_to_db(speaker, audio_filenames,
     validate_sequence_lengths_match('audio_filenames', audio_filenames,
         'textgrid_filenames', textgrid_filenames)
     speakers = [speaker] * len(audio_filenames)
-    db_objects = load_audios_textgrids_to_db(
-        audio_filenames, textgrid_filenames, speakers,
-        save_to_db = save_to_db, store=store, existing=existing, audios=audios)
-    return db_objects
+    return load_audios_textgrids_to_db(audio_filenames, textgrid_filenames,
+        speakers, save_to_db=save_to_db, store=store, existing=existing,
+        audios=audios)

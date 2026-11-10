@@ -31,9 +31,10 @@ def save_textgrid_items(items, store=None, existing='append'):
     - `upsert`: run an existence check; replace when one matching phrase exists,
       otherwise save the staged items as new.
 
-    Existence checks are scoped to phrases linked to the same audio, then matched
-    by Phrase equality: `(audio_id, speaker_id, start)`. Multiple matches raise
-    ValueError. The function returns `added`, `skipped`, or `replaced`.
+    Existence checks are scoped to phrases linked to the same audio, then
+    matched by Phrase equality: `(audio_id, speaker_id, start)`. Multiple
+    matches raise ValueError. The function returns `added`, `skipped`, or
+    `replaced`.
     '''
     validate_textgrid_existing_mode(existing)
     items = list(items)

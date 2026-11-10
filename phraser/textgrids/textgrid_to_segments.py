@@ -51,12 +51,11 @@ def validate_textgrid_overwrite(overwrite):
     raise ValueError(m)
 
 def load_textgrid(filename):
-    """Load a TextGrid file and return the TextGrid object."""
-    tg = TextGrid.fromFile(filename)
-    return tg
+    '''Load a TextGrid file and return the TextGrid object.'''
+    return TextGrid.fromFile(filename)
 
-def textgrid_filename_to_database_objects(textgrid_filename, offset = 0, 
-    audio = None, speaker = None, overwrite = False, multiple_speakers = None,
+def textgrid_filename_to_database_objects(textgrid_filename, offset=0,
+    audio=None, speaker=None, overwrite=False, multiple_speakers=None,
     store=None):
     '''Build store-bound objects from a TextGrid.
 
@@ -82,7 +81,7 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset = 0,
         kwargs=identity))
     phones = list(textgrid_to_phones(tg, offset, store=store,
         kwargs=identity))
-    phrase = words_to_phrase(words, textgrid_filename = textgrid_filename,
+    phrase = words_to_phrase(words, textgrid_filename=textgrid_filename,
         store=store, kwargs=identity)
     if phrase is None:
         m = 'TextGrid must contain at least one non-empty word interval; '
@@ -105,22 +104,21 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset = 0,
         for item in items:
             item.overlap_code = no_overlap_code
     return items
-         
+
 def words_to_phrase(words, textgrid_filename, store=None, kwargs=None):
     words = list(words)
-    if not words:
-        return None
+    if not words: return None
     kwargs = copy_kwargs(kwargs)
     start = words[0].start
     end = words[-1].end
     label = ' '.join([word.label for word in words])
     phrase = models.Phrase(start=start, end=end, label=label,
-        filename =textgrid_filename, save = False, store=store, **kwargs)
+        filename=textgrid_filename, save=False, store=store, **kwargs)
     for word in words:
         word.add_parent(phrase)
     return phrase
 
-def textgrid_to_words(tg, offset = 0, *, store=None, kwargs=None):
+def textgrid_to_words(tg, offset=0, *, store=None, kwargs=None):
     store = require_textgrid_store(store)
     names = tg.getNames()
     ort_mau = get_textgrid_tier(tg, names, 'ORT-MAU', 'words')
@@ -133,7 +131,7 @@ def textgrid_to_words(tg, offset = 0, *, store=None, kwargs=None):
         yield interval_to_word(ort, ipa, offset=offset, kwargs=kwargs,
             store=store)
 
-def textgrid_to_syllables(tg, offset = 0, *, store=None, kwargs=None):
+def textgrid_to_syllables(tg, offset=0, *, store=None, kwargs=None):
     store = require_textgrid_store(store)
     names = tg.getNames()
     syllables = get_textgrid_tier(tg, names, 'MAS', 'syllables')
@@ -143,8 +141,7 @@ def textgrid_to_syllables(tg, offset = 0, *, store=None, kwargs=None):
         yield interval_to_syllable(syl, offset=offset, kwargs=kwargs,
             store=store)
 
-def textgrid_to_phones(tg, offset = 0, *, store=None, kwargs=None):
-
+def textgrid_to_phones(tg, offset=0, *, store=None, kwargs=None):
     store = require_textgrid_store(store)
     names = tg.getNames()
     phones = get_textgrid_tier(tg, names, 'MAU', 'phones')
@@ -154,31 +151,26 @@ def textgrid_to_phones(tg, offset = 0, *, store=None, kwargs=None):
         yield interval_to_phone(phone, offset=offset, kwargs=kwargs,
             store=store)
 
-
 def copy_kwargs(kwargs=None):
     if kwargs is None: return {}
     return dict(kwargs)
 
-def interval_to_word(ort_interval, ipa_interval = None, offset = 0, 
-    kwargs = None, store=None):
+def interval_to_word(ort_interval, ipa_interval=None, offset=0,
+    kwargs=None, store=None):
     kwargs = copy_kwargs(kwargs)
-    if ipa_interval: 
-        kwargs['ipa'] = ipa_interval.mark
-    word = interval_to_database_object(ort_interval, models.Word, 
+    if ipa_interval: kwargs['ipa'] = ipa_interval.mark
+    return interval_to_database_object(ort_interval, models.Word, offset,
+        kwargs, store=store)
+
+def interval_to_syllable(syl_interval, offset=0, kwargs=None, store=None):
+    return interval_to_database_object(syl_interval, models.Syllable,
         offset, kwargs, store=store)
-    return word
-        
-def interval_to_syllable(syl_interval, offset = 0, kwargs = None, store=None):
-    syllable = interval_to_database_object(syl_interval, models.Syllable, 
-    offset, kwargs, store=store)
-    return syllable
 
-def interval_to_phone(phone_interval, offset = 0, kwargs = None, store=None):
-    phone = interval_to_database_object(phone_interval, models.Phone, 
-    offset, kwargs, store=store)
-    return phone
+def interval_to_phone(phone_interval, offset=0, kwargs=None, store=None):
+    return interval_to_database_object(phone_interval, models.Phone,
+        offset, kwargs, store=store)
 
-def interval_to_database_object(interval, model_class, offset = 0, kwargs=None,
+def interval_to_database_object(interval, model_class, offset=0, kwargs=None,
     store=None):
     kwargs = copy_kwargs(kwargs)
     store = require_textgrid_store(store)
@@ -188,7 +180,7 @@ def interval_to_database_object(interval, model_class, offset = 0, kwargs=None,
         store=store, **kwargs)
     return o
 
-def select_objecs_in_range(objects, start, end):
+def select_objects_in_range(objects, start, end):
     selected = []
     for obj in objects:
         if obj.start >= start and obj.end <= end:
@@ -196,13 +188,13 @@ def select_objecs_in_range(objects, start, end):
     return selected
 
 def find_and_add_syllables_to_word(word, syllables, save_to_db=False):
-    syllables = select_objecs_in_range(syllables, word.start, word.end)
+    syllables = select_objects_in_range(syllables, word.start, word.end)
     for syl in syllables:
         syl.add_parent(word)
 
 def find_and_add_phones_to_syllable(syllable, phones, save_to_db=False,
     assign_positions=True):
-    phones = select_objecs_in_range(phones, syllable.start, syllable.end)
+    phones = select_objects_in_range(phones, syllable.start, syllable.end)
     for phone in phones:
         phone.add_parent(syllable)
     if assign_positions:
