@@ -107,7 +107,7 @@ def apply_new_syllable_boundaries(word, phone_groups, phone_types=None):
         message += f'{len(phone_groups)} groups'
         raise ValueError(message)
     for syllable, phones in zip(syllables, phone_groups):
-        _assign_phones_to_syllable(syllable, phones, phone_types)
+        _set_syllable_phones(syllable, phones, phone_types)
     word.replace_children(syllables)
     return syllables
 
@@ -250,7 +250,7 @@ def _assert_single_speaker(word):
             f'found {len(speaker_ids)} speaker ids')
 
 
-def _assign_phones_to_syllable(syllable, phones, phone_types):
+def _set_syllable_phones(syllable, phones, phone_types):
     '''Make `phones` the syllable's children, in place: label/start/end are
     re-derived from them, every other field is kept, and onset/nucleus/coda
     are reassigned. The stale loaded `_key` is dropped so the key recomputes
