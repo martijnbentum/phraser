@@ -10,7 +10,8 @@ second syllable); its time is wherever the phones put it.
 The grouping comes from a language syllabifier. Only Dutch
 (dutch_syllabifier) is implemented; other languages raise
 NotImplementedError. apply_new_syllable_boundaries takes a grouping from any
-source.
+source. Onset/nucleus/coda positions use phone_types.PHONE_TYPES, which
+agrees with the syllabifier on every phone it accepts.
 
 repair_*   change the donor store's syllables in place: phones move between
            the existing syllables (same count, same objects and ids, metadata
@@ -78,13 +79,12 @@ class RepairOutcome:
         return c is not None and s is not None and len(c) != len(s)
 
 
-def repair_word_syllables(word, language='dutch', phone_types=None):
+def repair_word_syllables(word, language='dutch'):
     '''Reassign a word's phones to its syllables by the Maximal Onset
     Principle, if needed. Returns a RepairOutcome with the analysis and
     whether the new boundaries were applied.
-    word         the Word to repair, in place
-    language     syllabifier language; only 'dutch' is implemented
-    phone_types  optional vowel/consonant mapping for phone positions
+    word      the Word to repair, in place
+    language  syllabifier language; only 'dutch' is implemented
 
     The new boundaries are applied only when the word is analysable, its
     current split is wrong, and the syllable count is preserved (the 1:1
@@ -95,13 +95,12 @@ def repair_word_syllables(word, language='dutch', phone_types=None):
     applied = False
     if not result.ok and result.suggested_groups is not None \
             and len(word.syllables) == len(result.suggested_groups):
-        apply_new_syllable_boundaries(word, result.suggested_groups,
-            phone_types=phone_types)
+        apply_new_syllable_boundaries(word, result.suggested_groups)
         applied = True
     return RepairOutcome(result=result, applied=applied)
 
 
-def apply_new_syllable_boundaries(word, phone_groups, phone_types=None):
+def apply_new_syllable_boundaries(word, phone_groups):
     '''Apply new syllable boundaries to a word, given as phone groups.
     word          the Word whose syllables get new boundaries
     phone_groups  list of phone lists: the word's SAME phone objects,
@@ -127,21 +126,19 @@ def apply_new_syllable_boundaries(word, phone_groups, phone_types=None):
         message += f'{len(phone_groups)} groups'
         raise ValueError(message)
     for syllable, phones in zip(syllables, phone_groups):
-        _set_syllable_phones(syllable, phones, phone_types)
+        _set_syllable_phones(syllable, phones)
     word.replace_children(syllables)
     return syllables
 
 
 # ------------------------------- derive ---------------------------------
 
-def derive_syllables_for_word(word, language='dutch', phone_types=None,
-    store=None):
+def derive_syllables_for_word(word, language='dutch', store=None):
     '''Derive a new syllable layer for a word, on a copy of its phrase.
-    word         donor Word; it and its store are left untouched
-    language     syllabifier language; only 'dutch' is implemented
-    phone_types  optional vowel/consonant mapping for phone positions
-    store        target Store to save the derived phrase to; None keeps the
-                 copies in memory only
+    word      donor Word; it and its store are left untouched
+    language  syllabifier language; only 'dutch' is implemented
+    store     target Store to save the derived phrase to; None keeps the
+              copies in memory only
 
     The whole phrase is copied; only the word's syllables are new, built from
     the syllabifier's grouping of its phones. Returns the derived word.
@@ -154,19 +151,18 @@ def derive_syllables_for_word(word, language='dutch', phone_types=None,
     phrase = _copy_phrase_tree(word.phrase)
     derived = _find_by_id(phrase.words, word.identifier)
     groups = _group_phones(syllabifier, derived.phones, _describe(word))
-    derived.replace_children(_build_syllables(groups, phone_types))
+    derived.replace_children(_build_syllables(groups))
     _finish([phrase], word, store)
     return derived
 
 
 def derive_words_and_syllables_for_phrase(phrase, language='dutch',
-    phone_types=None, store=None):
+    store=None):
     '''Derive new word and syllable layers for a phrase, on a copy of it.
-    phrase       donor Phrase; it and its store are left untouched
-    language     syllabifier language; only 'dutch' is implemented
-    phone_types  optional vowel/consonant mapping for phone positions
-    store        target Store to save the derived phrase to; None keeps the
-                 copies in memory only
+    phrase    donor Phrase; it and its store are left untouched
+    language  syllabifier language; only 'dutch' is implemented
+    store     target Store to save the derived phrase to; None keeps the
+              copies in memory only
 
     Connected speech: the phrase's phones are grouped as one sequence, so a
     consonant may move to a syllable of the next word (het ei -> hE.tEi).
@@ -181,7 +177,7 @@ def derive_words_and_syllables_for_phrase(phrase, language='dutch',
     derived = _copy_phrase_tree(phrase)
     groups = _group_phones(syllabifier, derived.phones, _describe(phrase))
     phone_word = _phone_to_word(derived)
-    syllables = _build_syllables(groups, phone_types)
+    syllables = _build_syllables(groups)
     syls_by_word = _bucket_by_nucleus(syllables, phone_word)
     old_words = derived.words
     word_ids = [word.identifier for word in old_words]
@@ -192,14 +188,13 @@ def derive_words_and_syllables_for_phrase(phrase, language='dutch',
 
 
 def derive_phrases_for_phones(phones, max_pause=500, language='dutch',
-    phone_types=None, store=None):
+    store=None):
     '''Derive new phrase, word and syllable layers for a phone sequence.
-    phones       donor phones, or a segment exposing .phones; left untouched
-    max_pause    a gap of at least this many ms starts a new phrase
-    language     syllabifier language; only 'dutch' is implemented
-    phone_types  optional vowel/consonant mapping for phone positions
-    store        target Store to save the derived phrases to; None keeps the
-                 copies in memory only
+    phones     donor phones, or a segment exposing .phones; left untouched
+    max_pause  a gap of at least this many ms starts a new phrase
+    language   syllabifier language; only 'dutch' is implemented
+    store      target Store to save the derived phrases to; None keeps the
+               copies in memory only
 
     The phrase layer is re-derived from pauses: each run of phones between
     gaps >= max_pause becomes a phrase, so two donor phrases with a short gap
@@ -225,7 +220,7 @@ def derive_phrases_for_phones(phones, max_pause=500, language='dutch',
     for run in runs:
         what = f'phones {run[0].start}-{run[-1].end} ms'
         groups_per_run.append(_group_phones(syllabifier, run, what))
-    phrases = _build_phrases(runs, groups_per_run, donor_phrases, phone_types)
+    phrases = _build_phrases(runs, groups_per_run, donor_phrases)
     _finish(phrases, phones[0], store)
     return phrases
 
@@ -265,7 +260,7 @@ def _assert_single_speaker(word):
             f'found {len(speaker_ids)} speaker ids')
 
 
-def _set_syllable_phones(syllable, phones, phone_types):
+def _set_syllable_phones(syllable, phones):
     '''Make `phones` the syllable's children, in place: label/start/end are
     re-derived from them, every other field is kept, and onset/nucleus/coda
     are reassigned. The stale loaded `_key` is dropped so the key recomputes
@@ -276,8 +271,7 @@ def _set_syllable_phones(syllable, phones, phone_types):
     if hasattr(syllable, '_key'):
         del syllable._key
     syllable.replace_children(phones)
-    syllable_structure.assign_syllable_positions_to_phones(phones,
-        phone_types=phone_types)
+    syllable_structure.assign_syllable_positions_to_phones(phones)
     return syllable
 
 
@@ -359,13 +353,12 @@ def _carry_metadata(segment, source):
         setattr(segment, field, getattr(source, field))
 
 
-def _syllable_sources(groups, phone_types):
+def _syllable_sources(groups):
     '''Per phone group, the old syllable holding its nucleus when that match
     is one-to-one, else None. Read before any phone is re-parented.'''
     owners = []
     for group in groups:
-        indices = syllable_structure.phones_to_vowel_indices(group,
-            phone_types=phone_types)
+        indices = syllable_structure.phones_to_vowel_indices(group)
         owners.append({group[i].parent_id: group[i].parent for i in indices})
     counts = Counter(next(iter(o)) for o in owners if len(o) == 1)
     sources = []
@@ -375,16 +368,16 @@ def _syllable_sources(groups, phone_types):
     return sources
 
 
-def _build_syllables(groups, phone_types):
+def _build_syllables(groups):
     '''New syllables around the phone groups (see _syllable_sources).'''
-    sources = _syllable_sources(groups, phone_types)
+    sources = _syllable_sources(groups)
     syllables = []
     for group, source in zip(groups, sources):
-        syllables.append(_build_syllable(group, source, phone_types))
+        syllables.append(_build_syllable(group, source))
     return syllables
 
 
-def _build_syllable(group, source, phone_types):
+def _build_syllable(group, source):
     '''New Syllable around a phone group, positions assigned. With a source
     (its one-to-one old syllable) it takes that id and metadata; otherwise
     its id is hashed from the group. Not yet wired to a word.'''
@@ -397,8 +390,7 @@ def _build_syllable(group, source, phone_types):
         _carry_metadata(syllable, source)
     # replace_children, not add_children: it starts from empty caches
     syllable.replace_children(group)
-    syllable_structure.assign_syllable_positions_to_phones(group,
-        phone_types=phone_types)
+    syllable_structure.assign_syllable_positions_to_phones(group)
     return syllable
 
 
@@ -430,7 +422,7 @@ def _rebuild_word(old_word, word_id, syllables, cursor):
     return word
 
 
-def _build_phrases(runs, groups_per_run, donor_phrases, phone_types):
+def _build_phrases(runs, groups_per_run, donor_phrases):
     '''One new phrase per run, its words and syllables rebuilt from the run's
     phone groups.'''
     phone_word, phrase_phone_ids = {}, {}
@@ -438,14 +430,14 @@ def _build_phrases(runs, groups_per_run, donor_phrases, phone_types):
         phone_word.update(_phone_to_word(phrase))
         phrase_phone_ids[phrase_id] = {p.identifier for p in phrase.phones}
     all_groups = [group for groups in groups_per_run for group in groups]
-    sources = iter(_syllable_sources(all_groups, phone_types))
+    sources = iter(_syllable_sources(all_groups))
     words_per_run = [_words_in_order(run, phone_word) for run in runs]
     split_words = _words_in_several_runs(words_per_run)
     phrases = []
     for run, groups, old_words in zip(runs, groups_per_run, words_per_run):
         syllables = []
         for group in groups:
-            syllables.append(_build_syllable(group, next(sources), phone_types))
+            syllables.append(_build_syllable(group, next(sources)))
         syls_by_word = _bucket_by_nucleus(syllables, phone_word)
         phrase = _build_phrase(run, donor_phrases, phrase_phone_ids)
         word_ids = _run_word_ids(run, old_words, split_words, phone_word)
