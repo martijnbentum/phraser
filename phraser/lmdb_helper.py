@@ -152,9 +152,9 @@ class DB:
             for key in label_keys:
                 txn.put(key, b'', db = label)
 
-    def audio_id_to_child_keys(self, audio_id, child_class = 'Phrase'):
+    def audio_id_to_child_keys(self, audio_id, child_class_name='Phrase'):
         db = self.db['main']
-        prefix = key_helper.pack_audio_scan_prefix(audio_id, child_class)
+        prefix = key_helper.pack_audio_scan_prefix(audio_id, child_class_name)
         with self.env.begin() as txn:
             cur = txn.cursor(db = db)
             if not cur.set_range(prefix):
@@ -180,25 +180,26 @@ class DB:
 
 
 
-    def instance_to_child_keys(self, instance, child_class = None):
+    def instance_to_child_keys(self, instance, child_class_name=None):
         '''Yield keys for child objects of instance, ordered by start time.
-        instance:      An Segment instance (Phrase, Word, Syllable).
-        child_class:   Class name of child objects to retrieve
-                       (Word, Syllable, Phone).
-                       If None, uses instance.child_class_name.
+        instance:          An Segment instance (Phrase, Word, Syllable).
+        child_class_name:  Class name of child objects to retrieve
+                           (Word, Syllable, Phone).
+                           If None, uses instance.child_class_name.
         '''
-        if child_class is None: child_class = instance.child_class_name
-        return self.time_range_keys(instance.audio_id, child_class,
+        if child_class_name is None:
+            child_class_name = instance.child_class_name
+        return self.time_range_keys(instance.audio_id, child_class_name,
             instance.start, instance.end)
 
-    def time_range_keys(self, audio_id, child_class, start, end):
-        '''Yield keys of child_class segments in the audio starting in
-        [start, end), ordered by start time.'''
+    def time_range_keys(self, audio_id, child_class_name, start, end):
+        '''Yield keys of child_class_name segments in the audio starting
+        in [start, end), ordered by start time.'''
         db = self.db['main']
         start_prefix = key_helper.make_time_scan_prefix(audio_id,
-            child_class, start)
+            child_class_name, start)
         end_prefix = key_helper.make_time_scan_prefix(audio_id,
-            child_class, end)
+            child_class_name, end)
         with self.env.begin() as txn:
             cur = txn.cursor(db = db)
             if not cur.set_range(start_prefix):
@@ -209,15 +210,19 @@ class DB:
                 yield k  # or (k, v)
 
     def instance_to_descendant_keys(self, instance):
+        '''Candidate keys of all lower levels in instance's time range,
+        grouped by level (parents before children); not ownership-filtered.
+        '''
+        if instance.object_type == 'Phone': return []
         if instance.object_type == 'Phrase':
             child_classes = ['Word', 'Syllable', 'Phone']
         if instance.object_type == 'Word':
             child_classes = ['Syllable', 'Phone']
         if instance.object_type == 'Syllable':
-            return self.instance_to_child_keys(instance) 
+            return list(self.instance_to_child_keys(instance))
         keys = []
-        for child_class in child_classes:
-            o = self.instance_to_child_keys(instance, child_class)
+        for child_class_name in child_classes:
+            o = self.instance_to_child_keys(instance, child_class_name)
             if o: keys.extend(o)
         return keys
                 

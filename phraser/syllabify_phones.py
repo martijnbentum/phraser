@@ -156,9 +156,10 @@ def _rebuild_word(phrase, old_word, syllables, cursor):
     word = models.Word(store=phrase.store, label=old_word.label,
         start=start, end=end, audio_id=old_word.audio_id,
         speaker_id=old_word.speaker_id)
-    for field, value in old_word.__dict__.items():      # carry persisted metadata
-        if field in models.Word.METADATA_FIELDS:        # set ones only (skips the
-            setattr(word, field, value)                 # derived 'overlap' property)
+    # carry set metadata; overlap_code is left unset because the span changed
+    for field, value in old_word.__dict__.items():
+        if field == 'overlap_code': continue
+        if field in models.Word.METADATA_FIELDS: setattr(word, field, value)
     word._children, word._overlapping = syllables, []
     for syllable in syllables:
         syllable.add_parent(word)

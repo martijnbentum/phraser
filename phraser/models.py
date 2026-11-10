@@ -53,6 +53,7 @@ class Audio:
         return hash(self.filename)
 
     def _set_kwargs(self, **kwargs):
+        utils.check_init_fields(self, kwargs, self.METADATA_FIELDS)
         for k, v in kwargs.items():
             if k == 'duration' and not isinstance(v, int):
                 raise ValueError('duration should be in milliseconds and should be int')
@@ -60,12 +61,6 @@ class Audio:
 
     def add_speaker(self, speaker, update_database=True):
         speaker.add_audio(self, update_database=update_database)
-
-    def has_extra(self):
-        if hasattr(self, 'extra') and self.extra:
-            return True
-        return False
-
 
     @property
     def speakers(self):
@@ -180,9 +175,7 @@ class Audio:
 class Speaker:
     IDENTITY_FIELDS= {'name', 'dataset'}
     DB_FIELDS = {'name', 'dataset','identifier'}
-    METADATA_FIELDS = {'gender', 'age', 'language', 'dialect', 'region',
-        'channel'}
-    FIELDS = DB_FIELDS.union(METADATA_FIELDS)
+    METADATA_FIELDS = {'gender_code', 'age', 'language', 'dialect', 'region'}
 
     flags = 0
     gender_code = 9
@@ -201,19 +194,11 @@ class Speaker:
         self.overwrite = overwrite
         self._store = store
 
-        # Extra metadata
-        extra = {}
-        if 'extra' in kwargs:
-            e = kwargs.pop('extra')
-            if not isinstance(e, dict):
-                raise ValueError("extra must be a dict")
-            extra.update( e )
+        if 'gender' in kwargs:
+            self.gender_code = utils.gender_dict[kwargs.pop('gender')]
+        utils.check_init_fields(self, kwargs, self.METADATA_FIELDS)
         for k, v in kwargs.items():
-            if k in self.FIELDS:
-                setattr(self, k, v)
-            elif not k in extra:
-                extra[k] = v
-        self.extra = extra
+            setattr(self, k, v)
 
         if save:
             self.save(overwrite=overwrite)
@@ -235,7 +220,7 @@ class Speaker:
         return hash(self.identifier)
 
     def __contains__(self, key):
-        return hasattr(self, key) or key in self.extra
+        return hasattr(self, key)
 
     def add_audio(self, audio, update_database=True):
         if not hasattr(self, '_audios'): self._audios = []
@@ -243,11 +228,6 @@ class Speaker:
             self._audios.append(audio)
         if update_database:
             self.store.DB.write_speaker_audio_link(self, audio)
-
-    def has_extra(self):
-        if hasattr(self, 'extra') and self.extra:
-            return True
-        return False
 
     def gender(self):
         return utils.reverse_gender_dict[self.gender_code]
@@ -331,14 +311,6 @@ class Speaker:
 
     def delete(self):
         self.store.delete(self.key)
-
-    @property
-    def metadata_present(self):
-        names = []
-        for name in self.METADATA_FIELDS:
-            if hasattr(self, name):
-                names.append(name)
-        return names
 
     @property
     def store(self):

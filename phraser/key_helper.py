@@ -77,21 +77,13 @@ def instance_to_key(obj):
     return pack_segment_key(audio_uuid, rank, offset, uuid)
 
 
-def instance_to_child_time_scan_keys(instance, child_class = None):
-    if child_class is None: child_class = instance.child_class_name
-    start = instance.start
-    start_key = make_time_scan_prefix(instance.audio_id, child_class, start)
-    end = instance.end
-    end_key = make_time_scan_prefix(instance.audio_id, child_class, end)
-    return start_key, end_key
-
-def make_time_scan_prefix(audio_uuid, child_class, time):
+def make_time_scan_prefix(audio_uuid, child_class_name, time):
     '''Make key prefix for time scan of segments in an audio.
     audio_uuid: audio UUID
-    child_class: Word, Syllable, Phone
+    child_class_name: Word, Syllable, Phone
     time: integer offset in milliseconds
     '''
-    child_class_rank = CLASS_RANK_MAP[child_class]
+    child_class_rank = CLASS_RANK_MAP[child_class_name]
     audio_rank = CLASS_RANK_MAP['Audio']
     return struct.pack(TIME_SCAN_FMT, audio_rank, 
          audio_uuid, child_class_rank, time)
@@ -129,8 +121,8 @@ def pack_audio_key(audio_uuid):
     rank = CLASS_RANK_MAP['Audio']
     return struct.pack(AUDIO_FMT, rank, audio_uuid, rank)
 
-def pack_audio_scan_prefix(audio_uuid, child_class):
-    child_class_rank = CLASS_RANK_MAP[child_class]
+def pack_audio_scan_prefix(audio_uuid, child_class_name):
+    child_class_rank = CLASS_RANK_MAP[child_class_name]
     audio_rank = CLASS_RANK_MAP['Audio']
     return struct.pack(AUDIO_FMT, audio_rank, audio_uuid, child_class_rank)
 

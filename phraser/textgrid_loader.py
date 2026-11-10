@@ -170,7 +170,7 @@ def validate_textgrid_match_count(matches, phrase):
 
 def replace_textgrid_phrase_tree(existing_phrase, items, store=None):
     store = require_store(store, items)
-    old_items = list(existing_phrase.all_objects)
+    old_items = list(existing_phrase.items)
     delete_textgrid_items(old_items, store=store)
     store.save_many(items)
 

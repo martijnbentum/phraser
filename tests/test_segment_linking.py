@@ -8,6 +8,7 @@ from contextlib import redirect_stdout
 from phraser import Store
 from phraser.model_helper import EMPTY_ID
 from phraser.models import Audio, Phone, Phrase, Speaker, Syllable, Word
+from phraser.store import load_phrase_descendants
 
 
 class TestSegmentLinking(unittest.TestCase):
@@ -59,6 +60,45 @@ class TestSegmentLinking(unittest.TestCase):
         for segment in expected:
             found = any(known is segment for known in descendants)
             self.assertTrue(found)
+
+    def test_iter_ancestors_of_type_yields_phrase_once(self):
+        '''The phrase shortcut does not repeat the phrase or yield self.'''
+        tree = self._build_staged_tree()
+        for segment in [tree.words[0], tree.syllables[0], tree.phones[0]]:
+            phrases = list(segment.iter_ancestors_of_type(Phrase))
+            self.assertEqual(len(phrases), 1)
+            self.assertIs(phrases[0], tree.phrase)
+        own = list(tree.phrase.iter_ancestors_of_type(Phrase))
+        self.assertEqual(own, [])
+
+    def test_syllable_from_other_phrase_is_rejected(self):
+        '''A syllable already tied to one phrase cannot move under a word
+        of another phrase.'''
+        tree = self._build_staged_tree()
+        other_phrase = self._create_phrase(label='other', start=2000,
+            end=3000)
+        other_word = self.store.create(Word, label='other', start=2000,
+            end=3000, **self.identity)
+        other_word.add_parent(other_phrase)
+        with self.assertRaisesRegex(ValueError, 'different phrase'):
+            tree.syllables[0].add_parent(other_word)
+
+    def test_sibling_navigation(self):
+        '''next_sibling and prev_sibling follow start order and stop at
+        the ends; an unlinked segment has no siblings.'''
+        tree = self._build_staged_tree()
+        first, second = tree.words
+        self.assertIsNone(first.prev_sibling)
+        self.assertIs(first.next_sibling, second)
+        self.assertIs(second.prev_sibling, first)
+        self.assertIsNone(second.next_sibling)
+        h, e = tree.syllables[0].children
+        self.assertIs(h.next_sibling, e)
+        self.assertIs(e.prev_sibling, h)
+        loose = self.store.create(Word, label='loose', start=0, end=10,
+            **self.identity)
+        self.assertIsNone(loose.next_sibling)
+        self.assertIsNone(loose.prev_sibling)
 
     def test_staged_tree_inherits_phrase_refs(self):
         '''Words, syllables and phones point at the staged phrase.'''
@@ -444,6 +484,35 @@ class TestSegmentLinking(unittest.TestCase):
             exists = self.store.DB.key_exists(phrase.key)
             self.assertTrue(exists)
 
+    def test_descendants_exclude_other_speaker_overlap(self):
+        '''descendants keeps only owned segments when another speaker's
+        tree overlaps in time; a phone has no descendants.'''
+        tree = self._build_staged_tree()
+        other = self._build_other_speaker_tree()
+        self.store.save_phrase_trees([tree.phrase, other.phrase])
+        own_keys = {segment.key for segment in tree.all_segments}
+        roots = [tree.phrase, tree.words[0], tree.syllables[0]]
+        for root in roots:
+            loaded = self.store.load(root.key)
+            expected = [s.key for s in root.iter_descendants()]
+            got = [segment.key for segment in loaded.descendants]
+            self.assertEqual(sorted(got), sorted(expected))
+            self.assertTrue(set(got) <= own_keys)
+        phone = self.store.load(tree.phones[0].key)
+        self.assertEqual(phone.descendants, [])
+
+    def test_load_phrase_descendants_excludes_other_speaker(self):
+        '''Bulk phrase loading keeps only segments the phrases own.'''
+        tree = self._build_staged_tree()
+        other = self._build_other_speaker_tree()
+        self.store.save_phrase_trees([tree.phrase, other.phrase])
+        results = load_phrase_descendants(self.store, [tree.phrase])
+        groups = {'Word': tree.words, 'Syllable': tree.syllables,
+            'Phone': tree.phones}
+        for class_name, segments in groups.items():
+            expected = sorted(segment.key for segment in segments)
+            self.assertEqual(sorted(results[class_name]['keys']), expected)
+
     # ------------------ save_phrase_trees overwrite replacement ------------------
 
     def test_overwrite_replaces_persisted_tree(self):
@@ -641,6 +710,26 @@ class TestSegmentLinking(unittest.TestCase):
         all_segments = [phrase] + words + syllables + phones
         return types.SimpleNamespace(phrase=phrase, words=words,
             syllables=syllables, phones=phones, all_segments=all_segments)
+
+    def _build_other_speaker_tree(self):
+        '''Staged one-path tree for a second speaker, overlapping the
+        first word of _build_staged_tree in time.'''
+        speaker = self.store.create(Speaker, name='spk2', dataset='test',
+            save=True)
+        identity = {'audio_id': self.audio.identifier,
+            'speaker_id': speaker.identifier}
+        phrase = self.store.create(Phrase, label='other', start=100,
+            end=400, filename='linking.TextGrid', **identity)
+        word = self.store.create(Word, label='o', start=100, end=400,
+            **identity)
+        syllable = self.store.create(Syllable, label='o', start=100,
+            end=400, **identity)
+        phone = self.store.create(Phone, label='o', start=100, end=400,
+            **identity)
+        word.add_parent(phrase)
+        syllable.add_parent(word)
+        phone.add_parent(syllable)
+        return types.SimpleNamespace(phrase=phrase)
 
 
 if __name__ == '__main__':

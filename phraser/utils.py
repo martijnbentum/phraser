@@ -54,8 +54,24 @@ def make_overlap_dict(reverse=False):
 gender_dict = make_gender_dict()
 reverse_gender_dict = make_gender_dict(reverse=True)
 
+def make_stress_dict(reverse=False):
+    d = {'unstressed': 0, 'primary': 1, 'secondary': 2, 'unknown': 9}
+    if reverse: return reverse_dict(d)
+    return d
+
+def make_position_dict(reverse=False):
+    d = {'onset': 1, 'nucleus': 2, 'coda': 3, 'unknown': 9}
+    if reverse: return reverse_dict(d)
+    return d
+
 overlap_dict = make_overlap_dict()
 reverse_overlap_dict = make_overlap_dict(reverse=True)
+
+stress_dict = make_stress_dict()
+reverse_stress_dict = make_stress_dict(reverse=True)
+
+position_dict = make_position_dict()
+reverse_position_dict = make_position_dict(reverse=True)
 
 
 def seconds_to_miliseconds(seconds):
@@ -73,3 +89,11 @@ def overlap(object1, object2):
     Assumes integer start and end, and start < end.
     '''
     return object1.start < object2.end and object2.start < object1.end
+
+def check_init_fields(obj, kwargs, allowed):
+    '''Raise if kwargs holds a field that is not stored in the database.'''
+    unknown = set(kwargs) - set(allowed)
+    if not unknown: return
+    m = f'{obj.__class__.__name__} got unsupported fields: {sorted(unknown)}. '
+    m += f'Allowed: {sorted(allowed)}'
+    raise ValueError(m)

@@ -51,7 +51,7 @@ def _load_audio_segments(audio, object_type):
     '''Scan persisted rows directly, including unlinked segments.'''
     store = audio.store
     keys = list(store.DB.audio_id_to_child_keys(audio.identifier,
-        child_class=object_type))
+        child_class_name=object_type))
     return store.load_many(keys)
 
 

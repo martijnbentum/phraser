@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phraser"
-version = "0.2.88"
+version = "0.2.89"
 description = "LMDB-backed phrase and segment tooling"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -17,7 +17,6 @@ dependencies = [
   "soxr",
   "numba",
   "lmdb",
-  "msgpack",
   "requests",
   "python-decouple",
   "progressbar2",

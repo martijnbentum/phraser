@@ -16,7 +16,7 @@ class Marker(Segment):
 
     DB_FIELDS = {'identifier', 'label', 'start', 'end', 'audio_id', 'speaker_id',
         'phrase_id', 'phrase_start'}
-    allowed_child_type = None
+    child_class = None
     allow_empty_speaker = True
     phrase_id = EMPTY_ID
     phrase_start = 0
@@ -91,10 +91,6 @@ class Marker(Segment):
     @property
     def parent_class_name(self):
         return None
-
-    @property
-    def descendant_keys(self):
-        return []
 
     @property
     def descendants(self):

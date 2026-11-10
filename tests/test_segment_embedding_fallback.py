@@ -1,8 +1,8 @@
 '''Integration tests for Segment.embedding ancestor-fallback wiring.
 
 Exercises the real phraser Phrase>Word>Syllable>Phone tree and the real
-Segment.embedding / _ancestor_embedding control flow against a fake echoframe
-store. echoframe is not installed in phraser's venv (see
+Segment.embedding -> segment_embeddings.get_stored_embedding control flow
+against a fake echoframe store. echoframe is not installed in phraser's venv (see
 test_segment_embeddings_forwarding.py), and echoframe's real Embedding.
 sub_embedding slicing is covered by echoframe's own test suite; here we verify
 that phraser tries the segment's own key, walks ancestors nearest-first on a
@@ -12,9 +12,12 @@ re-raises correctly.
 
 import io
 import shutil
+import sys
 import tempfile
+import types
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 
 from phraser import Store, UnboundStoreError
 from phraser.models import Phone, Phrase, Syllable, Word
@@ -53,6 +56,12 @@ class FakeEchoframeStore:
 class TestSegmentEmbeddingFallback(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # segment_embeddings imports echoframe; a stub module is enough
+        # because only the fake store below is exercised.
+        fake_echoframe = types.SimpleNamespace(segment_features=None)
+        cls._modules_patch = mock.patch.dict(sys.modules,
+            {'echoframe': fake_echoframe})
+        cls._modules_patch.start()
         cls._tmpdir = tempfile.mkdtemp()
         with redirect_stdout(io.StringIO()):
             cls.store = Store(path=cls._tmpdir)
@@ -60,6 +69,7 @@ class TestSegmentEmbeddingFallback(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls._tmpdir, ignore_errors=True)
+        cls._modules_patch.stop()
 
     def setUp(self):
         # A fresh, unsaved Phrase>Word>Syllable>Phone tree per test. Linking

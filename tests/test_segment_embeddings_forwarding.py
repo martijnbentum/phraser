@@ -21,7 +21,7 @@ def load_module():
     sys.modules['echoframe'] = types.SimpleNamespace(
         segment_features=fake_segment_features)
     spec = importlib.util.spec_from_file_location(
-        'segment_embeddings_under_test', MODULE_PATH)
+        'phraser.segment_embeddings_under_test', MODULE_PATH)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     if original is None:

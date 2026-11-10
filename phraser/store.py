@@ -543,27 +543,46 @@ def collect_attribute_keys(objs, attr_name):
     return keys
 
 def load_phrase_descendants(store, phrases):
+    '''Bulk load the persisted descendants the given phrases own.
+    Candidates come from time-range scans and are loaded in one call;
+    other speakers' overlapping segments are filtered out.
+
+    phrases:  list of persisted phrases
+    Returns a dict [class_name] = {'keys': keys, 'instances': objects}.
     '''
-    load all descendants of given parent objects in order of classes.
-    all descendants are bulk loaded per class to minimize LMDB hits.
-    
-    parents: list of root objects
-    Returns a dict [class_name] = {'keys':keys, 'instances':objects}.
-    '''
-    results = {}
-    word_keys, syllable_keys, phone_keys = [], [], []  
-    for phrase in phrases:
-        k = store.DB.instance_to_child_keys(phrase, 'Word')
-        if k: word_keys.extend(k)
-        k = store.DB.instance_to_child_keys(phrase, 'Syllable')
-        if k: syllable_keys.extend(k)
-        k = store.DB.instance_to_child_keys(phrase, 'Phone')
-        if k: phone_keys.extend(k)
-    items=[('Word',word_keys),('Syllable',syllable_keys),('Phone',phone_keys)]
-    for child_class_name, child_keys in items:
-        instances = store.load_many(child_keys)
-        results[child_class_name] = {'keys': child_keys,'instances':instances}
+    class_names = ('Word', 'Syllable', 'Phone')
+    keys = []
+    for class_name in class_names:
+        keys.extend(_phrase_child_keys(store, phrases, class_name))
+    owner_ids = {phrase.identifier for phrase in phrases}
+    owned = keep_owned_descendants(store.load_many(keys), owner_ids)
+    results = {name: {'keys': [], 'instances': []} for name in class_names}
+    for instance in owned:
+        result = results[instance.object_type]
+        result['keys'].append(instance.key)
+        result['instances'].append(instance)
     return results
+
+
+def _phrase_child_keys(store, phrases, class_name):
+    '''Unique candidate keys of class_name in the phrases' time ranges.'''
+    keys = []
+    for phrase in phrases:
+        keys.extend(store.DB.instance_to_child_keys(phrase, class_name))
+    return list(dict.fromkeys(keys))
+
+
+def keep_owned_descendants(candidates, owner_ids):
+    '''Keep candidates whose parent is a root or an already kept candidate.
+    candidates must be ordered parents first (Word, Syllable, Phone);
+    a child seen before its parent is dropped.
+    '''
+    owner_ids, owned = set(owner_ids), []
+    for candidate in candidates:
+        if candidate.parent_id not in owner_ids: continue
+        owned.append(candidate)
+        owner_ids.add(candidate.identifier)
+    return owned
 
 
 def load_linked_audio_and_speakers(store, objs):

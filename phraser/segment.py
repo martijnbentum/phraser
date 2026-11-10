@@ -1,7 +1,3 @@
-import time
-
-from ssh_audio_play import play
-
 from . import key_helper
 from . import overlap as speech_overlap
 from . import phone_features
@@ -10,7 +6,7 @@ from . import segment_flags
 from . import struct_value
 from . import utils
 from .model_helper import EMPTY_ID
-from .store import ClosedStoreError, UnboundStoreError
+from .store import ClosedStoreError, UnboundStoreError, keep_owned_descendants
 from .utils import R, B, GR, RE, object_type_to_ljust_label
 
 
@@ -22,18 +18,18 @@ class Segment:
     property (add_parent, add_children, replace_children, ...) works
     in memory. Tree persistence goes through store.save_phrase_trees.
     '''
-    IDENTITY_FIELDS= {'label', 'start', 'end', 'audio_key'}
+    IDENTITY_FIELDS = {'label', 'start', 'end', 'audio_key'}
     DB_FIELDS = {'identifier', 'label', 'start', 'end', 'parent_id',
         'parent_start', 'audio_id', 'speaker_id'}
-    METADATA_FIELDS = {}# subclasses override
-    allowed_child_type = []# subclasses override
+    METADATA_FIELDS = {'overlap_code'}# stored fields beyond DB_FIELDS
+    child_class = None# subclasses override
     flags = 0
     overlap_code = 9
     allow_empty_speaker = False
 
     def __init__(self, label, start, end, audio_id, speaker_id,
         parent_id=EMPTY_ID, parent_start=0,
-        save = False, overwrite = False, store = None, **kwargs):
+        save=False, overwrite=False, store=None, **kwargs):
 
         self.object_type = self.__class__.__name__
         if audio_id is None or audio_id == EMPTY_ID:
@@ -50,15 +46,14 @@ class Segment:
         self.end = int(end)
         self.identifier = key_helper.make_identifier()
 
-        self.parent_id= parent_id
+        self.parent_id = parent_id
         self.parent_start = parent_start
         self.audio_id = audio_id
         self.speaker_id = speaker_id
         self.overwrite = overwrite
         self._store = store
 
-
-        # Extra metadata
+        utils.check_init_fields(self, kwargs, self.METADATA_FIELDS)
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -93,42 +88,19 @@ class Segment:
         values = tuple(getattr(self, field) for field in self.IDENTITY_FIELDS)
         return hash(values)
 
-    def play(self, collar = None, wait = False):
-        if collar is not None:
-            if collar < 0: raise ValueError("collar must be non-negative.")
-            if collar > self.audio.duration / 2:
-                print('Warning: collar is larger than half the audio duration.')
-            start = self.start - collar
-            if start < 0: start = 0
-            end = self.end + collar
-            if end > self.audio.duration: end = self.audio.duration
-        else: start = self.start; end = self.end
-        start = utils.miliseconds_to_seconds(start)
-        end = utils.miliseconds_to_seconds(end)
-        play.play_audio(self.audio.filename, start=start, end=end, wait = wait)
-        m = f'Playing {self.object_type} "{self.label}" '
-        m += f'from {start:.2f}s to {end:.2f}s\n'
-        m += f'(audio filename={self.audio.filename})'
-        print(m)
+    def play(self, collar=None, wait=False):
+        '''Play this segment; see audio.playback.play_segment.'''
+        from .audio.playback import play_segment
+        play_segment(self, collar=collar, wait=wait)
 
-    def play_children(self, collar = None):
-        for child in self.children:
-            child.play(collar=collar, wait = True)
-            time.sleep(0.3)
-
-    @property
-    def child_class(self):
-        if self.allowed_child_type:
-            return self.allowed_child_type
-    @property
-    def child_class_name(self):
-        if self.child_class is None: return None
-        return self.child_class.__name__
-
+    def play_children(self, collar=None, pause=0.3):
+        '''Play each child in order; see audio.playback.play_children.'''
+        from .audio.playback import play_children
+        play_children(self, collar=collar, pause=pause)
 
     @property
     def key(self):
-        """Return the LMDB key for this segment."""
+        '''Return the LMDB key for this segment.'''
         if hasattr(self, '_key'): return self._key
         return key_helper.instance_to_key(self)
 
@@ -150,49 +122,17 @@ class Segment:
 
     def embedding(self, model_name, layer, collar=500, store=None,
         fallback=False):
-        '''Load the stored hidden-state Embedding for this segment.
-
-        Uses the echoframe store bound to this segment's phraser store
-        (via echoframe_store.attach_phraser_store), or an explicit
-        store=... override. Returns an echoframe Embedding object.
-
-        fallback:  if nothing is stored for this segment and fallback=True,
-                   walk ancestors (e.g. phone -> syllable -> word -> phrase)
-                   and return the first ancestor embedding sliced to this
-                   segment as a SlicedEmbedding.
+        '''Load the stored embedding for this segment.
+        See segment_embeddings.get_stored_embedding (requires echoframe).
         '''
-        store = store or getattr(self.store, 'echoframe_store', None)
-        if store is None:
-            raise UnboundStoreError(
-                'no echoframe store bound; call '
-                'echoframe_store.attach_phraser_store(source_id, '
-                'phraser_store) or pass store=...')
-        try:
-            return store.phraser_key_to_embedding(self.key, model_name, layer,
-                collar=collar)
-        except ValueError as e:
-            if not fallback:
-                raise ValueError(
-                    f'no stored embedding for {self.object_type} '
-                    f'(model_name={model_name}, layer={layer}, '
-                    f'collar={collar}); try fallback=True to use the '
-                    'nearest ancestor embedding') from e
-        return self._ancestor_embedding(model_name, layer, collar, store)
+        from .segment_embeddings import get_stored_embedding
+        return get_stored_embedding(self, model_name, layer, collar=collar,
+            store=store, fallback=fallback)
 
-    def _ancestor_embedding(self, model_name, layer, collar, store):
-        '''Return the nearest ancestor's stored embedding sliced to this
-        segment, or raise if no ancestor has one.'''
-        for ancestor in self.iter_ancestors():
-            try:
-                parent = store.phraser_key_to_embedding(ancestor.key,
-                    model_name, layer, collar=collar)
-            except ValueError:
-                continue
-            return parent.sub_embedding(self)
-        raise ValueError(
-            f'no stored embedding for {self.object_type} or its ancestors '
-            f'(model_name={model_name}, layer={layer}, collar={collar})')
-
+    @property
+    def child_class_name(self):
+        if self.child_class is None: return None
+        return self.child_class.__name__
 
     @property
     def parent_class_name(self):
@@ -216,7 +156,7 @@ class Segment:
 
     @property
     def parent(self):
-        """Return the parent segment."""
+        '''Return the parent segment.'''
         if self.object_type == 'Phrase': return None
         if hasattr(self, '_parent'): return self._parent
         if self.parent_id == EMPTY_ID: return
@@ -230,23 +170,18 @@ class Segment:
         list — a candidate may belong to another parent. Only the
         children property consumes this, classifying the loaded
         candidates.'''
-        if self.allowed_child_type is None: return []
+        if self.child_class is None: return []
         return list(self.store.DB.instance_to_child_keys(self))
 
     @property
     def children(self):
-        """Return the list of child segments this segment owns."""
-        if self.allowed_child_type is None: return []
+        '''Return the list of child segments this segment owns.'''
+        if self.child_class is None: return []
         if hasattr(self, '_children'): return self._children
         self._children, self._overlapping = [], []
         # unbound segments have no DB children to merge with
         if getattr(self, '_store', None) is None: return self._children
-        candidate_keys = self._candidate_child_keys
-        if candidate_keys:
-            candidates = self.store.load_many(candidate_keys)
-        else:
-            candidates = []
-        for candidate in candidates:
+        for candidate in self.store.load_many(self._candidate_child_keys):
             if candidate.parent_id == self.identifier:
                 self._children.append(candidate)
             else: self._overlapping.append(candidate)
@@ -258,7 +193,7 @@ class Segment:
         belong to another parent, e.g. another speaker's overlapping
         speech.'''
         if hasattr(self, '_overlapping'): return self._overlapping
-        if self.allowed_child_type is None: return []
+        if self.child_class is None: return []
         _ = self.children
         return self._overlapping
 
@@ -270,7 +205,7 @@ class Segment:
 
     @property
     def audio(self):
-        """Return the associated Audio object."""
+        '''Return the associated Audio object.'''
         if self.audio_key is None: return None
         if hasattr(self, '_audio') and self._audio is not None:
             return self._audio
@@ -284,7 +219,7 @@ class Segment:
 
     @property
     def speaker(self):
-        """Return the associated Speaker object."""
+        '''Return the associated Speaker object.'''
         if self.speaker_key is None: return None
         if hasattr(self, '_speaker'): return self._speaker
         self._speaker = self.store.load(self.speaker_key)
@@ -312,10 +247,11 @@ class Segment:
     def end_seconds(self):
         return utils.miliseconds_to_seconds(self.end)
 
+    @property
     def duration_seconds(self):
         return utils.miliseconds_to_seconds(self.duration)
 
-    def save(self, overwrite = False, fail_gracefully = False):
+    def save(self, overwrite=False, fail_gracefully=False):
         self.store.save(self, overwrite=overwrite,
             fail_gracefully=fail_gracefully)
 
@@ -352,20 +288,24 @@ class Segment:
     def _validate_parent_link(self, parent):
         if self.object_type == 'Phrase':
             raise TypeError('Phrase cannot have a parent segment.')
-        if self.__class__ != parent.allowed_child_type:
+        if self.__class__ != parent.child_class:
             m = f'{parent.object_type} cannot contain '
             m += f'{self.object_type} as child.'
             raise TypeError(m)
-        if (self.object_type in ('Syllable', 'Phone') and
-            parent.phrase_id != EMPTY_ID and
-            self.phrase_id not in (EMPTY_ID, parent.phrase_id)):
-            m = f'This {self.object_type} is already linked to a different '
-            m += 'phrase.'
-            raise ValueError(m)
+        self._validate_phrase_link(parent)
         for attr in ('audio_id', 'speaker_id'):
             own, other = getattr(self, attr), getattr(parent, attr)
             if own != other:
                 raise ValueError(f'{attr} mismatch: {own} vs {other}')
+
+    def _validate_phrase_link(self, parent):
+        '''Reject a syllable or phone already tied to another phrase.'''
+        if self.object_type not in ('Syllable', 'Phone'): return
+        if parent.phrase_id == EMPTY_ID: return
+        if self.phrase_id in (EMPTY_ID, parent.phrase_id): return
+        m = f'This {self.object_type} is already linked to a different '
+        m += 'phrase.'
+        raise ValueError(m)
 
     def add_parent(self, parent):
         self._validate_parent_link(parent)
@@ -444,23 +384,9 @@ class Segment:
     def delete(self):
         self.store.delete(self.key)
 
-    def has_extra(self):
-        if hasattr(self, 'extra') and self.extra:
-            return True
-        return False
-
-
     def to_struct_value(self):
         '''Serialize to a struct value for LMDB storage.'''
         return struct_value.pack_instance(self)
-
-    @property
-    def metadata_present(self):
-        names = []
-        for name in self.METADATA_FIELDS:
-            if hasattr(self, name):
-                names.append(name)
-        return names
 
     @property
     def duration_outlier_code(self):
@@ -558,63 +484,39 @@ class Segment:
 
     @property
     def next_sibling(self):
-        """Return the next segment at the same level (same parent)."""
-        siblings = self.siblings
-        if siblings is None: return None
-        try:
-            idx = siblings.index(self)
-        except ValueError:
-            return None
-        if idx + 1 < len(siblings):
-            return siblings[idx + 1]
-        return None
+        '''Return the next segment at the same level (same parent).'''
+        siblings = self.siblings or []
+        if self not in siblings: return None
+        idx = siblings.index(self) + 1
+        return siblings[idx] if idx < len(siblings) else None
 
     @property
     def prev_sibling(self):
-        """Return the previous segment at the same level."""
-        siblings = self.siblings
-        if siblings is None: return None
-        try:
-            idx = siblings.index(self)
-        except ValueError:
-            return None
-
-        if idx - 1 >= 0:
-            return siblings[idx - 1]
-        return None
+        '''Return the previous segment at the same level.'''
+        siblings = self.siblings or []
+        if self not in siblings: return None
+        idx = siblings.index(self) - 1
+        return siblings[idx] if idx >= 0 else None
 
     def iter_descendants_of_type(self, cls):
-        """
-        Yield all descendant segments of the given class type.
-        Works regardless of depth (e.g. Word → Syllable → Phone).
-        """
-        for child in self.children:
-            if isinstance(child, cls):
-                yield child
-            # recurse
-            yield from child.iter_descendants_of_type(cls)
+        '''Yield all descendant segments of the given class type,
+        at any depth (e.g. Word -> Syllable -> Phone).'''
+        for descendant in self.iter_descendants():
+            if isinstance(descendant, cls): yield descendant
 
     def iter_ancestors_of_type(self, cls):
-        """
-        Yield all ancestor segments of the given class type.
-        Walks upward (child → parent → parent → ...).
-        """
-        if cls == Phrase and self.phrase is not None: yield self.phrase
-        parent = self.parent
-        while parent is not None:
-            if isinstance(parent, cls):
-                yield parent
-            parent = parent.parent
-
-    @property
-    def descendant_keys(self):
-        return self.store.DB.instance_to_descendant_keys(self)
+        '''Yield ancestors of the given class, walking upward through
+        parents; works on staged trees.'''
+        for ancestor in self.iter_ancestors():
+            if isinstance(ancestor, cls): yield ancestor
 
     @property
     def descendants(self):
-        #if hasattr(self, '_descendants'): return self._descendants
-        keys = self.descendant_keys
-        return self.store.load_many(keys)
+        '''Persisted descendants this segment owns, grouped by level and
+        ordered by start time; one bulk load, staged links are ignored.'''
+        keys = self.store.DB.instance_to_descendant_keys(self)
+        candidates = self.store.load_many(keys)
+        return keep_owned_descendants(candidates, {self.identifier})
 
 
     def iter_descendants(self):
@@ -654,21 +556,12 @@ class Segment:
 
 class Phrase(Segment):
     IDENTITY_FIELDS = {'audio_id', 'speaker_id', 'start'}
-    METADATA_FIELDS = {'filename', 'overlap'}
+    METADATA_FIELDS = {'overlap_code', 'filename'}
     filename = ''
 
     @property
-    def all_objects(self):
-        objs = [self]
-        if self.words: objs += self.words
-        if self.syllables: objs += self.syllables
-        if self.phones: objs += self.phones
-        return objs
-
-    @property
     def all_keys(self):
-        keys = [x.key for x in self.all_objects]
-        return keys
+        return [item.key for item in self.items]
 
     @property
     def items(self):
@@ -688,8 +581,7 @@ class Phrase(Segment):
                 raise ValueError(m)
 
     def delete(self):
-        """ Delete this phrase and all its descendants from the database.
-        """
+        '''Delete this phrase and all its descendants from the database.'''
         all_keys = self.all_keys
         self.store.delete_many(all_keys)
 
@@ -703,35 +595,35 @@ class Phrase(Segment):
 
     @property
     def words(self):
-        """Return all words in this phrase."""
+        '''Return all words in this phrase.'''
         return self.children
 
     @property
     def syllables(self):
-        """Return all syllables in this phrase."""
+        '''Return all syllables in this phrase.'''
         return list(self.iter_descendants_of_type(Syllable))
 
     @property
     def phones(self):
-        """Return all phones in this phrase."""
+        '''Return all phones in this phrase.'''
         return list(self.iter_descendants_of_type(Phone))
 
     @property
     def words_query(self):
-        """Return a query object for all words for this speaker."""
+        '''Return a query over this phrase's words.'''
         return query.queryset_from_items(self.words, self.store)
     @property
     def syllables_query(self):
-        """Return a query object for all syllables for this speaker."""
+        '''Return a query over this phrase's syllables.'''
         return query.queryset_from_items(self.syllables, self.store)
     @property
     def phones_query(self):
-        """Return a query object for all phones for this speaker."""
+        '''Return a query over this phrase's phones.'''
         return query.queryset_from_items(self.phones, self.store)
 
 
 class Word(Segment):
-    METADATA_FIELDS = {'overlap', 'ipa'}
+    METADATA_FIELDS = {'overlap_code', 'ipa'}
     ipa = ''
 
     @property
@@ -744,39 +636,36 @@ class Word(Segment):
 
     @property
     def syllables(self):
-        """Return all syllables in this word."""
+        '''Return all syllables in this word.'''
         return list(self.iter_descendants_of_type(Syllable))
 
     @property
     def phones(self):
-        """Return all phones in this word."""
+        '''Return all phones in this word.'''
         return list(self.iter_descendants_of_type(Phone))
 
     @property
     def syllables_query(self):
-        """Return a query object for all syllables for this speaker."""
+        '''Return a query over this word's syllables.'''
         return query.queryset_from_items(self.syllables, self.store)
     @property
     def phones_query(self):
-        """Return a query object for all phones for this speaker."""
+        '''Return a query over this word's phones.'''
         return query.queryset_from_items(self.phones, self.store)
 
 class Syllable(Segment):
-    METADATA_FIELDS = {'stress_code'}
+    METADATA_FIELDS = {'overlap_code', 'stress_code'}
     phrase_id = EMPTY_ID
     phrase_start = 0
     stress_code = 9
 
     @property
     def stress(self):
-        if self.stress_code == 0: return 'unstressed'
-        if self.stress_code == 1: return 'primary'
-        if self.stress_code == 2: return 'secondary'
-        return 'unknown'
+        return utils.reverse_stress_dict.get(self.stress_code, 'unknown')
 
     @property
     def phones(self):
-        """Return all phones in this syllable."""
+        '''Return all phones in this syllable.'''
         return self.children
 
     def _phones_at(self, position):
@@ -799,16 +688,16 @@ class Syllable(Segment):
 
     @property
     def word(self):
-        """Return the parent word of this syllable."""
+        '''Return the parent word of this syllable.'''
         return self.parent
 
     @property
     def phones_query(self):
-        """Return a query object for all phones for this speaker."""
+        '''Return a query over this syllable's phones.'''
         return query.queryset_from_items(self.phones, self.store)
 
 class Phone(Segment):
-    METADATA_FIELDS = {}
+    METADATA_FIELDS = {'overlap_code', 'position_code'}
 
     phrase_id = EMPTY_ID
     phrase_start = 0
@@ -818,13 +707,11 @@ class Phone(Segment):
     def position(self):
         '''Syllable position string from the stored position_code
         ('unknown' if unassigned).'''
-        codes = {1: 'onset', 2: 'nucleus', 3: 'coda', 9: 'unknown'}
-        return codes.get(self.position_code, 'unknown')
+        return utils.reverse_position_dict.get(self.position_code, 'unknown')
 
     @position.setter
     def position(self, value):
-        codes = {'onset': 1, 'nucleus': 2, 'coda': 3}
-        self.position_code = codes.get(value, 9)
+        self.position_code = utils.position_dict.get(value, 9)
 
     @property
     def linguistic_features(self):
@@ -872,23 +759,20 @@ class Phone(Segment):
 
     @property
     def syllable(self):
-        """Return the parent syllable of this phone."""
+        '''Return the parent syllable of this phone.'''
         return self.parent
 
     @property
     def word(self):
-        """Return the parent word of this phone."""
-        if self.parent is None:
-            return None
-        if self.parent.object_type == "Word":
-            return self.parent
+        '''Return the parent word of this phone.'''
+        if self.parent is None: return None
         return self.parent.parent
 
 
-Phrase.allowed_child_type = Word
-Word.allowed_child_type = Syllable
+Phrase.child_class = Word
+Word.child_class = Syllable
 Word.parent_class = Phrase
-Syllable.allowed_child_type = Phone
+Syllable.child_class = Phone
 Syllable.parent_class = Word
-Phone.allowed_child_type = None
+Phone.child_class = None
 Phone.parent_class = Syllable
