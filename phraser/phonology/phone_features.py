@@ -1,9 +1,9 @@
 '''Static IPA phone reference data: articulatory descriptors and a binary
 distinctive-feature matrix per symbol.
 
-The data lives in ``phraser/data/ipa_features.json`` and is loaded once
-(cached) via importlib.resources, so it works for editable installs, wheels
-and zipped imports alike. Regenerate the JSON with
+The data lives in ``phraser/phonology/data/ipa_features.json`` and is loaded
+once (cached) via importlib.resources, so it works for editable installs,
+wheels and zipped imports alike. Regenerate the JSON with
 ``scripts/build_ipa_features.py``.
 
 The binary distinctive-feature matrix was checked against the panphon
@@ -23,7 +23,7 @@ import json
 from functools import lru_cache
 from importlib import resources
 
-DATA_PACKAGE = 'phraser.data'
+DATA_PACKAGE = 'phraser.phonology.data'
 DATA_FILE = 'ipa_features.json'
 
 # Canonical, positional order of the binary distinctive features (Hayes 2009

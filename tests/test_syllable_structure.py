@@ -1,7 +1,7 @@
 import types
 import unittest
 
-from phraser import syllable_structure as m
+from phraser.phonology import syllable_structure as m
 
 
 def make_phone(label):

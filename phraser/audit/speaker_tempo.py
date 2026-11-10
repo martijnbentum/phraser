@@ -7,7 +7,7 @@ share of their segments the fences flag, with and without that tempo.
 
 import numpy as np
 
-from ..phone_types import PHONE_TYPES
+from ..phonology.phone_types import PHONE_TYPES
 from .findings import SpeakerTempo
 from .outliers import DEFAULT_K, DEFAULT_MIN_COUNT
 from .outliers import _duration_pairs_by_label, _exp, _fences

@@ -1,6 +1,6 @@
 '''The speech segment levels: Phrase > Word > Syllable > Phone.'''
 
-from .. import phone_features
+from ..phonology import phone_features
 from .. import query
 from .. import utils
 from ..storage.key_helper import EMPTY_ID

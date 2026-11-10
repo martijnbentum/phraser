@@ -17,8 +17,9 @@ from textgrid import TextGrid
 
 from phraser import Store, models
 from phraser import audio as audio_helper
-from phraser import locations, syllable_structure, utils
+from phraser import locations, utils
 from phraser.overlap import set_overlap_codes
+from phraser.phonology import syllable_structure
 
 
 ORT_NON_SPEAKER_TIERS = {'BACKGROUND', 'COMMENT'}

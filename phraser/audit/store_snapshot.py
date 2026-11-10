@@ -9,7 +9,7 @@ structural checks still see pauses and placeholder labels.
 '''
 
 from ..overlap import SILENCE_LABELS
-from ..phone_types import PHONE_TYPES
+from ..phonology.phone_types import PHONE_TYPES
 from ..storage import key_helper
 from ..storage.key_helper import EMPTY_ID
 from ..storage.store import value_key_to_instance

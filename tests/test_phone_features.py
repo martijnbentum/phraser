@@ -3,9 +3,9 @@ import unittest
 
 from phone_mapper.cgn import cgn_to_ipa
 
-from phraser import phone_features
 from phraser.models import Phone
-from phraser.phone_types import PHONE_TYPES
+from phraser.phonology import phone_features
+from phraser.phonology.phone_types import PHONE_TYPES
 
 
 class TestLoadIpaFeatures(unittest.TestCase):

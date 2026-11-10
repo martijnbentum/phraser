@@ -1,4 +1,4 @@
-'''Real-store tests for the rebuild family (phraser.syllabify_phones).
+'''Real-store tests for the rebuild family (phraser.phonology.syllabify_phones).
 
 These functions ignore the existing structure and build fresh objects from the
 phone sequence, in memory only:
@@ -21,8 +21,8 @@ from contextlib import redirect_stdout
 from phraser import Store
 from phraser import textgrid_loader as tgl
 from phraser.models import Audio, Phone, Syllable, Word, Phrase
-from phraser.syllabify_phones import (syllabify_word, syllabify_phrase,
-    syllabify_phones)
+from phraser.phonology.syllabify_phones import (syllabify_word,
+    syllabify_phrase, syllabify_phones)
 
 
 def build_phrase(store, phones, words, syls, filename='x.TextGrid'):

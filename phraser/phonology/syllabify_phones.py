@@ -13,7 +13,7 @@ objects and deleting the abandoned ones) is a separate concern.
   syllabify_phones  rebuild a whole phrase/word/syllable hierarchy from a raw
                     phone sequence, RE-DERIVING phrases from pauses
 '''
-from . import models
+from .. import models
 from .syllable_structure import assign_syllable_positions_to_phones
 
 

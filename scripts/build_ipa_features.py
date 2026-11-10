@@ -1,4 +1,4 @@
-'''Generate phraser/data/ipa_features.json.
+'''Generate phraser/phonology/data/ipa_features.json.
 
 The dataset maps an IPA symbol to articulatory descriptors plus a binary
 distinctive-feature matrix (full Hayes-style set). Rather than hand-typing
@@ -25,9 +25,10 @@ unaffected.
 import json
 from pathlib import Path
 
-from phraser.phone_features import FEATURE_ORDER
+from phraser.phonology.phone_features import FEATURE_ORDER
 
-OUT = Path(__file__).resolve().parents[1] / 'phraser' / 'data' / 'ipa_features.json'
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / 'phraser' / 'phonology' / 'data' / 'ipa_features.json'
 
 # (symbol, place, manner, voiced) ; manner/place names drive the rules below.
 CONSONANTS = [

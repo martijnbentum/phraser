@@ -485,7 +485,7 @@ function warns once that cached matrices remain in memory. Use
 
 A `Phone` exposes static IPA reference data, derived purely from its label
 (no audio, distinct from the neural `embedding(...)` above). The data lives
-in `phraser/data/ipa_features.json` and is regenerated with
+in `phraser/phonology/data/ipa_features.json` and is regenerated with
 `python -m scripts.build_ipa_features`.
 
 ```python
@@ -524,7 +524,7 @@ phone.stress   # 'unstressed' / 'primary' / 'secondary' / 'unknown'
 ```
 
 The underlying helpers (`get_phone_features`, `get_feature_vector`,
-`FEATURE_ORDER`) live in `phraser.phone_features`.
+`FEATURE_ORDER`) live in `phraser.phonology.phone_features`.
 
 ## Copy recording materials to another store
 

@@ -37,7 +37,7 @@ from contextlib import redirect_stdout
 from phraser import Store
 from phraser import textgrid_loader as tgl
 from phraser.models import Audio, Phone, Syllable, Word
-from phraser.resyllabifier import (apply_new_syllable_boundaries,
+from phraser.phonology.resyllabifier import (apply_new_syllable_boundaries,
     resyllabify_word)
 
 

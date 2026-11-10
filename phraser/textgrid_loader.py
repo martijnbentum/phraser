@@ -4,9 +4,9 @@ from textgrid import TextGrid
 from phraser import force_align
 from phraser import locations
 from phraser import models
-from phraser import syllable_structure
 from phraser import utils
 from phraser.audio import audio_info
+from phraser.phonology import syllable_structure
 from phraser.storage.key_helper import EMPTY_ID
 
 

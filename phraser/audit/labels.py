@@ -4,7 +4,7 @@ Phone labels must be known phones with a syllable position, each syllable
 needs a nucleus, and a syllable label must equal its joined phone labels.
 '''
 
-from ..phone_types import PHONE_TYPES
+from ..phonology.phone_types import PHONE_TYPES
 from .findings import WARNING, CheckResult, _finding
 from .store_snapshot import _speech_phones
 
