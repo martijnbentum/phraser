@@ -188,6 +188,61 @@ class TestRebuildPhraseSyllables(unittest.TestCase):
         self.assertEqual(ei_labels, [['t', 'ɛi']])
 
 
+class TestRebuildPersistence(unittest.TestCase):
+    '''A rebuilt phrase saved with save_phrase_trees(overwrite=True) holds
+    exactly the new layers on disk: no old word or syllable row survives.'''
+
+    def setUp(self):
+        self.store, self._tmpdir = fresh_store()
+
+    def tearDown(self):
+        with redirect_stdout(io.StringIO()):
+            self.store.close()
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def _save_and_reload(self, phrase):
+        '''Persist the phrase tree, reopen the store, reload the phrase.'''
+        phrase_key = phrase.key
+        with redirect_stdout(io.StringIO()):
+            self.store.save_phrase_trees([phrase], overwrite=True)
+            self.store.close()
+            self.store.open()
+            return self.store.load(phrase_key)
+
+    def test_rebuild_word_syllables_persists(self):
+        with redirect_stdout(io.StringIO()):
+            phrase, words, old_syls, _ = build_phrase(self.store,
+                APRIL_PHONES, [('april', 0, 500)], [(0, 200), (200, 500)])
+            rebuild_word_syllables(words[0])
+        n_rows = len(self.store.DB.all_keys())
+        phrase = self._save_and_reload(phrase)
+        self.assertEqual(labels_per_syllable(phrase),
+            [['ɑ'], ['p', 'r', 'ɪ', 'l']])
+        self.assertTrue(views_agree(phrase))
+        old_ids = {s.identifier for s in old_syls}
+        new_ids = {s.identifier for s in phrase.syllables}
+        self.assertEqual(old_ids & new_ids, set())
+        self.assertEqual(len(self.store.DB.all_keys()), n_rows)
+
+    def test_rebuild_phrase_syllables_persists(self):
+        with redirect_stdout(io.StringIO()):
+            phrase, old_words, _, _ = build_phrase(self.store,
+                [('h', 0, 80), ('ɛ', 80, 180), ('t', 180, 260),
+                ('ɛi', 260, 500)], [('het', 0, 260), ('ei', 260, 500)],
+                [(0, 260), (260, 500)])
+            rebuild_phrase_syllables(phrase)
+        n_rows = len(self.store.DB.all_keys())
+        phrase = self._save_and_reload(phrase)
+        by_label = {w.label: w for w in phrase.words}
+        self.assertEqual((by_label['het'].start, by_label['het'].end),
+            (0, 180))
+        self.assertEqual(labels_per_syllable(by_label['ei']), [['t', 'ɛi']])
+        self.assertTrue(views_agree(phrase))
+        old_ids = {w.identifier for w in old_words}
+        self.assertEqual(old_ids & {w.identifier for w in phrase.words}, set())
+        self.assertEqual(len(self.store.DB.all_keys()), n_rows)
+
+
 # --- man <700ms pause> zee : one phrase splits into two -----------------------
 MANZEE_PHONES = [('m', 0, 100), ('ɑ', 100, 200), ('n', 200, 300),
     ('z', 1000, 1100), ('eː', 1100, 1300)]

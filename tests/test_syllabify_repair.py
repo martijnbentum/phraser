@@ -4,15 +4,16 @@ The rewrite builds a fresh-id COPY of each old syllable on its new phone group
 and deletes the old rows, rather than retiming syllables in place. So the things
 under test are:
 
-#1  apply via update_database=True persists the new boundaries and leaves
-    exactly the new syllables on disk -- no orphan row survives (the original
-    leftover bug, where a moved syllable's old key was never deleted).
+#1  a repair saved with save_phrase_trees(overwrite=True) persists the new
+    boundaries and leaves exactly the new syllables on disk -- no orphan row
+    survives (the original leftover bug, where a moved syllable's old key was
+    never deleted).
 #2  after persisting, the two membership views agree: the time-scan
     (syllable.phones) and the stored parent pointer (phone.parent) put every
     phone -- including the one moved across the boundary -- in the same syllable.
-#3  with update_database=False the same two views already agree in memory, with
-    nothing written to disk: the navigation caches (_children / _parent) are
-    pointed at the new grouping.
+#3  without saving, the same two views already agree in memory, with nothing
+    written to disk: the navigation caches (_children / _parent) are pointed at
+    the new grouping.
 #4  each new syllable is relabelled from its phones, so .label stays in sync; on
     a persisted run the label index is swapped (old label gone, new one resolves).
 #5  repair_word_syllables returns a RepairOutcome describing what it saw and
@@ -36,7 +37,7 @@ from contextlib import redirect_stdout
 
 from phraser import Store
 from phraser import textgrid_loader as tgl
-from phraser.models import Audio, Phone, Syllable, Word
+from phraser.models import Audio, Phone, Phrase, Syllable, Word
 from phraser.phonology.syllabify import (apply_new_syllable_boundaries,
     repair_word_syllables)
 
@@ -63,11 +64,13 @@ SPEAKER_ID = b'\x05' * 8
 
 def build_word(store, phone_spec=PHONE_SPEC, syllable_spec=GIVEN_SYLLABLES,
         word_label='april'):
-    '''Build and persist a store-backed word with the given syllable
-    boundaries; mirrors the textgrid loader's wiring.'''
+    '''Build and persist a store-backed word, alone in its phrase, with the
+    given syllable boundaries; mirrors the textgrid loader's wiring.'''
     end = max(e for _, _, e in phone_spec)
     audio = Audio(filename='april.wav', store=store, save=False)
     identity = {'audio_id': audio.identifier, 'speaker_id': SPEAKER_ID}
+    phrase = Phrase(label=word_label, start=0, end=end,
+        filename='april.TextGrid', store=store, save=False, **identity)
     word = Word(label=word_label, start=0, end=end, store=store, save=False,
         **identity)
     syllables = [Syllable(label='syl', start=s, end=e, store=store,
@@ -77,7 +80,8 @@ def build_word(store, phone_spec=PHONE_SPEC, syllable_spec=GIVEN_SYLLABLES,
     for syllable in syllables:
         tgl.find_and_add_phones_to_syllable(syllable, phones, save_to_db=False)
     tgl.find_and_add_syllables_to_word(word, syllables, save_to_db=False)
-    items = [word] + syllables + phones
+    word.add_parent(phrase)
+    items = [phrase, word] + syllables + phones
     for item in items:
         item._audio = audio     # cache only
     # the Audio row itself is not needed: segments only carry its identifier as
@@ -95,8 +99,9 @@ class TestRepairPersistence(unittest.TestCase):
             self.word_key = word.key
             # ids of the originals, captured before the rewrite replaces them
             self.old_syllable_ids = {s.identifier for s in word.syllables}
-            # given boundaries differ from maximal onset -> rewrite + persist
-            self.outcome = repair_word_syllables(word, update_database=True)
+            # given boundaries differ from maximal onset -> repair + persist
+            self.outcome = repair_word_syllables(word)
+            self.store.save_phrase_trees([word.phrase], overwrite=True)
             # drop every cache and re-read from disk for a true persistence view
             self.store.close()
             self.store.open()
@@ -162,7 +167,7 @@ class TestRepairPersistence(unittest.TestCase):
 
 
 class TestRepairInMemory(unittest.TestCase):
-    '''#3: update_database=False mutates only in memory, yet both membership
+    '''#3: an unsaved repair mutates only in memory, yet both membership
     views agree on the new grouping, and disk is left untouched.'''
 
     def setUp(self):
@@ -173,8 +178,7 @@ class TestRepairInMemory(unittest.TestCase):
             self.word_key = self.word.key
             # rewrite boundaries in memory only -- no write, no reopen, so the
             # live object graph (and its caches) is what we assert against
-            self.outcome = repair_word_syllables(self.word,
-                update_database=False)
+            self.outcome = repair_word_syllables(self.word)
             self.syllables = sorted(self.word.syllables, key=lambda s: s.start)
 
     def tearDown(self):
@@ -250,7 +254,7 @@ class TestRepairOutcome(unittest.TestCase):
     def _repair(self, **build_kwargs):
         with redirect_stdout(io.StringIO()):
             word = build_word(self.store, **build_kwargs)
-            return word, repair_word_syllables(word, update_database=True)
+            return word, repair_word_syllables(word)
 
     def test_already_correct_not_applied_but_ok(self):
         word, outcome = self._repair(syllable_spec=CORRECT_SYLLABLES)
@@ -324,7 +328,7 @@ class TestMetadataCarryOver(unittest.TestCase):
         old = sorted(self.word.syllables, key=lambda s: s.start)
         for i, syllable in enumerate(old):
             syllable.stress_code = 10 + i
-        repair_word_syllables(self.word, update_database=False)
+        repair_word_syllables(self.word)
         new = sorted(self.word.syllables, key=lambda s: s.start)
         # new[i] is a copy of old[i] (same nucleus), so its metadata is carried
         self.assertEqual([s.stress_code for s in new], [10, 11])

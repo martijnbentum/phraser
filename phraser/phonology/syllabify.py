@@ -22,8 +22,12 @@ rebuild_phrases_from_phones(phones, max_pause)
                                     re-derived from pauses. Meant for
                                     temporary, in-memory restructuring only.
 
-repair_word_syllables can persist its result (update_database); the rebuild
-functions work in memory only.
+All functions work in memory only. Persist a repaired or rebuilt phrase with
+    store.save_phrase_trees([phrase], overwrite=True)
+which replaces the phrase's stored tree (old syllables and words included)
+in one transaction; batch the phrases of a corpus run into one call.
+rebuild_phrases_from_phones cannot be persisted this way: its phrases are
+new objects, so the old phrases would stay on disk.
 '''
 import copy
 from dataclasses import dataclass
@@ -60,7 +64,7 @@ class RepairOutcome:
         return c is not None and s is not None and len(c) != len(s)
 
 
-def repair_word_syllables(word, phone_types=None, update_database=False):
+def repair_word_syllables(word, phone_types=None):
     '''Reassign a word's phones to its syllables by the Maximal Onset
     Principle, if needed. Returns a RepairOutcome with the analysis and
     whether the new boundaries were applied.
@@ -76,26 +80,24 @@ def repair_word_syllables(word, phone_types=None, update_database=False):
     if not result.ok and result.suggested_groups is not None \
             and len(word.syllables) == len(result.suggested_groups):
         apply_new_syllable_boundaries(word, result.suggested_groups,
-            phone_types=phone_types, update_database=update_database)
+            phone_types=phone_types)
         applied = True
     return RepairOutcome(result=result, applied=applied)
 
 
-def apply_new_syllable_boundaries(word, phone_groups, phone_types=None,
-        update_database=False):
+def apply_new_syllable_boundaries(word, phone_groups, phone_types=None):
     '''Apply new syllable boundaries to a word, given as phone groups.
-    word             the Word whose syllables get new boundaries
-    phone_groups     list of phone lists: the word's SAME phone objects,
-                     regrouped; group i becomes syllable i
-    update_database  if True, persist; else mutate in memory only.
+    word          the Word whose syllables get new boundaries
+    phone_groups  list of phone lists: the word's SAME phone objects,
+                  regrouped; group i becomes syllable i
 
     Each phone is reassigned to the syllable of its group, and each syllable
     is re-spanned to its phones. Moving phones between onset and coda never
     adds or drops a nucleus, so the count is invariant and new[i] is old[i]'s
     nucleus with new boundaries. Each new syllable is a COPY of its old one
     (carrying persisted metadata and speaker links unchanged) under a fresh
-    id; the word's child cache is repointed at them and -- with
-    update_database -- the old rows and their label-index entries are deleted.
+    id, and the word's children are replaced by them. In memory only; see
+    the module docstring for persisting.
     Returns the new syllables. Raises ValueError on a multi-speaker word or a
     count mismatch.
     '''
@@ -111,9 +113,6 @@ def apply_new_syllable_boundaries(word, phone_groups, phone_types=None,
         syllable = _rebuild_syllable(old_syllable, phones, phone_types)
         new_syllables.append(syllable)
     word.replace_children(new_syllables)
-    if update_database:
-        _save_new_syllables(new_syllables)
-        _delete_old_syllables(old_syllables)
     return new_syllables
 
 
@@ -126,13 +125,12 @@ def rebuild_word_syllables(word, phone_types=None):
     Ignores the existing syllables: regroups word.phones from scratch, builds
     fresh Syllable objects around the groups (labelled and spanned by their
     phones), and rewires the hierarchy (word, phrase) around them.
-    The old syllables are abandoned; deleting them from the store is a separate,
-    persistent-mode concern.
+    The old syllables are abandoned.
 
-    The new syllables have no LMDB presence, so the live graph is held together
-    by the navigation caches filled here -- a close/reopen without persisting
-    reverts to the old syllabification. Returns the new syllables, or None when
-    the phones cannot be syllabified (unknown phone / no nucleus).
+    In memory only: until the word's phrase is saved with
+    save_phrase_trees(overwrite=True), a close/reopen reverts to the old
+    syllabification. Returns the new syllables, or None when the phones
+    cannot be syllabified (unknown phone / no nucleus).
     '''
     from dutch_syllabifier import resyllabify_phones
     phones = word.phones                              # read before rewiring caches
@@ -151,14 +149,14 @@ def rebuild_phrase_syllables(phrase, phone_types=None):
 
     Single-speaker. Regroups phrase.phones from scratch by the Maximal Onset
     Principle, so a consonant may move to a syllable of the next word (het ei
-    -> hE.tEi). Each syllable is owned by the word of its nucleus; fresh Words and
-    Syllables are built sized to their content, so every time window matches its
-    membership. A word that loses all its phones collapses to a zero-width span.
-    The old words/syllables are abandoned (deletion is a persistent-mode concern).
+    -> hE.tEi). Each syllable is owned by the word of its nucleus; fresh
+    Words and Syllables are built sized to their content, so every time window
+    matches its membership. A word that loses all its phones collapses to a
+    zero-width span. The old words/syllables are abandoned.
 
-    The new objects have no LMDB presence, so the live graph is held together by
-    the navigation caches filled here. Returns the new words, or None when the
-    phones cannot be syllabified (unknown phone / no nucleus).
+    In memory only: persist with save_phrase_trees([phrase], overwrite=True).
+    Returns the new words, or None when the phones cannot be syllabified
+    (unknown phone / no nucleus).
     '''
     from dutch_syllabifier import resyllabify_phones
     try: groups = resyllabify_phones(phrase.phones)
@@ -272,26 +270,6 @@ def _rebuild_syllable(old_syllable, phones, phone_types):
     syllable.replace_children(phones)
     assign_syllable_positions_to_phones(phones, phone_types=phone_types)
     return syllable
-
-
-def _save_new_syllables(new_syllables):
-    '''Persist the new syllables (fresh keys, so plain saves write their
-    label-index links) and their repointed phones.'''
-    store = new_syllables[0].store
-    for syllable in new_syllables:
-        syllable.save()
-        store.save_many(syllable.phones, overwrite=True)
-
-
-def _delete_old_syllables(old_syllables):
-    '''Drop the old syllable rows and their label-index entries. The old objects
-    were never mutated, so their cached key and computed label-index key still
-    address the original rows.'''
-    store = old_syllables[0].store
-    keys = [s.key for s in old_syllables]
-    store.delete_many(keys)
-    links = [s.label_index_key for s in old_syllables]
-    store.DB.delete_many_label_index_links(links)
 
 
 def _build_syllable(store, group, phone_types):
