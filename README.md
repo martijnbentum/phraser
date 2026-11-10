@@ -559,6 +559,67 @@ component or language filtering, belongs to the caller. Copying is performed
 one recording at a time; an interrupted or failed copy can leave a partial
 destination, which is not automatically overwritten on the next call.
 
+## Sampling
+
+Sampling returns existing objects without replacement and does not save or
+copy anything. Provide recordings through `audios`, or pass an open `store`
+to use its full population. No store is opened implicitly.
+
+```python
+from phraser import sample_audios, sample_speakers, sample_word_tokens
+from phraser.sampling import cgn
+
+audios = cgn.select_audios(store=store, components='befg', variant='nl')
+words = sample_word_tokens('huis', audios=audios, n_tokens=100,
+    min_duration_ms=100, max_duration_ms=1500,
+    exclude_duration_outliers=True,
+    gender='female', random_seed=0)
+speakers = sample_speakers(store=store, n_speakers=10, gender='female',
+    min_age=20, max_age=40)
+recordings = sample_audios(store=store, n_audios=10, dataset='cgn',
+    min_duration_ms=10000, random_seed=0)
+```
+
+`sample_phrase_tokens`, `sample_syllable_tokens`, and `sample_phone_tokens`
+accept the same arguments as `sample_word_tokens`. `type_label` is an exact
+label match; pass `None` to sample across labels. `n_tokens` is the total
+for that call, not a quota per label. Word sampling defaults to inclusive
+100–1500 ms bounds. Other segment levels default to no duration bounds.
+Pass `None` to disable either bound.
+
+All token samplers default to `exclude_duration_outliers=True`, excluding
+tokens whose own recorded `duration_outlier` assessment is `short` or `long`.
+Both `unset` (not assessed) and `within_range` remain eligible. Set the option
+to `False` to ignore these assessments; absolute duration bounds still apply.
+Sampling never calculates IQR fences, assesses durations, or changes flags.
+Assessments must be populated separately; the current audit reports outliers
+without writing these flags. A parent's flag does not exclude its children.
+
+Speaker, duration, and flag restrictions apply before the final availability
+check and random draw. Segment durations must be positive.
+`speakers` accepts Speaker objects or byte keys
+(one or a collection). Segment restrictions use each token's own speaker;
+recording restrictions require one linked speaker matching all restrictions.
+
+Speaker sampling returns unique speakers and supports `gender`, exact `age`,
+inclusive `min_age`/`max_age`, `dataset`, and `speakers`. Without `audios`, it
+uses all store speakers, including those without recordings. Age 0 means
+unknown: range filters exclude it; `age=0` explicitly selects it. Recording
+sampling supports inclusive duration bounds, `dataset`, `language`,
+`dialect`, `speakers`, and `gender`.
+
+All samplers raise `ValueError` if too few eligible objects remain. Set
+`insufficient='drop'` to return an empty list instead. Empty input is valid;
+requesting zero objects returns an empty list. A local random generator and
+stable key ordering make seeded draws independent of input order without
+changing global random state. Reuse selected keys to preserve a sample
+across later annotation changes.
+
+CGN selection checks the `comp-X/nl/filename` or `comp-X/vl/filename` path
+layout and rejects unrecognized paths. Variant `nl`/`vl` is distinct from
+Audio language metadata (`nld`). Component selection returns all matching
+recordings; compose it with sampling or `copy_audio_materials` as needed.
+
 ## Repository layout
 
 ```text
