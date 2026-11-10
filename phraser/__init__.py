@@ -1,4 +1,4 @@
-from .audit import audit, load_audit_data, load_report
+from .audit import audit_store, load_audit_data, load_report
 from .copy_materials import copy_audio_materials
 from .errors import ClosedStoreError, UnboundStoreError
 from .models import Audio, Marker, Phone, Phrase, Speaker, Syllable, Word
@@ -25,7 +25,7 @@ __all__ = [
     "Syllable",
     "UnboundStoreError",
     "Word",
-    "audit",
+    "audit_store",
     "bulk_delete_markers",
     "copy_audio_materials",
     "load_audit_data",

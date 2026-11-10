@@ -1,6 +1,6 @@
 '''Read-only survey of the rows in a Phraser store.
 
-audit(store) runs every named check and returns an AuditReport. Rows are
+audit_store(store) runs every named check and returns an AuditReport. Rows are
 decoded straight from disk into fresh objects, never walked through
 .children: that is a time-range scan, so a child starting outside its parent
 would be invisible to the check meant to find it. The store and its cache
@@ -21,11 +21,11 @@ Modules:
     outliers          duration outlier checks
     speaker_tempo     per-speaker tempo summary
     report            AuditReport, saving and load_report
-    run               audit() and the ordered check groups
+    run               audit_store() and the ordered check groups
 
 Typical use:
     data = load_audit_data(store)
-    report = audit(store, data=data)
+    report = audit_store(store, data=data)
     report.summary()
     report.checks.within_parent.findings[0].load(store).play()
     check_within_parent(data)
@@ -46,14 +46,14 @@ from .references import check_label_index, check_speaker_audio_links
 from .references import check_speaker_exists
 from .report import AuditReport, load_report
 from .run import ERROR_CHECKS, OUTLIER_CHECKS, OVERLAP_CHECKS, QUALITY_CHECKS
-from .run import audit, audit_outliers, audit_overlap, audit_quality
+from .run import audit_outliers, audit_overlap, audit_quality, audit_store
 from .run import audit_structure
 from .speaker_tempo import audit_speakers
 from .store_snapshot import AuditData, load_audit_data
 from .timing import check_same_speaker_phrases, check_start_before_end
 from .timing import check_within_audio
 
-__all__ = ['audit', 'load_audit_data', 'load_report', 'AuditData',
+__all__ = ['audit_store', 'load_audit_data', 'load_report', 'AuditData',
     'AuditReport', 'CheckResult', 'Finding', 'OutlierGroup', 'SpeakerTempo',
     'ERROR', 'WARNING', 'DEFAULT_K', 'DEFAULT_MIN_COUNT', 'ERROR_CHECKS',
     'QUALITY_CHECKS', 'OVERLAP_CHECKS', 'OUTLIER_CHECKS', 'audit_structure',

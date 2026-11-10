@@ -60,7 +60,7 @@ def audit_outliers(data, k=DEFAULT_K, min_count=DEFAULT_MIN_COUNT):
     return [check(data, k, min_count) for check in OUTLIER_CHECKS]
 
 
-def audit(store, data=None, k=DEFAULT_K, min_count=DEFAULT_MIN_COUNT,
+def audit_store(store, data=None, k=DEFAULT_K, min_count=DEFAULT_MIN_COUNT,
     save=True, directory='.'):
     '''Survey a store without changing it and return an AuditReport.
     store:        open Store to audit

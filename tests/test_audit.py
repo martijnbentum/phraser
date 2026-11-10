@@ -5,7 +5,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from phraser import Store, audit as run_audit, load_report
+from phraser import Store, audit_store, load_report
 from phraser import load_audit_data, update_audio_overlap
 from phraser.audit import audit_speakers, check_childless, check_label_index
 from phraser.audit import check_children_span_parent, check_orphans
@@ -80,7 +80,7 @@ class TestCleanStore(AuditCase):
         self.make_tree()
         with redirect_stdout(io.StringIO()):
             update_audio_overlap(self.audio)
-            report = run_audit(self.store, save=False, min_count=1)
+            report = audit_store(self.store, save=False, min_count=1)
         for result in report.results:
             with self.subTest(check=result.name):
                 self.assertEqual(result.findings, [])
@@ -363,7 +363,7 @@ class TestAuditRun(AuditCase):
     def audit_quietly(self, **kwargs):
         output = io.StringIO()
         with redirect_stdout(output):
-            report = run_audit(self.store, **kwargs)
+            report = audit_store(self.store, **kwargs)
         return report, output.getvalue()
 
     def main_rows(self):
