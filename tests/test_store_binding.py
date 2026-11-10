@@ -4,10 +4,10 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 
-from phraser import key_helper
 from phraser import ClosedStoreError, Store, UnboundStoreError
 from phraser.models import Audio, Phone, Phrase, Speaker, Syllable, Word
 from phraser.query import QuerySet
+from phraser.storage import key_helper
 
 
 class TestStoreBinding(unittest.TestCase):

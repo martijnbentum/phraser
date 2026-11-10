@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import unittest
 
 from phraser import Audio, Marker, Phone, Phrase, Speaker, Store, Syllable, Word
-from phraser import struct_value
 from phraser.models import segment_flags
+from phraser.storage import struct_value
 
 
 class TestFlags(unittest.TestCase):

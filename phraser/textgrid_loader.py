@@ -1,13 +1,13 @@
 from progressbar import progressbar
 from textgrid import TextGrid
 
-from phraser.audio import audio_info
 from phraser import force_align
 from phraser import locations
 from phraser import models
 from phraser import syllable_structure
 from phraser import utils
-from phraser.key_helper import EMPTY_ID
+from phraser.audio import audio_info
+from phraser.storage.key_helper import EMPTY_ID
 
 
 TEXTGRID_EXISTING_POLICIES = {'append', 'add_missing', 'replace', 'upsert'}

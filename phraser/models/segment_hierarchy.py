@@ -3,7 +3,7 @@
 from .. import phone_features
 from .. import query
 from .. import utils
-from ..key_helper import EMPTY_ID
+from ..storage.key_helper import EMPTY_ID
 from .segment import Segment
 
 

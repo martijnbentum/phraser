@@ -1,5 +1,5 @@
 from .comparison import OPS
-from . import key_helper
+from .storage import key_helper
 
 class DoesNotExist(Exception):
     pass

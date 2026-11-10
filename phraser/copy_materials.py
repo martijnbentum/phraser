@@ -5,8 +5,8 @@ from time import monotonic
 
 from progressbar import progressbar
 
-from . import key_helper
-from .store import Store, value_key_to_instance
+from .storage import key_helper
+from .storage.store import Store, value_key_to_instance
 
 
 def copy_audio_materials(audio_keys, goal_store_root, source_store):

@@ -6,9 +6,9 @@ import unittest
 from contextlib import redirect_stdout
 
 from phraser import Store
-from phraser.key_helper import EMPTY_ID
 from phraser.models import Audio, Phone, Phrase, Speaker, Syllable, Word
-from phraser.store import load_phrase_descendants
+from phraser.storage.key_helper import EMPTY_ID
+from phraser.storage.store import load_phrase_descendants
 
 
 class TestSegmentLinking(unittest.TestCase):

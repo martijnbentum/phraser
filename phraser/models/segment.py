@@ -1,8 +1,8 @@
-from .. import key_helper
 from .. import overlap as speech_overlap
-from .. import struct_value
 from .. import utils
-from ..key_helper import EMPTY_ID
+from ..storage import key_helper
+from ..storage import struct_value
+from ..storage.key_helper import EMPTY_ID
 from ..utils import R, B, GR, RE, object_type_to_ljust_label
 from . import segment_flags
 from . import store_access

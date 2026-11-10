@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from phraser.lmdb_helper import DB
+from phraser.storage.lmdb_helper import DB
 
 
 class TestLmdbBatchWrites(unittest.TestCase):

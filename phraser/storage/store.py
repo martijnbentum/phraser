@@ -3,16 +3,16 @@ import pickle
 import random
 import time
 
+from .. import locations
+from .. import models
+from .. import query
+from .. import utils
+from ..errors import ClosedStoreError, UnboundStoreError
+from ..models.segment import keep_owned_descendants
 from . import key_helper
 from . import lmdb_helper
-from . import locations
-from . import models
-from . import query
 from . import save_validation
 from . import struct_value
-from . import utils
-from .errors import ClosedStoreError, UnboundStoreError
-from .models.segment import keep_owned_descendants
 from .struct_helper import CLASS_RANK_MAP, RANK_CLASS_MAP
 
 R= "\033[91m"

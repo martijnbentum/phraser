@@ -4,7 +4,7 @@ import unittest
 
 from phraser import Audio, Phone, Phrase, Speaker, Store, Syllable, Word
 from phraser import copy_audio_materials, make_markers
-from phraser import key_helper
+from phraser.storage import key_helper
 
 
 class CopyMaterialsTests(unittest.TestCase):

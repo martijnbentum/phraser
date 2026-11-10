@@ -4,8 +4,8 @@ import pickle
 import lmdb
 from progressbar import ProgressBar, progressbar
 
+from .. import locations
 from . import key_helper
-from . import locations
 from . import struct_value
 
 default_db_name = 'main'

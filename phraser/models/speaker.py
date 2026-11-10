@@ -1,6 +1,6 @@
-from .. import key_helper
 from .. import query
 from .. import utils
+from ..storage import key_helper
 from ..utils import R, B, GR, RE
 from . import store_access
 

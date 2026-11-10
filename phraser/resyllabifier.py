@@ -1,7 +1,7 @@
 import copy
 from dataclasses import dataclass
 
-from . import key_helper
+from .storage import key_helper
 from .syllable_structure import assign_syllable_positions_to_phones
 
 

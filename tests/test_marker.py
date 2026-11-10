@@ -6,10 +6,10 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from phraser import Audio, Marker, SEGMENT_KEY_LENGTH, Speaker, Store
-from phraser import key_helper, struct_helper, struct_value
-from phraser.models.marker import make_marker
-from phraser.key_helper import EMPTY_ID
 from phraser.models import Phone, Phrase, Segment, Syllable, Word
+from phraser.models.marker import make_marker
+from phraser.storage import key_helper, struct_helper, struct_value
+from phraser.storage.key_helper import EMPTY_ID
 
 
 class TestMarkerKeys(unittest.TestCase):

@@ -8,7 +8,7 @@ import unittest
 import lmdb
 
 from phraser import Audio, Phone, Phrase, Speaker, Store, Word
-from phraser import struct_value
+from phraser.storage import struct_value
 from scripts import migrate_overlap as migration
 
 

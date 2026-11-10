@@ -5,7 +5,7 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from phraser import ClosedStoreError, Marker, Phrase, Store, bulk_delete_markers
-from phraser import key_helper
+from phraser.storage import key_helper
 
 
 class TestMarkerDeletion(unittest.TestCase):

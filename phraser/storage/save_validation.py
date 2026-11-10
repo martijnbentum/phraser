@@ -5,9 +5,9 @@ here. Nothing in this module writes: the validators raise on a bad
 batch before anything is packed, and persisted_tree_rows only reads.
 '''
 
+from ..models import Phrase
 from . import key_helper
 from . import struct_value
-from .models import Phrase
 
 
 def check_intra_batch_keys(objs, keys):

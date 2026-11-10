@@ -27,8 +27,8 @@ from types import SimpleNamespace
 
 import lmdb
 
-from phraser import key_helper, struct_value
 from phraser.overlap import SEGMENT_TYPES, set_overlap_codes
+from phraser.storage import key_helper, struct_value
 
 
 DEFINITION = 'segment-span-other-speaker-words-v1'
