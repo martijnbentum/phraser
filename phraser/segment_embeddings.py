@@ -6,7 +6,7 @@ except ImportError:
     raise ImportError('echoframe is required for segment embedding retrieval. '
         'uv pip install git+https://git@github.com/martijnbentum/echoframe.git')
 
-from .store import UnboundStoreError
+from .errors import UnboundStoreError
 
 
 def get_stored_embedding(segment, model_name, layer, collar=500, store=None,

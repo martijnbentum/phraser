@@ -5,8 +5,8 @@ from . import query
 from . import segment_flags
 from . import struct_value
 from . import utils
+from .errors import ClosedStoreError, UnboundStoreError
 from .model_helper import EMPTY_ID
-from .store import ClosedStoreError, UnboundStoreError, keep_owned_descendants
 from .utils import R, B, GR, RE, object_type_to_ljust_label
 
 
@@ -776,3 +776,16 @@ Syllable.child_class = Phone
 Syllable.parent_class = Word
 Phone.child_class = None
 Phone.parent_class = Syllable
+
+
+def keep_owned_descendants(candidates, owner_ids):
+    '''Keep candidates whose parent is a root or an already kept candidate.
+    candidates must be ordered parents first (Word, Syllable, Phone);
+    a child seen before its parent is dropped.
+    '''
+    owner_ids, owned = set(owner_ids), []
+    for candidate in candidates:
+        if candidate.parent_id not in owner_ids: continue
+        owned.append(candidate)
+        owner_ids.add(candidate.identifier)
+    return owned

@@ -7,6 +7,7 @@ batch before anything is packed, and persisted_tree_rows only reads.
 
 from . import key_helper
 from . import struct_value
+from .models import Phrase
 
 
 def check_intra_batch_keys(objs, keys):
@@ -31,7 +32,6 @@ def validate_phrase_trees(store, phrases):
     '''Validate a save_phrase_trees batch: Phrase objects only, each
     tree coherent (Phrase.validate_tree), no duplicate phrase identity
     in the batch, no same-speaker phrase overlap.'''
-    from .models import Phrase
     seen = set()
     for phrase in phrases:
         if not isinstance(phrase, Phrase):

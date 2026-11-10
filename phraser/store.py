@@ -6,9 +6,13 @@ import time
 from . import key_helper
 from . import lmdb_helper
 from . import locations
+from . import models
+from . import query
 from . import save_validation
 from . import struct_value
 from . import utils
+from .errors import ClosedStoreError, UnboundStoreError
+from .segment import keep_owned_descendants
 from .struct_helper import CLASS_RANK_MAP, RANK_CLASS_MAP
 
 R= "\033[91m"
@@ -16,14 +20,6 @@ G= "\033[92m"
 B= "\033[94m"
 GR= "\033[90m"
 RE= "\033[0m"
-
-
-class UnboundStoreError(RuntimeError):
-    pass
-
-
-class ClosedStoreError(RuntimeError):
-    pass
 
 
 class Store:
@@ -104,11 +100,7 @@ class Store:
 
     def _register_default_classes(self):
         '''Register the domain classes listed in CLASS_RANK_MAP and attach
-        query roots. The models import is deferred to avoid an import cycle
-        (models imports store at module load; see attach_query_roots for the
-        same pattern with query).
-        '''
-        from . import models
+        query roots.'''
         classes = [getattr(models, name) for name in CLASS_RANK_MAP]
         self.register_all(*classes)
 
@@ -119,7 +111,6 @@ class Store:
         store. Called by register_all and by refresh_query_roots when the db
         changes.
         '''
-        from . import query
         self.relations_to_class_map = {}
         self._query_roots = {}
         for class_name, cls in self.CLASS_MAP.items():
@@ -570,19 +561,6 @@ def _phrase_child_keys(store, phrases, class_name):
     for phrase in phrases:
         keys.extend(store.DB.instance_to_child_keys(phrase, class_name))
     return list(dict.fromkeys(keys))
-
-
-def keep_owned_descendants(candidates, owner_ids):
-    '''Keep candidates whose parent is a root or an already kept candidate.
-    candidates must be ordered parents first (Word, Syllable, Phone);
-    a child seen before its parent is dropped.
-    '''
-    owner_ids, owned = set(owner_ids), []
-    for candidate in candidates:
-        if candidate.parent_id not in owner_ids: continue
-        owned.append(candidate)
-        owner_ids.add(candidate.identifier)
-    return owned
 
 
 def load_linked_audio_and_speakers(store, objs):
