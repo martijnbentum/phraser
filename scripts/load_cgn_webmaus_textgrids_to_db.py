@@ -4,7 +4,7 @@ from progressbar import progressbar
 
 from phraser import models
 from phraser import Store
-from phraser import textgrid_loader as load_to_db
+from phraser.textgrids import loader as load_to_db
 from phraser.overlap import update_audio_overlap
 from phraser.utils import seconds_to_miliseconds
 

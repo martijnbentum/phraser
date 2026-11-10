@@ -37,7 +37,7 @@ import unittest
 from contextlib import redirect_stdout
 
 from phraser import Store
-from phraser import textgrid_loader as tgl
+from phraser.textgrids import loader as tgl
 from phraser.models import Audio, Phone, Phrase, Syllable, Word
 from phraser.phonology import syllabify
 

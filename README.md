@@ -159,17 +159,17 @@ later.
 
 ```python
 from phraser import Store
-from phraser import textgrid_loader
+from phraser.textgrids import loader
 
 store = Store("/path/to/lmdb")
-items = textgrid_loader.textgrid_filename_to_database_objects(
+items = loader.textgrid_filename_to_database_objects(
     "example.TextGrid",
     audio=audio,
     speaker=speaker,
     store=store,
 )
 
-textgrid_loader.save_textgrid_items(items, store=store, existing="append")
+loader.save_textgrid_items(items, store=store, existing="append")
 store.refresh_query_roots()
 ```
 
@@ -185,7 +185,7 @@ CGN has two separate import paths:
 - `scripts/build_cgn_awd_textgrid_db.py` builds a fresh database directly from
   the original paired `.ort` phrase annotations and `.awd` word/phone
   alignments. It has no dependency on the WebMAUS CGN scripts or
-  `phraser.textgrid_loader`.
+  `phraser.textgrids`.
 - `scripts/prepare_cgn_webmaus_import.py` and
   `scripts/load_cgn_webmaus_textgrids_to_db.py` are the legacy path for
   WebMAUS-generated TextGrids.

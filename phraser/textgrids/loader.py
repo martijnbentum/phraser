@@ -1,7 +1,7 @@
 from progressbar import progressbar
 from textgrid import TextGrid
 
-from phraser import force_align
+from phraser.textgrids import force_align
 from phraser import locations
 from phraser import models
 from phraser import utils

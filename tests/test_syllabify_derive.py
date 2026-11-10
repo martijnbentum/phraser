@@ -9,7 +9,7 @@ segmentation on the copies, leaving the donor store and its objects alone:
                                          re-derived from pauses
 
 With store=None the copies stay in memory; with store=target they are saved
-there. Fixtures are built the way textgrid_loader wires a transcription
+there. Fixtures are built the way textgrids.loader wires a transcription
 (phrase -> words -> syllables -> phones, with audio/speaker) and persisted in
 the donor store.
 '''
@@ -20,7 +20,7 @@ import unittest
 from contextlib import redirect_stdout
 
 from phraser import Store
-from phraser import textgrid_loader as tgl
+from phraser.textgrids import loader as tgl
 from phraser.errors import UnboundStoreError
 from phraser.models import Audio, Phone, Phrase, Speaker, Syllable, Word
 from phraser.phonology import syllabify
