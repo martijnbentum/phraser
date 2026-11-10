@@ -615,6 +615,51 @@ stable key ordering make seeded draws independent of input order without
 changing global random state. Reuse selected keys to preserve a sample
 across later annotation changes.
 
+Pass `return_report=True` to any of the six samplers to receive
+`(selected_objects, report)` instead of just the selected objects:
+
+```python
+from phraser import InsufficientSampleError
+
+words, report = sample_word_tokens('huis', audios=audios, n_tokens=100,
+    gender='female', return_report=True)
+print(report)
+for stage in report.stages:
+    print(stage.condition, stage.before, stage.after, stage.removed)
+
+try:
+    words = sample_word_tokens('huis', audios=audios, n_tokens=10000)
+except InsufficientSampleError as error:
+    print(error.report)
+```
+
+Reports start with unique candidates in the supplied source material,
+before label or other restrictions. They record sequential losses in a fixed
+order, including zero-loss stages for active restrictions:
+
+- Tokens: label, speaker selection, gender, positive duration, requested
+  duration bounds, recorded duration outlier.
+- Audios: dataset, language, dialect, duration, speaker selection, gender.
+- Speakers: dataset, speaker selection, gender, exact age, age range.
+
+Each candidate is counted only at its first failed condition. Losses therefore
+depend on this order; they are not independent failure counts. Recording
+gender filtering still requires the same linked speaker to satisfy any
+speaker selection. Age losses are reported by `sample_speakers`; token
+samplers restrict speakers through the supplied `speakers` collection.
+Source restrictions already applied by callers, such as CGN component
+selection, are outside the report.
+
+`SelectionReport` exposes `starting_count`, `stages`, `requested_count`,
+`eligible_count`, `selected_count`, `unselected_count`, and `shortfall`.
+Each `SelectionStage` has `condition`, `before`, `after`, and `removed`.
+Eligible but unselected objects are reported separately from filtering
+losses. `InsufficientSampleError` is a `ValueError` carrying `.report`, even
+without `return_report=True`. With `insufficient='drop'`, an optional report
+records zero selected objects and the shortfall. Invalid arguments still
+raise ordinary validation errors. Report classes are available from both
+`phraser` and `phraser.sampling`.
+
 CGN selection checks the `comp-X/nl/filename` or `comp-X/vl/filename` path
 layout and rejects unrecognized paths. Variant `nl`/`vl` is distinct from
 Audio language metadata (`nld`). Component selection returns all matching

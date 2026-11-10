@@ -5,6 +5,7 @@ from numbers import Integral, Real
 import random
 
 from ..utils import gender_dict
+from .selection_report import InsufficientSampleError
 
 
 def validate_count(value, name):
@@ -46,9 +47,25 @@ def get_audios(audios, store):
     return unique_items(audios)
 
 
-def draw(items, count, random_seed, insufficient):
+def filter_candidates(items, report, condition, predicate):
+    '''Apply one sampling condition and record its sequential loss.'''
+    eligible = [item for item in items if predicate(item)]
+    report.add_stage(condition, len(items), len(eligible))
+    return eligible
+
+
+def describe_bounds(name, minimum, maximum, unit):
+    '''Name a requested range without showing disabled bounds as None.'''
+    if minimum is None: return f'{name} <= {maximum} {unit}'
+    if maximum is None: return f'{name} >= {minimum} {unit}'
+    return f'{name} {minimum}–{maximum} {unit}'
+
+
+def draw(items, count, random_seed, insufficient, report, return_report):
     '''Draw without replacement in stable key order using local random state.'''
     validate_count(count, 'sample count')
+    if type(return_report) is not bool:
+        raise ValueError('return_report must be a bool')
     if insufficient not in ('raise', 'drop'):
         raise ValueError("insufficient must be 'raise' or 'drop'")
     if (random_seed is not None and (isinstance(random_seed, bool)
@@ -56,10 +73,13 @@ def draw(items, count, random_seed, insufficient):
         raise ValueError('random_seed must be an integer or None')
     items = sorted(unique_items(items), key=lambda item: item.key)
     if len(items) < count:
-        if insufficient == 'drop': return []
-        message = f'requested {count} items but only {len(items)} are eligible'
-        raise ValueError(message)
-    return random.Random(random_seed).sample(items, count)
+        if insufficient == 'raise': raise InsufficientSampleError(report)
+        sampled = []
+    else:
+        sampled = random.Random(random_seed).sample(items, count)
+    report.selected_count = len(sampled)
+    if return_report: return sampled, report
+    return sampled
 
 
 def speaker_keys(speakers):

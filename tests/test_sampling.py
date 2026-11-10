@@ -219,6 +219,116 @@ class TestSampling(unittest.TestCase):
         with self.assertRaises(ValueError):
             phraser.sample_speakers(audios=[], min_age=50, max_age=20)
 
+    def test_token_report_attributes_sequential_losses_and_draw(self):
+        token = self.first.words[0]
+        token.duration_outlier = 'short'
+        words, report = phraser.sample_word_tokens('huis', store=self.store,
+            n_tokens=2, gender='female', max_duration_ms=200,
+            return_report=True)
+        self.assertEqual(report.starting_count, 8)
+        self.assertEqual(report.type_label, 'huis')
+        counts = [(s.before, s.after, s.removed) for s in report.stages]
+        self.assertEqual(counts, [(8, 7, 1), (7, 6, 1), (6, 6, 0),
+            (6, 5, 1), (5, 4, 1)])
+        self.assertEqual(report.requested_count, 2)
+        self.assertEqual(report.eligible_count, 4)
+        self.assertEqual(report.selected_count, len(words))
+        self.assertEqual(report.unselected_count, 2)
+        self.assertEqual(report.shortfall, 0)
+        self.assertIn('removed 1', str(report))
+        self.assertIn('Losses are sequential', str(report))
+        expected = phraser.sample_word_tokens('huis', store=self.store,
+            n_tokens=2, gender='female', max_duration_ms=200)
+        self.assertEqual([word.key for word in words],
+            [word.key for word in expected])
+
+    def test_overlapping_failures_are_attributed_once(self):
+        words, report = phraser.sample_word_tokens('huis', store=self.store,
+            speakers=[self.young], gender='female', n_tokens=1,
+            return_report=True)
+        stages = {stage.condition: stage for stage in report.stages}
+        self.assertEqual(stages['Speaker selection'].removed, 1)
+        self.assertEqual(stages['Gender female'].removed, 0)
+        self.assertEqual(report.eligible_count, 6)
+        self.assertEqual(len(words), 1)
+
+    def test_shortage_error_carries_report_without_opt_in(self):
+        with self.assertRaises(phraser.InsufficientSampleError) as caught:
+            phraser.sample_word_tokens('huis', store=self.store,
+                n_tokens=10, gender='female', max_duration_ms=200)
+        report = caught.exception.report
+        self.assertIsInstance(caught.exception, ValueError)
+        self.assertEqual(report.eligible_count, 5)
+        self.assertEqual(report.shortfall, 5)
+        self.assertEqual(report.selected_count, 0)
+        self.assertIn('Shortfall: 5', str(report))
+        words, dropped = phraser.sample_word_tokens('huis', store=self.store,
+            n_tokens=10, gender='female', max_duration_ms=200,
+            insufficient='drop', return_report=True)
+        self.assertEqual(words, [])
+        self.assertEqual(dropped, report)
+
+    def test_reports_for_all_other_segment_levels(self):
+        functions = [phraser.sample_phrase_tokens,
+            phraser.sample_syllable_tokens, phraser.sample_phone_tokens]
+        for function in functions:
+            with self.subTest(function=function.__name__):
+                label = 'b' if 'phone' in function.__name__ else 'boom'
+                tokens, report = function(label, audios=[self.second],
+                    n_tokens=1, return_report=True)
+                self.assertEqual(report.starting_count, 1)
+                self.assertEqual(report.selected_count, 1)
+                self.assertEqual(tokens[0].label, label)
+
+    def test_speaker_report_counts_unique_speakers_and_age_losses(self):
+        speakers, report = phraser.sample_speakers(store=self.store,
+            n_speakers=1, dataset='cgn', min_age=30, return_report=True)
+        self.assertEqual(speakers, [self.older])
+        self.assertEqual(report.starting_count, 3)
+        self.assertEqual(report.stages[-1].condition, 'Age >= 30 years')
+        self.assertEqual(report.stages[-1].removed, 2)
+        speakers, report = phraser.sample_speakers(audios=[self.first,
+            self.second, self.first], n_speakers=1,
+            gender='female', age=25, return_report=True)
+        self.assertEqual(report.starting_count, 2)
+        self.assertEqual(report.eligible_count, 1)
+        self.assertEqual(report.stages[-1].condition, 'Age 25')
+
+    def test_audio_report_preserves_combined_speaker_restrictions(self):
+        audios, report = phraser.sample_audios(store=self.store, n_audios=1,
+            dataset='cgn', language='nld', dialect='nl-NL',
+            min_duration_ms=2000, speakers=[self.older], gender='female',
+            insufficient='drop', return_report=True)
+        self.assertEqual(audios, [])
+        self.assertEqual(report.starting_count, 2)
+        self.assertEqual(report.stages[-2].condition, 'Speaker selection')
+        self.assertEqual(report.stages[-2].removed, 1)
+        self.assertEqual(report.stages[-1].condition, 'Gender female')
+        self.assertEqual(report.stages[-1].removed, 1)
+        self.assertEqual(report.shortfall, 1)
+
+    def test_report_empty_inputs_zero_request_and_invalid_option(self):
+        audios, report = phraser.sample_audios(audios=[], n_audios=0,
+            return_report=True)
+        self.assertEqual(audios, [])
+        self.assertEqual(report.starting_count, 0)
+        self.assertEqual(report.stages, [])
+        self.assertEqual(report.eligible_count, 0)
+        speakers, report = phraser.sample_speakers(store=self.store,
+            n_speakers=0, return_report=True)
+        self.assertEqual(report.eligible_count, 3)
+        self.assertEqual(report.unselected_count, 3)
+        with self.assertRaisesRegex(ValueError, 'return_report'):
+            phraser.sample_audios(audios=[], n_audios=0, return_report=1)
+
+    def test_report_rejects_inconsistent_stage_counts(self):
+        report = phraser.SelectionReport('words', 10, 2)
+        report.add_stage('Speaker selection', 10, 5)
+        with self.assertRaises(ValueError):
+            report.add_stage('Gender female', 10, 4)
+        with self.assertRaises(ValueError):
+            report.add_stage('Gender female', 5, 6)
+
 
 if __name__ == '__main__':
     unittest.main()
