@@ -148,7 +148,7 @@ section.
    against a temp store) to stop future README rot; a friendlier
    pre-check message for the non-overwrite existing-key case (the DB
    error does not name the colliding object).
-6. **Candidate simplification**: `resyllabifier` and
+6. **Candidate simplification**: `phonology.syllabify` (repair) and
    `fix_syllable_labels` predate replace semantics; their
    save-new/delete-old dances could collapse into
    `save_phrase_trees(overwrite=True)` when next touched.

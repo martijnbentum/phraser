@@ -1,12 +1,12 @@
-'''Real-store tests for the rebuild family (phraser.phonology.syllabify_phones).
+'''Real-store tests for the rebuild family (phraser.phonology.syllabify).
 
-These functions ignore the existing structure and build fresh objects from the
-phone sequence, in memory only:
+These functions ignore the existing structure and build fresh objects around
+the regrouped phones, in memory only:
 
-  syllabify_word    rebuild one word's syllables (keeps the word)
-  syllabify_phrase  rebuild a phrase's words+syllables, connected-speech MOP
-  syllabify_phones  rebuild phrases+words+syllables, phrases re-derived from
-                    pauses
+  rebuild_word_syllables       one word's syllables (keeps the word)
+  rebuild_phrase_syllables     a phrase's words+syllables, connected-speech MOP
+  rebuild_phrases_from_phones  phrases+words+syllables, phrases re-derived
+                               from pauses
 
 Fixtures are built the way textgrid_loader wires a transcription (phrase ->
 words -> syllables -> phones, with audio/speaker), then persisted so the
@@ -21,8 +21,8 @@ from contextlib import redirect_stdout
 from phraser import Store
 from phraser import textgrid_loader as tgl
 from phraser.models import Audio, Phone, Syllable, Word, Phrase
-from phraser.phonology.syllabify_phones import (syllabify_word,
-    syllabify_phrase, syllabify_phones)
+from phraser.phonology.syllabify import (rebuild_phrase_syllables,
+    rebuild_phrases_from_phones, rebuild_word_syllables)
 
 
 def build_phrase(store, phones, words, syls, filename='x.TextGrid'):
@@ -82,7 +82,7 @@ APRIL_PHONES = [('ɑ', 0, 100), ('p', 100, 200), ('r', 200, 300),
     ('ɪ', 300, 400), ('l', 400, 500)]
 
 
-class TestSyllabifyWord(unittest.TestCase):
+class TestRebuildWordSyllables(unittest.TestCase):
     def setUp(self):
         self.store, self._tmpdir = fresh_store()
         with redirect_stdout(io.StringIO()):
@@ -90,7 +90,7 @@ class TestSyllabifyWord(unittest.TestCase):
                 [('april', 0, 500)], [(0, 200), (200, 500)])  # ɑp | rɪl
             self.word = words[0]
             self.word_key = self.word.key
-            self.new = syllabify_word(self.word)
+            self.new = rebuild_word_syllables(self.word)
 
     def tearDown(self):
         with redirect_stdout(io.StringIO()):
@@ -129,21 +129,21 @@ class TestSyllabifyWord(unittest.TestCase):
             store, tmpdir = fresh_store()
             _, words, _, _ = build_phrase(store, [('s', 0, 100), ('t', 100, 200)],
                 [('st', 0, 200)], [(0, 200)])               # no nucleus
-            result = syllabify_word(words[0])
+            result = rebuild_word_syllables(words[0])
             store.close()
         shutil.rmtree(tmpdir, ignore_errors=True)
         self.assertIsNone(result)
 
 
 # --- het ei: h ɛ t ɛi ; connected speech moves /t/ into 'ei' ------------------
-class TestSyllabifyPhrase(unittest.TestCase):
+class TestRebuildPhraseSyllables(unittest.TestCase):
     def setUp(self):
         self.store, self._tmpdir = fresh_store()
         with redirect_stdout(io.StringIO()):
             self.phrase, self.words, _, _ = build_phrase(self.store,
                 [('h', 0, 80), ('ɛ', 80, 180), ('t', 180, 260), ('ɛi', 260, 500)],
                 [('het', 0, 260), ('ei', 260, 500)], [(0, 260), (260, 500)])
-            self.new = syllabify_phrase(self.phrase)
+            self.new = rebuild_phrase_syllables(self.phrase)
 
     def tearDown(self):
         with redirect_stdout(io.StringIO()):
@@ -175,7 +175,7 @@ class TestSyllabifyPhrase(unittest.TestCase):
             phrase, _, _, _ = build_phrase(store,
                 [('t', 0, 120), ('ɛi', 120, 500)],
                 [('het', 0, 120), ('ei', 120, 500)], [(0, 120), (120, 500)])
-            new = syllabify_phrase(phrase)
+            new = rebuild_phrase_syllables(phrase)
             by_label = {w.label: w for w in new}
             het, ei = by_label['het'], by_label['ei']
             het_empty = len(het.syllables) == 0
@@ -195,7 +195,7 @@ MANZEE_WORDS = [('man', 0, 300), ('zee', 1000, 1300)]
 MANZEE_SYLS = [(0, 300), (1000, 1300)]
 
 
-class TestSyllabifyPhones(unittest.TestCase):
+class TestRebuildPhrasesFromPhones(unittest.TestCase):
     def setUp(self):
         self.store, self._tmpdir = fresh_store()
         with redirect_stdout(io.StringIO()):
@@ -208,7 +208,7 @@ class TestSyllabifyPhones(unittest.TestCase):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_pause_splits_into_two_phrases(self):
-        new = syllabify_phones(self.phones, max_pause=500)
+        new = rebuild_phrases_from_phones(self.phones, max_pause=500)
         self.assertEqual(len(new), 2)
         first, second = sorted(new, key=lambda p: p.start)
         self.assertEqual((first.start, first.end), (0, 300))
@@ -217,40 +217,42 @@ class TestSyllabifyPhones(unittest.TestCase):
         self.assertEqual(labels_per_syllable(second), [['z', 'eː']])
 
     def test_full_chain_consistent(self):
-        new = syllabify_phones(self.phones, max_pause=500)
+        new = rebuild_phrases_from_phones(self.phones, max_pause=500)
         for phrase in new:
             for word in phrase.words:
                 self.assertEqual(word.parent.identifier, phrase.identifier)
                 self.assertTrue(views_agree(word))
 
     def test_large_pause_threshold_keeps_one_phrase(self):
-        new = syllabify_phones(self.phones, max_pause=2000)   # 700ms gap < 2000
+        new = rebuild_phrases_from_phones(self.phones, max_pause=2000)
+        # 700ms gap < 2000: one phrase
         self.assertEqual(len(new), 1)
         self.assertEqual(len(new[0].words), 2)
 
     def test_accepts_segment_with_phones(self):
-        new = syllabify_phones(self.phrase, max_pause=500)    # duck-typed input
+        # duck-typed input: a segment instead of a phone list
+        new = rebuild_phrases_from_phones(self.phrase, max_pause=500)
         self.assertEqual(len(new), 2)
 
     def test_multiple_speakers_raise(self):
         self.phones[0].speaker_id = b'\x01' * 8
         with self.assertRaises(ValueError):
-            syllabify_phones(self.phones)
+            rebuild_phrases_from_phones(self.phones)
 
     def test_multiple_audio_raise(self):
         self.phones[0].audio_id = b'\x02' * 8
         with self.assertRaises(ValueError):
-            syllabify_phones(self.phones)
+            rebuild_phrases_from_phones(self.phones)
 
     def test_empty_input_returns_none(self):
-        self.assertIsNone(syllabify_phones([]))
+        self.assertIsNone(rebuild_phrases_from_phones([]))
 
     def test_unsyllabifiable_run_returns_none(self):
         with redirect_stdout(io.StringIO()):
             store, tmpdir = fresh_store()
             _, _, _, phones = build_phrase(store,
                 [('s', 0, 100), ('t', 100, 200)], [('st', 0, 200)], [(0, 200)])
-            result = syllabify_phones(phones)
+            result = rebuild_phrases_from_phones(phones)
             store.close()
         shutil.rmtree(tmpdir, ignore_errors=True)
         self.assertIsNone(result)
@@ -265,7 +267,7 @@ class TestSyllabifyPhones(unittest.TestCase):
                 ('t', 1300, 1400)], [('ap', 0, 200), ('st', 1200, 1400)],
                 [(0, 200), (1200, 1400)])
             before = [p.parent for p in phones]
-            result = syllabify_phones(phones, max_pause=500)
+            result = rebuild_phrases_from_phones(phones, max_pause=500)
             after = [p.parent for p in phones]
             first_children = [p.label for p in syls[0].children]
             store.close()

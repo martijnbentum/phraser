@@ -1,4 +1,4 @@
-'''Real-store tests for resyllabification.
+'''Real-store tests for the repair family (phraser.phonology.syllabify).
 
 The rewrite builds a fresh-id COPY of each old syllable on its new phone group
 and deletes the old rows, rather than retiming syllables in place. So the things
@@ -15,9 +15,9 @@ under test are:
     pointed at the new grouping.
 #4  each new syllable is relabelled from its phones, so .label stays in sync; on
     a persisted run the label index is swapped (old label gone, new one resolves).
-#5  resyllabify_word returns a ResyllabifyOutcome describing what it saw and did
-    (applied / ok / count_mismatch) across correct, rewritten, unanalysable and
-    count-mismatch words.
+#5  repair_word_syllables returns a RepairOutcome describing what it saw and
+    did (applied / ok / count_mismatch) across correct, rewritten, unanalysable
+    and count-mismatch words.
 #6  apply_new_syllable_boundaries guards its invariants for direct callers: it
     raises on a syllable-count mismatch and on a multi-speaker word.
 #7  because new syllables are copies, persisted per-syllable metadata
@@ -37,8 +37,8 @@ from contextlib import redirect_stdout
 from phraser import Store
 from phraser import textgrid_loader as tgl
 from phraser.models import Audio, Phone, Syllable, Word
-from phraser.phonology.resyllabifier import (apply_new_syllable_boundaries,
-    resyllabify_word)
+from phraser.phonology.syllabify import (apply_new_syllable_boundaries,
+    repair_word_syllables)
 
 
 # given segmentation: syllable [start, end] -> phones it should hold by time
@@ -86,7 +86,7 @@ def build_word(store, phone_spec=PHONE_SPEC, syllable_spec=GIVEN_SYLLABLES,
     return word
 
 
-class TestResyllabifyPersistence(unittest.TestCase):
+class TestRepairPersistence(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.mkdtemp()
         with redirect_stdout(io.StringIO()):
@@ -96,7 +96,7 @@ class TestResyllabifyPersistence(unittest.TestCase):
             # ids of the originals, captured before the rewrite replaces them
             self.old_syllable_ids = {s.identifier for s in word.syllables}
             # given boundaries differ from maximal onset -> rewrite + persist
-            self.outcome = resyllabify_word(word, update_database=True)
+            self.outcome = repair_word_syllables(word, update_database=True)
             # drop every cache and re-read from disk for a true persistence view
             self.store.close()
             self.store.open()
@@ -161,7 +161,7 @@ class TestResyllabifyPersistence(unittest.TestCase):
             self.assertEqual([s.label for s in found], [label])
 
 
-class TestResyllabifyInMemory(unittest.TestCase):
+class TestRepairInMemory(unittest.TestCase):
     '''#3: update_database=False mutates only in memory, yet both membership
     views agree on the new grouping, and disk is left untouched.'''
 
@@ -173,7 +173,8 @@ class TestResyllabifyInMemory(unittest.TestCase):
             self.word_key = self.word.key
             # rewrite boundaries in memory only -- no write, no reopen, so the
             # live object graph (and its caches) is what we assert against
-            self.outcome = resyllabify_word(self.word, update_database=False)
+            self.outcome = repair_word_syllables(self.word,
+                update_database=False)
             self.syllables = sorted(self.word.syllables, key=lambda s: s.start)
 
     def tearDown(self):
@@ -231,8 +232,8 @@ class TestResyllabifyInMemory(unittest.TestCase):
         self.assertEqual(labels, [['ɑ', 'p'], ['r', 'ɪ', 'l']])
 
 
-class TestResyllabifyOutcome(unittest.TestCase):
-    '''#5: resyllabify_word returns a ResyllabifyOutcome distinguishing the
+class TestRepairOutcome(unittest.TestCase):
+    '''#5: repair_word_syllables returns a RepairOutcome distinguishing the
     correct / unanalysable / count-mismatch cases that the old bool conflated,
     and leaves those words untouched.'''
 
@@ -246,13 +247,13 @@ class TestResyllabifyOutcome(unittest.TestCase):
             self.store.close()
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
-    def _resyllabify(self, **build_kwargs):
+    def _repair(self, **build_kwargs):
         with redirect_stdout(io.StringIO()):
             word = build_word(self.store, **build_kwargs)
-            return word, resyllabify_word(word, update_database=True)
+            return word, repair_word_syllables(word, update_database=True)
 
     def test_already_correct_not_applied_but_ok(self):
-        word, outcome = self._resyllabify(syllable_spec=CORRECT_SYLLABLES)
+        word, outcome = self._repair(syllable_spec=CORRECT_SYLLABLES)
         self.assertFalse(outcome.applied)
         self.assertTrue(outcome.ok)
         self.assertFalse(outcome.count_mismatch)
@@ -260,7 +261,7 @@ class TestResyllabifyOutcome(unittest.TestCase):
         self.assertEqual(len(word.syllables), 2)
 
     def test_unanalysable_not_applied_not_ok(self):
-        word, outcome = self._resyllabify(phone_spec=UNKNOWN_PHONES,
+        word, outcome = self._repair(phone_spec=UNKNOWN_PHONES,
             syllable_spec=UNKNOWN_SYLLABLES)
         self.assertFalse(outcome.applied)
         self.assertFalse(outcome.ok)
@@ -268,7 +269,7 @@ class TestResyllabifyOutcome(unittest.TestCase):
         self.assertFalse(outcome.count_mismatch)
 
     def test_count_mismatch_skipped_not_raised(self):
-        word, outcome = self._resyllabify(phone_spec=MISMATCH_PHONES,
+        word, outcome = self._repair(phone_spec=MISMATCH_PHONES,
             syllable_spec=MISMATCH_SYLLABLES)
         self.assertFalse(outcome.applied)
         self.assertTrue(outcome.count_mismatch)
@@ -278,7 +279,7 @@ class TestResyllabifyOutcome(unittest.TestCase):
 
 class TestApplyGuards(unittest.TestCase):
     '''#6: apply_new_syllable_boundaries protects its 1:1 copy invariant for
-    direct callers, independently of resyllabify_word's soft skip.'''
+    direct callers, independently of repair_word_syllables's soft skip.'''
 
     def setUp(self):
         self._tmpdir = tempfile.mkdtemp()
@@ -323,7 +324,7 @@ class TestMetadataCarryOver(unittest.TestCase):
         old = sorted(self.word.syllables, key=lambda s: s.start)
         for i, syllable in enumerate(old):
             syllable.stress_code = 10 + i
-        resyllabify_word(self.word, update_database=False)
+        repair_word_syllables(self.word, update_database=False)
         new = sorted(self.word.syllables, key=lambda s: s.start)
         # new[i] is a copy of old[i] (same nucleus), so its metadata is carried
         self.assertEqual([s.stress_code for s in new], [10, 11])
