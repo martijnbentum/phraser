@@ -159,17 +159,17 @@ later.
 
 ```python
 from phraser import Store
-from phraser.textgrids import loader
+from phraser import textgrids
 
 store = Store("/path/to/lmdb")
-items = loader.textgrid_filename_to_database_objects(
+items = textgrids.textgrid_filename_to_database_objects(
     "example.TextGrid",
     audio=audio,
     speaker=speaker,
     store=store,
 )
 
-loader.save_textgrid_items(items, store=store, existing="append")
+textgrids.save_textgrid_items(items, store=store, existing="append")
 store.refresh_query_roots()
 ```
 

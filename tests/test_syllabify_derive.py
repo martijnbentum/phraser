@@ -9,7 +9,7 @@ segmentation on the copies, leaving the donor store and its objects alone:
                                          re-derived from pauses
 
 With store=None the copies stay in memory; with store=target they are saved
-there. Fixtures are built the way textgrids.loader wires a transcription
+there. Fixtures are built the way textgrid_to_segments wires a transcription
 (phrase -> words -> syllables -> phones, with audio/speaker) and persisted in
 the donor store.
 '''
@@ -20,7 +20,7 @@ import unittest
 from contextlib import redirect_stdout
 
 from phraser import Store
-from phraser.textgrids import loader as tgl
+from phraser.textgrids import textgrid_to_segments
 from phraser.errors import UnboundStoreError
 from phraser.models import Audio, Phone, Phrase, Speaker, Syllable, Word
 from phraser.phonology import syllabify
@@ -43,10 +43,12 @@ def build_phrase(store, phones, words, syls, filename='x.TextGrid'):
     phone_objs = [Phone(label=l, start=s, end=e, store=store, save=False,
         **identity) for l, s, e in phones]
     for syl in syl_objs:
-        tgl.find_and_add_phones_to_syllable(syl, phone_objs, save_to_db=False)
+        textgrid_to_segments.find_and_add_phones_to_syllable(syl, phone_objs,
+            save_to_db=False)
         syl._set_phrase_refs(phrase.identifier, phrase.start)
     for word in word_objs:
-        tgl.find_and_add_syllables_to_word(word, syl_objs, save_to_db=False)
+        textgrid_to_segments.find_and_add_syllables_to_word(word, syl_objs,
+            save_to_db=False)
         word.add_parent(phrase)
     for phone in phone_objs:
         phone._set_phrase_refs(phrase.identifier, phrase.start)

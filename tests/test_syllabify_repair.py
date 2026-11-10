@@ -37,7 +37,7 @@ import unittest
 from contextlib import redirect_stdout
 
 from phraser import Store
-from phraser.textgrids import loader as tgl
+from phraser.textgrids import textgrid_to_segments
 from phraser.models import Audio, Phone, Phrase, Syllable, Word
 from phraser.phonology import syllabify
 
@@ -78,8 +78,10 @@ def build_word(store, phone_spec=PHONE_SPEC, syllable_spec=GIVEN_SYLLABLES,
     phones = [Phone(label=l, start=s, end=e, store=store, save=False,
         **identity) for l, s, e in phone_spec]
     for syllable in syllables:
-        tgl.find_and_add_phones_to_syllable(syllable, phones, save_to_db=False)
-    tgl.find_and_add_syllables_to_word(word, syllables, save_to_db=False)
+        textgrid_to_segments.find_and_add_phones_to_syllable(syllable, phones,
+            save_to_db=False)
+    textgrid_to_segments.find_and_add_syllables_to_word(word, syllables,
+        save_to_db=False)
     word.add_parent(phrase)
     items = [phrase, word] + syllables + phones
     for item in items:
