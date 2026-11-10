@@ -34,7 +34,7 @@ def queryset_from_items(items, store = None):
     if store is None:
         store = items[0].store
 
-    # Empty input -> empty queryset
+    # Data starts with every key of cls; narrowed to the items below
     data = Data(cls, store)
 
     # Convert to LMDB keys and restrict

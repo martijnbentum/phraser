@@ -1,8 +1,8 @@
 from .. import key_helper
 from .. import query
 from .. import utils
-from ..errors import ClosedStoreError, UnboundStoreError
 from ..utils import R, B, GR, RE
+from . import store_access
 
 
 class Speaker:
@@ -116,22 +116,21 @@ class Speaker:
                 phones.append(phone)
         return phones
 
-    @property
-    def phrases_query(self):
-        """Return a query object for all phrases for this speaker."""
-        return query.queryset_from_items(self.phrases, self.store)
-    @property
-    def words_query(self):
-        """Return a query object for all words for this speaker."""
-        return query.queryset_from_items(self.words, self.store)
-    @property
-    def syllables_query(self):
-        """Return a query object for all syllables for this speaker."""
-        return query.queryset_from_items(self.syllables, self.store)
-    @property
-    def phones_query(self):
-        """Return a query object for all phones for this speaker."""
-        return query.queryset_from_items(self.phones, self.store)
+    def filter_phrases(self, **filters):
+        '''Return this speaker's phrases matching filters.'''
+        return query.filter_objects(self.phrases, **filters)
+
+    def filter_words(self, **filters):
+        '''Return this speaker's words matching filters.'''
+        return query.filter_objects(self.words, **filters)
+
+    def filter_syllables(self, **filters):
+        '''Return this speaker's syllables matching filters.'''
+        return query.filter_objects(self.syllables, **filters)
+
+    def filter_phones(self, **filters):
+        '''Return this speaker's phones matching filters.'''
+        return query.filter_objects(self.phones, **filters)
 
     @property
     def key(self):
@@ -146,23 +145,7 @@ class Speaker:
         self.store.delete(self.key)
 
     @property
-    def store(self):
-        store = getattr(self, '_store', None)
-        if store is None:
-            name = self.__class__.__name__
-            m = f'{name} is not bound to a Store. Create it with store=... '
-            m += f'or Store.create_{name}().'
-            raise UnboundStoreError(m)
-        if store.closed:
-            name = self.__class__.__name__
-            m = f'{name} is bound to a closed Store. '
-            m += 'Call store.open() to reopen it.'
-            raise ClosedStoreError(m)
-        return store
+    def store(self): return store_access.get_store(self)
 
     @property
-    def exists_in_db(self):
-        cls = self.__class__
-        lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
-        existing = self.store.query_for_class(cls).get_or_none(**lookup)
-        return existing is not None
+    def exists_in_db(self): return store_access.exists_in_db(self)

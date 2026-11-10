@@ -63,7 +63,7 @@ class TestSpeakerPhones(unittest.TestCase):
         for phrase in phrases:
             self.assertEqual(phrase.speaker_id, self.speaker.identifier)
 
-    def test_speaker_descendants_and_queries_exclude_other_speakers(self):
+    def test_speaker_descendants_and_filters_exclude_other_speakers(self):
         for name in ('phrases', 'words', 'syllables', 'phones'):
             with self.subTest(relation=name):
                 items = getattr(self.speaker, name)
@@ -71,8 +71,8 @@ class TestSpeakerPhones(unittest.TestCase):
                 self.assertEqual(len(items), expected_count)
                 for item in items:
                     self.assertEqual(item.speaker_id, self.speaker.identifier)
-                query_items = list(getattr(self.speaker, name + '_query'))
-                self.assertEqual({item.key for item in query_items},
+                filtered = getattr(self.speaker, 'filter_' + name)()
+                self.assertEqual({item.key for item in filtered},
                     {item.key for item in items})
 
     def test_audio_phones_are_scoped_and_chronological(self):

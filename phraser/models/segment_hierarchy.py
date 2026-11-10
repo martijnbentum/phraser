@@ -61,18 +61,17 @@ class Phrase(Segment):
         '''Return all phones in this phrase.'''
         return list(self.iter_descendants_of_type(Phone))
 
-    @property
-    def words_query(self):
-        '''Return a query over this phrase's words.'''
-        return query.queryset_from_items(self.words, self.store)
-    @property
-    def syllables_query(self):
-        '''Return a query over this phrase's syllables.'''
-        return query.queryset_from_items(self.syllables, self.store)
-    @property
-    def phones_query(self):
-        '''Return a query over this phrase's phones.'''
-        return query.queryset_from_items(self.phones, self.store)
+    def filter_words(self, **filters):
+        '''Return this phrase's words matching filters.'''
+        return query.filter_objects(self.words, **filters)
+
+    def filter_syllables(self, **filters):
+        '''Return this phrase's syllables matching filters.'''
+        return query.filter_objects(self.syllables, **filters)
+
+    def filter_phones(self, **filters):
+        '''Return this phrase's phones matching filters.'''
+        return query.filter_objects(self.phones, **filters)
 
 
 class Word(Segment):
@@ -97,14 +96,13 @@ class Word(Segment):
         '''Return all phones in this word.'''
         return list(self.iter_descendants_of_type(Phone))
 
-    @property
-    def syllables_query(self):
-        '''Return a query over this word's syllables.'''
-        return query.queryset_from_items(self.syllables, self.store)
-    @property
-    def phones_query(self):
-        '''Return a query over this word's phones.'''
-        return query.queryset_from_items(self.phones, self.store)
+    def filter_syllables(self, **filters):
+        '''Return this word's syllables matching filters.'''
+        return query.filter_objects(self.syllables, **filters)
+
+    def filter_phones(self, **filters):
+        '''Return this word's phones matching filters.'''
+        return query.filter_objects(self.phones, **filters)
 
 class Syllable(Segment):
     METADATA_FIELDS = {'overlap_code', 'stress_code'}
@@ -144,10 +142,9 @@ class Syllable(Segment):
         '''Return the parent word of this syllable.'''
         return self.parent
 
-    @property
-    def phones_query(self):
-        '''Return a query over this syllable's phones.'''
-        return query.queryset_from_items(self.phones, self.store)
+    def filter_phones(self, **filters):
+        '''Return this syllable's phones matching filters.'''
+        return query.filter_objects(self.phones, **filters)
 
 class Phone(Segment):
     METADATA_FIELDS = {'overlap_code', 'position_code'}

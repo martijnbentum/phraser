@@ -2,10 +2,10 @@ from .. import key_helper
 from .. import overlap as speech_overlap
 from .. import struct_value
 from .. import utils
-from ..errors import ClosedStoreError, UnboundStoreError
 from ..key_helper import EMPTY_ID
 from ..utils import R, B, GR, RE, object_type_to_ljust_label
 from . import segment_flags
+from . import store_access
 
 
 class Segment:
@@ -556,26 +556,10 @@ class Segment:
             parent = parent.parent
 
     @property
-    def store(self):
-        store = getattr(self, '_store', None)
-        if store is None:
-            name = self.__class__.__name__
-            m = f'{name} is not bound to a Store. Create it with store=... '
-            m += f'or Store.create_{name}().'
-            raise UnboundStoreError(m)
-        if store.closed:
-            name = self.__class__.__name__
-            m = f'{name} is bound to a closed Store. '
-            m += 'Call store.open() to reopen it.'
-            raise ClosedStoreError(m)
-        return store
+    def store(self): return store_access.get_store(self)
 
     @property
-    def exists_in_db(self):
-        cls = self.__class__
-        lookup = {k: getattr(self, k) for k in cls.IDENTITY_FIELDS}
-        existing = self.store.query_for_class(cls).get_or_none(**lookup)
-        return existing is not None
+    def exists_in_db(self): return store_access.exists_in_db(self)
 
 
 def keep_owned_descendants(candidates, owner_ids):
