@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 from phraser import Audio, Phone, Phrase, Speaker, Store, Syllable, Word
 from phraser import overlap
-from phraser.check_overlap import check_overlap_audio, check_overlap_audios
 from scripts import load_cgn_webmaus_textgrids_to_db as webmaus
 
 
@@ -47,7 +46,7 @@ class TestOverlap(unittest.TestCase):
         self.assertEqual([item.overlap_code for item in items], [9] * 5)
         self.assertEqual(items[0].overlap_items, [items[-1]])
         keys = [item.key for item in items]
-        check_overlap_audio(self.audio)
+        overlap.update_audio_overlap(self.audio)
         self.assertEqual([item.overlap for item in items], expected)
         self.assertEqual([item.overlap_code for item in items],
             [1, 0, 0, 0, 0])
@@ -109,7 +108,7 @@ class TestOverlap(unittest.TestCase):
         before = [item.overlap for item in items]
         with patch.object(self.store, 'save_many',
             wraps=self.store.save_many) as save:
-            check_overlap_audio(self.audio)
+            overlap.update_audio_overlap(self.audio)
         save.assert_called_once()
         self.assertEqual([item.overlap for item in items], before)
         self.assertEqual([item.overlap_code for item in items],
@@ -151,23 +150,23 @@ class TestOverlap(unittest.TestCase):
 
     def test_recomputation_ignores_stale_audio_tree_caches(self):
         items = self.pause_example()
-        check_overlap_audio(self.audio)
+        overlap.update_audio_overlap(self.audio)
         self.assertTrue(items[0].overlap)
         self.assertEqual(len(self.audio.phrases), 2)
         self.assertEqual(len(self.audio.words), 3)
         self.store.delete(items[-1].key)
-        check_overlap_audio(self.audio)
+        overlap.update_audio_overlap(self.audio)
         self.assertFalse(items[0].overlap)
         self.assertEqual(items[0].overlap_items, [])
 
     def test_empty_audio_does_not_save(self):
         with patch.object(self.store, 'save_many') as save:
-            check_overlap_audios([self.audio])
+            overlap.update_audio_overlap(self.audio)
         save.assert_not_called()
 
     def test_webmaus_import_updates_previously_stored_segments(self):
         items = self.pause_example()
-        check_overlap_audio(self.audio)
+        overlap.update_audio_overlap(self.audio)
         self.assertFalse(items[1].overlap)
         phrase = self.segment(Phrase, 1000, 1500, self.b)
         word = self.segment(Word, 1000, 1500, self.b)

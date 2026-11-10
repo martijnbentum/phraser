@@ -324,10 +324,6 @@ The AWD builder computes codes after staging all speakers. The WebMAUS bulk
 importer recomputes affected audios after saving. Other write workflows must
 call `update_audio_overlap(audio)` after adding, deleting, or retiming
 annotations. Code updates do not happen automatically on individual saves.
-The legacy `check_overlap_audio` and `check_overlap_audios` entry points
-preserve their names and calling pattern, and delegate to the new
-computation. They intentionally replace the old phrase-reference results;
-there is no separate legacy definition.
 
 Existing databases need a full recomputation of all three codes; updating
 only `9` leaves results from the old phrase-based reference definition.
