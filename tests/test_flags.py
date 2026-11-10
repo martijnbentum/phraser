@@ -50,6 +50,10 @@ class TestFlags(unittest.TestCase):
                 self.assertEqual(loaded.duration_outlier, state)
                 self.assertEqual(loaded.is_duration_outlier,
                     state in ('short', 'long'))
+                self.assertEqual(loaded.timing_uncertain, bool(expected & 4))
+                self.assertEqual(loaded.shared_phone, bool(expected & 8))
+                self.assertEqual(loaded.missing_shared_phone,
+                    bool(expected & 16))
 
     def test_duration_states_preserve_other_bits(self):
         for obj in self.objects[2:]:
@@ -102,6 +106,75 @@ class TestFlags(unittest.TestCase):
         phone.duration_outlier = 'short'
         phone.save()
         self._assert_persisted_flags([phone], 0b10100101)
+
+    def test_boolean_flags_preserve_duration_and_unallocated_bits(self):
+        phone = self.objects[5]
+        phone.flags = 0b11100010
+        phone.timing_uncertain = True
+        phone.shared_phone = True
+        phone.missing_shared_phone = True
+        self.assertEqual(phone.flags, 0b11111110)
+        self.assertEqual(phone.duration_outlier, 'long')
+        phone.timing_uncertain = False
+        self.assertFalse(phone.timing_uncertain)
+        self.assertTrue(phone.shared_phone)
+        self.assertTrue(phone.missing_shared_phone)
+        phone.shared_phone = False
+        phone.missing_shared_phone = False
+        self.assertEqual(phone.flags, 0b11100010)
+
+    def test_boolean_flags_default_false_and_require_booleans(self):
+        phone = self.objects[5]
+        names = ('timing_uncertain', 'shared_phone', 'missing_shared_phone')
+        for name in names:
+            self.assertFalse(getattr(phone, name))
+            for invalid in (0, 1, 'yes', None):
+                with self.subTest(flag=name, invalid=invalid):
+                    with self.assertRaises(ValueError):
+                        setattr(phone, name, invalid)
+                    self.assertEqual(phone.flags, 0)
+
+    def test_shared_phone_and_missing_links_are_independent(self):
+        phrase, word, syllable, phone = self.objects[2:6]
+        phone.shared_phone = True
+        self.assertFalse(phone.timing_uncertain)
+        self.assertFalse(word.missing_shared_phone)
+        self.assertFalse(syllable.missing_shared_phone)
+        word.missing_shared_phone = True
+        syllable.missing_shared_phone = True
+        phone.timing_uncertain = True
+        syllable.timing_uncertain = True
+        self.assertFalse(word.timing_uncertain)
+        self.assertFalse(phrase.timing_uncertain)
+        self.assertFalse(phrase.missing_shared_phone)
+        self.assertEqual(phone.parent_key, syllable.key)
+        self.assertEqual(syllable.parent_key, word.key)
+        for obj in (word, syllable, phone):
+            self.assertEqual(obj.duration_outlier, 'unset')
+
+    def test_boolean_properties_require_save_and_survive_reload(self):
+        word, syllable, phone = self.objects[3:6]
+        self.store.save_many(self.objects[:6])
+        phone.shared_phone = True
+        phone.timing_uncertain = True
+        phone.duration_outlier = 'short'
+        word.missing_shared_phone = True
+        syllable.missing_shared_phone = True
+        syllable.timing_uncertain = True
+        raw = self.store.DB.load(phone.key)
+        self.assertEqual(struct_value.unpack_phone(raw)['flags'], 0)
+        self.store.save_many([word, syllable, phone], overwrite=True)
+        self._assert_persisted_flags([word], 0b00010000)
+        self._assert_persisted_flags([syllable], 0b00010100)
+        self._assert_persisted_flags([phone], 0b00001101)
+        loaded_phone = self.store.load(phone.key)
+        self.assertTrue(loaded_phone.shared_phone)
+        self.assertTrue(loaded_phone.timing_uncertain)
+        self.assertFalse(loaded_phone.missing_shared_phone)
+        for obj in (word, syllable):
+            loaded = self.store.load(obj.key)
+            self.assertTrue(loaded.missing_shared_phone)
+            self.assertFalse(loaded.shared_phone)
 
     def test_defaults_and_objects_without_flags_remain_compatible(self):
         for obj in self.objects:

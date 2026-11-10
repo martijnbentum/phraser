@@ -412,6 +412,33 @@ class Segment:
         return segment_flags.is_duration_outlier(self)
 
     @property
+    def timing_uncertain(self):
+        '''Recorded timing concern; False does not mean timing was verified.'''
+        return segment_flags.get_timing_uncertain(self)
+
+    @timing_uncertain.setter
+    def timing_uncertain(self, value):
+        segment_flags.set_timing_uncertain(self, value)
+
+    @property
+    def shared_phone(self):
+        '''For phones: recorded sharing across words, without extra links.'''
+        return segment_flags.get_shared_phone(self)
+
+    @shared_phone.setter
+    def shared_phone(self, value):
+        segment_flags.set_shared_phone(self, value)
+
+    @property
+    def missing_shared_phone(self):
+        '''For words/syllables: a known shared phone is absent from links.'''
+        return segment_flags.get_missing_shared_phone(self)
+
+    @missing_shared_phone.setter
+    def missing_shared_phone(self, value):
+        segment_flags.set_missing_shared_phone(self, value)
+
+    @property
     def overlap(self):
         '''Whether this span intersects another speaker's non-silence word.
 

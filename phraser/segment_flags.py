@@ -1,7 +1,48 @@
-'''Read and update assessment states in the existing segment flags byte.'''
+'''Read and update independent states in the existing segment flags byte.'''
 
 DURATION_OUTLIER_MASK = 0b11
 DURATION_OUTLIER_STATES = ('unset', 'short', 'long', 'within_range')
+TIMING_UNCERTAIN_MASK = 0b00000100
+SHARED_PHONE_MASK = 0b00001000
+MISSING_SHARED_PHONE_MASK = 0b00010000
+
+
+def _set_boolean_flag(segment, mask, value):
+    '''Update one boolean flag without changing other bits or saving.'''
+    if type(value) is not bool:
+        raise ValueError(f'Flag value must be a bool: {value!r}')
+    if value: segment.flags |= mask
+    else: segment.flags &= ~mask
+
+
+def get_timing_uncertain(segment):
+    '''Whether a concern about this segment's timing has been recorded.'''
+    return bool(segment.flags & TIMING_UNCERTAIN_MASK)
+
+
+def set_timing_uncertain(segment, value):
+    '''Record or clear a timing concern on this segment alone.'''
+    _set_boolean_flag(segment, TIMING_UNCERTAIN_MASK, value)
+
+
+def get_shared_phone(segment):
+    '''Whether this phone is recorded as shared across words.'''
+    return bool(segment.flags & SHARED_PHONE_MASK)
+
+
+def set_shared_phone(segment, value):
+    '''Record or clear phone sharing without changing parent links.'''
+    _set_boolean_flag(segment, SHARED_PHONE_MASK, value)
+
+
+def get_missing_shared_phone(segment):
+    '''Whether a word or syllable is missing a linked shared phone.'''
+    return bool(segment.flags & MISSING_SHARED_PHONE_MASK)
+
+
+def set_missing_shared_phone(segment, value):
+    '''Record or clear a missing shared-phone link on this object alone.'''
+    _set_boolean_flag(segment, MISSING_SHARED_PHONE_MASK, value)
 
 
 def get_duration_outlier_code(segment):

@@ -241,6 +241,44 @@ corpus-level recording bar. LMDB retains its existing segment-batch progress
 display. Equal-sized segment bars are the main segment rows followed by their
 label-index entries; small bars usually represent newly saved speakers.
 
+### Timing and shared-phone flags
+
+Segments expose three independent boolean properties:
+
+| Property | Intended objects | Meaning when set |
+| --- | --- | --- |
+| `timing_uncertain` | Any segment with a timing concern | A known concern about this object's timing, including a boundary inferred without acoustic verification |
+| `shared_phone` | Phone | The source identifies this phone as shared across words |
+| `missing_shared_phone` | Word or Syllable | A source-confirmed shared phone is missing from this object's linked phones |
+
+False means no concern or sharing information has been recorded for that
+flag; it does not mean the annotation was verified. Sharing alone does not
+imply uncertain timing. These properties describe each object's own state:
+setting one does not set flags on parents, children, or neighboring words.
+
+```python
+phone.shared_phone = True
+word.missing_shared_phone = True
+syllable.missing_shared_phone = True
+
+# If this phone's boundary was inferred during a repair:
+phone.timing_uncertain = True
+syllable.timing_uncertain = True
+
+store.save_many([phone, word, syllable], overwrite=True)
+```
+
+Assignments accept only `True` or `False` and modify memory until explicitly
+saved. Flags do not change timing, parent links, `.phones` results, or audit
+rules. In particular, `missing_shared_phone` records a known relationship
+gap; it does not retrieve or attach the shared phone. Importers do not set
+these flags automatically.
+
+The existing flags byte stores duration assessments in bits 0–1,
+`timing_uncertain` in bit 2, `shared_phone` in bit 3, and
+`missing_shared_phone` in bit 4. Setters preserve every unrelated bit.
+Existing zero-valued flags read False, and the binary layout is unchanged.
+
 ### Speech overlap
 
 `segment.overlap` is true when the segment's time span intersects a
