@@ -370,7 +370,7 @@ def _add_syllables(word, phones, report, context):
         error_text = str(error)
         report.record(kind, error=error_text, word=word.label, **context)
     for group in groups:
-        label = ''.join(x.label for x in group)
+        label = syllable_structure.syllable_label(group)
         start = min(x.start for x in group)
         end = max(x.end for x in group)
         syllable = models.Syllable(label=label, start=start, end=end,

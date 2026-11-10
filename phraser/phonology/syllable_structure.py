@@ -1,5 +1,10 @@
 from .phone_types import PHONE_TYPES
 
+def syllable_label(phones):
+    '''The label of a syllable holding these phones: their labels joined by
+    spaces, which keeps multi-character phones (ɛi, eː) unambiguous.'''
+    return ' '.join(phone.label for phone in phones)
+
 def assign_phone_positions(target, phone_types=None, update_database=True):
     '''Assign onset/nucleus/coda to every phone under `target`.
 

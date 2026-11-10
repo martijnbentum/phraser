@@ -15,13 +15,16 @@ removed explicitly; save() only adds the entry for the new label. Because the
 full main key (with the unique identifier) is appended, removing one syllable's
 entry never touches another syllable that happens to share the same label.
 '''
+from phraser.phonology.syllable_structure import syllable_label
+
+
 def syllable_label_from_phones(syllable):
     '''Ground-truth label for a syllable: its phone children joined in order.
 
     syllable.phones is time-ordered, so this is the label the syllable should
     carry for its current phone grouping.
     '''
-    return ' '.join(phone.label for phone in syllable.phones)
+    return syllable_label(syllable.phones)
 
 
 def has_label_phones_mismatch(syllable):

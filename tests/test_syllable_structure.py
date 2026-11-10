@@ -8,6 +8,17 @@ def make_phone(label):
     return types.SimpleNamespace(label=label)
 
 
+class TestSyllableLabel(unittest.TestCase):
+    def test_space_separated(self):
+        phones = [make_phone(label) for label in ('p', 'r', 'ɪ', 'l')]
+        self.assertEqual(m.syllable_label(phones), 'p r ɪ l')
+
+    def test_multi_character_phones_stay_distinct(self):
+        diphthong = m.syllable_label([make_phone('ɛi')])
+        two_vowels = m.syllable_label([make_phone('ɛ'), make_phone('i')])
+        self.assertNotEqual(diphthong, two_vowels)
+
+
 class TestCheckConsecutiveNumbers(unittest.TestCase):
     def test_empty(self):
         self.assertTrue(m.check_consecutive_numbers([]))

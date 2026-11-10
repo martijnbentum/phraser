@@ -265,7 +265,7 @@ def _set_syllable_phones(syllable, phones):
     re-derived from them, every other field is kept, and onset/nucleus/coda
     are reassigned. The stale loaded `_key` is dropped so the key recomputes
     from the new start.'''
-    syllable.label = ' '.join(p.label for p in phones)
+    syllable.label = syllable_structure.syllable_label(phones)
     syllable.start = min(p.start for p in phones)
     syllable.end = max(p.end for p in phones)
     if hasattr(syllable, '_key'):
@@ -381,9 +381,10 @@ def _build_syllable(group, source):
     '''New Syllable around a phone group, positions assigned. With a source
     (its one-to-one old syllable) it takes that id and metadata; otherwise
     its id is hashed from the group. Not yet wired to a word.'''
-    syllable = models.Syllable(label=' '.join(p.label for p in group),
-        start=min(p.start for p in group), end=max(p.end for p in group),
-        audio_id=group[0].audio_id, speaker_id=group[0].speaker_id)
+    label = syllable_structure.syllable_label(group)
+    syllable = models.Syllable(label=label, start=min(p.start for p in group),
+        end=max(p.end for p in group), audio_id=group[0].audio_id,
+        speaker_id=group[0].speaker_id)
     if source is None: syllable.identifier = _derived_id('Syllable', group)
     else:
         syllable.identifier = source.identifier
