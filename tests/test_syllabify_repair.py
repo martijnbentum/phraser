@@ -1,28 +1,29 @@
 '''Real-store tests for the repair family (phraser.phonology.syllabify).
 
-The rewrite builds a fresh-id COPY of each old syllable on its new phone group
-and deletes the old rows, rather than retiming syllables in place. So the things
+A repair updates each syllable in place on its new phone group (same object,
+same id); saving with save_phrase_trees(overwrite=True) replaces the stored
+rows, including any whose key changed with the syllable's start. So the things
 under test are:
 
 #1  a repair saved with save_phrase_trees(overwrite=True) persists the new
-    boundaries and leaves exactly the new syllables on disk -- no orphan row
-    survives (the original leftover bug, where a moved syllable's old key was
-    never deleted).
+    boundaries and leaves exactly the repaired syllables on disk -- no orphan
+    row survives (the original leftover bug, where a moved syllable's old key
+    was never deleted).
 #2  after persisting, the two membership views agree: the time-scan
     (syllable.phones) and the stored parent pointer (phone.parent) put every
     phone -- including the one moved across the boundary -- in the same syllable.
 #3  without saving, the same two views already agree in memory, with nothing
     written to disk: the navigation caches (_children / _parent) are pointed at
     the new grouping.
-#4  each new syllable is relabelled from its phones, so .label stays in sync; on
+#4  each syllable is relabelled from its phones, so .label stays in sync; on
     a persisted run the label index is swapped (old label gone, new one resolves).
 #5  repair_word_syllables returns a RepairOutcome describing what it saw and
     did (applied / ok / count_mismatch) across correct, rewritten, unanalysable
     and count-mismatch words.
 #6  apply_new_syllable_boundaries guards its invariants for direct callers: it
     raises on a syllable-count mismatch and on a multi-speaker word.
-#7  because new syllables are copies, persisted per-syllable metadata
-    (stress_code) carries over unchanged.
+#7  because syllables are updated in place, per-syllable metadata
+    (stress_code) is kept, and so are the syllable ids.
 
 The main test word is "april": ɑ p r ɪ l, given (wrong) as  ɑp | rɪl, which the
 Maximal Onset Principle re-segments to  ɑ | p r ɪ l (the p moves to the onset of
@@ -97,8 +98,8 @@ class TestRepairPersistence(unittest.TestCase):
             self.store = Store(path=self._tmpdir)
             word = build_word(self.store)
             self.word_key = word.key
-            # ids of the originals, captured before the rewrite replaces them
-            self.old_syllable_ids = {s.identifier for s in word.syllables}
+            # ids of the originals, which the repair must keep
+            self.old_syllable_ids = [s.identifier for s in word.syllables]
             # given boundaries differ from maximal onset -> repair + persist
             self.outcome = repair_word_syllables(word)
             self.store.save_phrase_trees([word.phrase], overwrite=True)
@@ -126,11 +127,11 @@ class TestRepairPersistence(unittest.TestCase):
         self.assertEqual([s.start for s in self.syllables], [0, 100])
         self.assertEqual([s.end for s in self.syllables], [100, 500])
 
-    def test_new_syllables_have_fresh_ids_no_orphans(self):
-        # new syllables are fresh-id copies, and none of the old rows survive:
-        # the surviving ids are disjoint from the originals' ids
-        new_ids = {s.identifier for s in self.syllables}
-        self.assertEqual(new_ids & self.old_syllable_ids, set())
+    def test_syllables_keep_ids_no_orphans(self):
+        # same ids as before the repair, and exactly one row per syllable
+        # (the moved second syllable's old-start row was removed)
+        ids = [s.identifier for s in self.syllables]
+        self.assertEqual(ids, self.old_syllable_ids)
 
     def test_persisted_membership(self):
         labels = [[p.label for p in s.phones] for s in self.syllables]
@@ -282,7 +283,7 @@ class TestRepairOutcome(unittest.TestCase):
 
 
 class TestApplyGuards(unittest.TestCase):
-    '''#6: apply_new_syllable_boundaries protects its 1:1 copy invariant for
+    '''#6: apply_new_syllable_boundaries protects its 1:1 invariant for
     direct callers, independently of repair_word_syllables's soft skip.'''
 
     def setUp(self):
@@ -310,8 +311,8 @@ class TestApplyGuards(unittest.TestCase):
 
 
 class TestMetadataCarryOver(unittest.TestCase):
-    '''#7: new syllables are copies, so persisted per-syllable metadata rides
-    along.'''
+    '''#7: syllables are updated in place, so per-syllable metadata is
+    kept.'''
 
     def setUp(self):
         self._tmpdir = tempfile.mkdtemp()
@@ -330,7 +331,7 @@ class TestMetadataCarryOver(unittest.TestCase):
             syllable.stress_code = 10 + i
         repair_word_syllables(self.word)
         new = sorted(self.word.syllables, key=lambda s: s.start)
-        # new[i] is a copy of old[i] (same nucleus), so its metadata is carried
+        # syllable i is the same object with new boundaries: metadata kept
         self.assertEqual([s.stress_code for s in new], [10, 11])
 
 

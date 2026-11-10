@@ -8,8 +8,8 @@ split point in the phone sequence (ɑ p | r ɪ l -> ɑ | p r ɪ l moves p to the
 second syllable); its time is wherever the phones put it.
 
 repair_*   keep the existing syllables and reassign phones between them
-           (same count, syllable metadata kept, new ids); skipped if the
-           regrouping would change the syllable count
+           (same count, same syllable objects and ids, metadata kept);
+           skipped if the regrouping would change the syllable count
 rebuild_*  discard the existing layer(s) and build fresh objects around the
            regrouped phones (counts and spans may change)
 
@@ -29,11 +29,9 @@ in one transaction; batch the phrases of a corpus run into one call.
 rebuild_phrases_from_phones cannot be persisted this way: its phrases are
 new objects, so the old phrases would stay on disk.
 '''
-import copy
 from dataclasses import dataclass
 
 from .. import models
-from ..storage import key_helper
 from .syllable_structure import assign_syllable_positions_to_phones
 
 
@@ -70,7 +68,7 @@ def repair_word_syllables(word, phone_types=None):
     whether the new boundaries were applied.
 
     The new boundaries are applied only when the word is analysable, its
-    current split is wrong, and the syllable count is preserved (the 1:1 copy
+    current split is wrong, and the syllable count is preserved (the 1:1
     invariant). A count change is reported via outcome.count_mismatch and left
     unapplied rather than raising.
     '''
@@ -93,27 +91,25 @@ def apply_new_syllable_boundaries(word, phone_groups, phone_types=None):
 
     Each phone is reassigned to the syllable of its group, and each syllable
     is re-spanned to its phones. Moving phones between onset and coda never
-    adds or drops a nucleus, so the count is invariant and new[i] is old[i]'s
-    nucleus with new boundaries. Each new syllable is a COPY of its old one
-    (carrying persisted metadata and speaker links unchanged) under a fresh
-    id, and the word's children are replaced by them. In memory only; see
-    the module docstring for persisting.
-    Returns the new syllables. Raises ValueError on a multi-speaker word or a
-    count mismatch.
+    adds or drops a nucleus, so the count is invariant and syllable i keeps
+    its nucleus with new boundaries. The syllables are updated in place: same
+    objects and ids, metadata and speaker links unchanged. A syllable whose
+    start moves gets a new key; save_phrase_trees(overwrite=True) removes
+    the old row. In memory only; see the module docstring for persisting.
+    Returns the word's syllables. Raises ValueError on a multi-speaker word or
+    a count mismatch.
     '''
     _assert_single_speaker(word)
-    old_syllables = word.syllables
-    if len(old_syllables) != len(phone_groups):
+    syllables = word.syllables
+    if len(syllables) != len(phone_groups):
         message = 'new boundaries must preserve the syllable count: '
-        message += f'{len(old_syllables)} syllables vs '
+        message += f'{len(syllables)} syllables vs '
         message += f'{len(phone_groups)} groups'
         raise ValueError(message)
-    new_syllables = []
-    for old_syllable, phones in zip(old_syllables, phone_groups):
-        syllable = _rebuild_syllable(old_syllable, phones, phone_types)
-        new_syllables.append(syllable)
-    word.replace_children(new_syllables)
-    return new_syllables
+    for syllable, phones in zip(syllables, phone_groups):
+        _apply_phone_group(syllable, phones, phone_types)
+    word.replace_children(syllables)
+    return syllables
 
 
 # ------------------------------- rebuild --------------------------------
@@ -254,14 +250,11 @@ def _assert_single_speaker(word):
             f'found {len(speaker_ids)} speaker ids')
 
 
-def _rebuild_syllable(old_syllable, phones, phone_types):
-    '''Copy old_syllable onto `phones`: a fresh-id clone carrying every field
-    unchanged except label/start/end, with those phones linked to it and
-    onset/nucleus/coda reassigned. The stale loaded `_key` is dropped so the new
-    key recomputes from the new id and start. replace_children also drops the
-    child caches the shallow copy shares with old_syllable.'''
-    syllable = copy.copy(old_syllable)
-    syllable.identifier = key_helper.make_identifier()
+def _apply_phone_group(syllable, phones, phone_types):
+    '''Make `phones` the syllable's children, in place: label/start/end are
+    re-derived from them, every other field is kept, and onset/nucleus/coda
+    are reassigned. The stale loaded `_key` is dropped so the key recomputes
+    from the new start.'''
     syllable.label = ' '.join(p.label for p in phones)
     syllable.start = min(p.start for p in phones)
     syllable.end = max(p.end for p in phones)
