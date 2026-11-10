@@ -541,7 +541,8 @@ def _split_runs(phones, max_pause):
     runs, run = [], []
     for p in phones:
         if run and p.start - run[-1].end >= max_pause:
-            runs.append(run); run = []
+            runs.append(run)
+            run = []
         run.append(p)
     if run: runs.append(run)
     return runs
@@ -554,5 +555,6 @@ def _words_in_order(run, phone_word):
     for p in run:
         w = phone_word[p.identifier]
         if w.identifier not in seen:
-            seen.add(w.identifier); words.append(w)
+            seen.add(w.identifier)
+            words.append(w)
     return words

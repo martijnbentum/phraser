@@ -39,8 +39,7 @@ from contextlib import redirect_stdout
 from phraser import Store
 from phraser import textgrid_loader as tgl
 from phraser.models import Audio, Phone, Phrase, Syllable, Word
-from phraser.phonology.syllabify import (apply_new_syllable_boundaries,
-    repair_word_syllables)
+from phraser.phonology import syllabify
 
 
 # given segmentation: syllable [start, end] -> phones it should hold by time
@@ -101,7 +100,7 @@ class TestRepairPersistence(unittest.TestCase):
             # ids of the originals, which the repair must keep
             self.old_syllable_ids = [s.identifier for s in word.syllables]
             # given boundaries differ from maximal onset -> repair + persist
-            self.outcome = repair_word_syllables(word)
+            self.outcome = syllabify.repair_word_syllables(word)
             self.store.save_phrase_trees([word.phrase], overwrite=True)
             # drop every cache and re-read from disk for a true persistence view
             self.store.close()
@@ -179,7 +178,7 @@ class TestRepairInMemory(unittest.TestCase):
             self.word_key = self.word.key
             # rewrite boundaries in memory only -- no write, no reopen, so the
             # live object graph (and its caches) is what we assert against
-            self.outcome = repair_word_syllables(self.word)
+            self.outcome = syllabify.repair_word_syllables(self.word)
             self.syllables = sorted(self.word.syllables, key=lambda s: s.start)
 
     def tearDown(self):
@@ -255,7 +254,7 @@ class TestRepairOutcome(unittest.TestCase):
     def _repair(self, **build_kwargs):
         with redirect_stdout(io.StringIO()):
             word = build_word(self.store, **build_kwargs)
-            return word, repair_word_syllables(word)
+            return word, syllabify.repair_word_syllables(word)
 
     def test_already_correct_not_applied_but_ok(self):
         word, outcome = self._repair(syllable_spec=CORRECT_SYLLABLES)
@@ -299,15 +298,16 @@ class TestApplyGuards(unittest.TestCase):
 
     def test_count_mismatch_raises(self):
         # two syllables, one group -> a count mismatch a direct caller must hear
+        groups = [self.word.phones]
         with self.assertRaises(ValueError):
-            apply_new_syllable_boundaries(self.word, [self.word.phones])
+            syllabify.apply_new_syllable_boundaries(self.word, groups)
 
     def test_multi_speaker_raises(self):
         # tamper one phone's speaker so the word is no longer single-speaker
         groups = [s.phones for s in self.word.syllables]
         groups[0][0].speaker_id = b'\x01\x02\x03\x04\x05\x06\x07\x08'
         with self.assertRaises(ValueError):
-            apply_new_syllable_boundaries(self.word, groups)
+            syllabify.apply_new_syllable_boundaries(self.word, groups)
 
 
 class TestMetadataCarryOver(unittest.TestCase):
@@ -329,7 +329,7 @@ class TestMetadataCarryOver(unittest.TestCase):
         old = sorted(self.word.syllables, key=lambda s: s.start)
         for i, syllable in enumerate(old):
             syllable.stress_code = 10 + i
-        repair_word_syllables(self.word)
+        syllabify.repair_word_syllables(self.word)
         new = sorted(self.word.syllables, key=lambda s: s.start)
         # syllable i is the same object with new boundaries: metadata kept
         self.assertEqual([s.stress_code for s in new], [10, 11])

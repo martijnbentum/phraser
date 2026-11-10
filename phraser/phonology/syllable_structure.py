@@ -1,9 +1,11 @@
 from .phone_types import PHONE_TYPES
 
+
 def syllable_label(phones):
     '''The label of a syllable holding these phones: their labels joined by
     spaces, which keeps multi-character phones (ɛi, eː) unambiguous.'''
     return ' '.join(phone.label for phone in phones)
+
 
 def assign_phone_positions(target, phone_types=None, update_database=True):
     '''Assign onset/nucleus/coda to every phone under `target`.
@@ -30,6 +32,7 @@ def assign_phone_positions(target, phone_types=None, update_database=True):
         phones_to_save[0].store.save_many(phones_to_save, overwrite=True)
     return target
 
+
 def _object_to_syllables(target):
     '''Flatten a syllable / word / phrase, or a list of them, to syllables.'''
     items = target if isinstance(target, (list, tuple)) else [target]
@@ -40,6 +43,7 @@ def _object_to_syllables(target):
         else:                          # Word or Phrase
             syllables.extend(item.syllables)
     return syllables
+
 
 def assign_syllable_positions_to_phones(phones, phone_types=None):
     '''Assign onset/nucleus/coda to an ordered list of phones from ONE syllable,
@@ -53,12 +57,13 @@ def assign_syllable_positions_to_phones(phones, phone_types=None):
         elif i < vowel_indices[0]: phone.position = 'onset'
         elif i > vowel_indices[-1]: phone.position = 'coda'
 
+
 def phones_to_vowel_indices(phones, phone_types=None):
     '''Return the indices of vowel phones in the list.
-    Raises ValueError if a label is missing from phone_types or vowels are not 
+    Raises ValueError if a label is missing from phone_types or vowels are not
     consecutive.'''
     pt = phone_types or PHONE_TYPES
-    vowel_indices = [] 
+    vowel_indices = []
     for i, p in enumerate(phones):
         if p.label not in pt:
             raise ValueError(f'Phone label {p.label} not found in phone types')
@@ -68,9 +73,9 @@ def phones_to_vowel_indices(phones, phone_types=None):
         raise ValueError(f'Vowel indices {vowel_indices} are not consecutive')
     return vowel_indices
 
+
 def check_consecutive_numbers(numbers):
     '''Return True if all numbers form a consecutive sequence with no gaps.'''
     for i in range(len(numbers) - 1):
-        if numbers[i] + 1 != numbers[i + 1]:
-            return False
+        if numbers[i] + 1 != numbers[i + 1]: return False
     return True

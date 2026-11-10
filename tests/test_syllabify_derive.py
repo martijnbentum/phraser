@@ -23,9 +23,7 @@ from phraser import Store
 from phraser import textgrid_loader as tgl
 from phraser.errors import UnboundStoreError
 from phraser.models import Audio, Phone, Phrase, Speaker, Syllable, Word
-from phraser.phonology.syllabify import (derive_phrases_for_phones,
-    derive_syllables_for_word, derive_words_and_syllables_for_phrase,
-    repair_word_syllables)
+from phraser.phonology import syllabify
 
 
 def build_phrase(store, phones, words, syls, filename='x.TextGrid'):
@@ -131,7 +129,7 @@ class TestDeriveSyllablesForWord(StoreTestCase):
         self.word = words[0]
         for i, syllable in enumerate(self.syls):
             syllable.stress_code = 10 + i
-        self.derived = derive_syllables_for_word(self.word)
+        self.derived = syllabify.derive_syllables_for_word(self.word)
 
     def test_new_syllables(self):
         self.assertEqual(labels_per_syllable(self.derived),
@@ -165,7 +163,7 @@ class TestDeriveSyllablesForWord(StoreTestCase):
         _, words, _, _ = self.build([('s', 0, 100), ('t', 100, 200)],
             [('st', 0, 200)], [(0, 200)])
         with self.assertRaises(ValueError) as caught:
-            derive_syllables_for_word(words[0])
+            syllabify.derive_syllables_for_word(words[0])
         message = str(caught.exception)
         self.assertIn("word 'st' (0-200 ms)", message)
         self.assertIn('no vowel nucleus', message)
@@ -179,8 +177,8 @@ class TestDerivedIds(StoreTestCase):
         # one donor syllable ɑprɪl -> ɑ | prɪl: both nuclei come from it
         _, words, syls, _ = self.build(APRIL_PHONES, [('april', 0, 500)],
             [(0, 500)])
-        first = derive_syllables_for_word(words[0])
-        second = derive_syllables_for_word(words[0])
+        first = syllabify.derive_syllables_for_word(words[0])
+        second = syllabify.derive_syllables_for_word(words[0])
         ids = [s.identifier for s in first.syllables]
         self.assertEqual(len(set(ids)), 2)
         self.assertNotIn(syls[0].identifier, ids)
@@ -189,14 +187,14 @@ class TestDerivedIds(StoreTestCase):
     def test_unchanged_phrase_keeps_id(self):
         phrase, _, _, phones = self.build(MANZEE_PHONES, MANZEE_WORDS,
             MANZEE_SYLS)
-        derived = derive_phrases_for_phones(phones, max_pause=2000)
+        derived = syllabify.derive_phrases_for_phones(phones, max_pause=2000)
         self.assertEqual(derived[0].identifier, phrase.identifier)
 
     def test_split_phrase_gets_new_deterministic_ids(self):
         phrase, _, _, phones = self.build(MANZEE_PHONES, MANZEE_WORDS,
             MANZEE_SYLS)
-        first = derive_phrases_for_phones(phones, max_pause=500)
-        second = derive_phrases_for_phones(phones, max_pause=500)
+        first = syllabify.derive_phrases_for_phones(phones, max_pause=500)
+        second = syllabify.derive_phrases_for_phones(phones, max_pause=500)
         ids = [p.identifier for p in first]
         self.assertNotIn(phrase.identifier, ids)
         self.assertEqual(ids, [p.identifier for p in second])
@@ -205,7 +203,7 @@ class TestDerivedIds(StoreTestCase):
         _, words, _, phones = self.build(
             [('m', 0, 100), ('ɑ', 100, 200), ('m', 900, 1000),
             ('ɑ', 1000, 1100)], [('mama', 0, 1100)], [(0, 200), (900, 1100)])
-        derived = derive_phrases_for_phones(phones, max_pause=500)
+        derived = syllabify.derive_phrases_for_phones(phones, max_pause=500)
         ids = [p.words[0].identifier for p in derived]
         self.assertEqual(len(set(ids)), 2)
         self.assertNotIn(words[0].identifier, ids)
@@ -216,7 +214,8 @@ class TestDeriveWordsAndSyllablesForPhrase(StoreTestCase):
         super().setUp()
         self.phrase, self.words, _, _ = self.build(HETEI_PHONES, HETEI_WORDS,
             HETEI_SYLS)
-        self.derived = derive_words_and_syllables_for_phrase(self.phrase)
+        self.derived = syllabify.derive_words_and_syllables_for_phrase(
+            self.phrase)
         self.by_label = {w.label: w for w in self.derived.words}
 
     def test_t_migrated_to_ei(self):
@@ -252,7 +251,7 @@ class TestDeriveWordsAndSyllablesForPhrase(StoreTestCase):
         # 'het' fully reduced to /t/, loses it to 'ei' -> empty zero-width word
         phrase, _, _, _ = self.build([('t', 0, 120), ('ɛi', 120, 500)],
             [('het', 0, 120), ('ei', 120, 500)], [(0, 120), (120, 500)])
-        derived = derive_words_and_syllables_for_phrase(phrase)
+        derived = syllabify.derive_words_and_syllables_for_phrase(phrase)
         het, ei = derived.words
         self.assertEqual(het.syllables, [])
         self.assertEqual((het.start, het.end), (0, 0))
@@ -266,30 +265,35 @@ class TestDerivePhrasesForPhones(StoreTestCase):
             MANZEE_WORDS, MANZEE_SYLS)
 
     def test_pause_splits_into_two_phrases(self):
-        first, second = derive_phrases_for_phones(self.phones, max_pause=500)
+        first, second = syllabify.derive_phrases_for_phones(self.phones,
+            max_pause=500)
         self.assertEqual((first.start, first.end), (0, 300))
         self.assertEqual((second.start, second.end), (1000, 1300))
         self.assertEqual(labels_per_syllable(first), [['m', 'ɑ', 'n']])
         self.assertEqual(labels_per_syllable(second), [['z', 'eː']])
 
     def test_full_chain_consistent(self):
-        for phrase in derive_phrases_for_phones(self.phones, max_pause=500):
+        derived = syllabify.derive_phrases_for_phones(self.phones,
+            max_pause=500)
+        for phrase in derived:
             for word in phrase.words:
                 self.assertIs(word.parent, phrase)
                 self.assertTrue(views_agree(word))
 
     def test_large_pause_threshold_keeps_one_phrase(self):
         # 700ms gap < 2000: one phrase
-        derived = derive_phrases_for_phones(self.phones, max_pause=2000)
+        derived = syllabify.derive_phrases_for_phones(self.phones,
+            max_pause=2000)
         self.assertEqual(len(derived), 1)
         self.assertEqual(len(derived[0].words), 2)
 
     def test_accepts_segment_with_phones(self):
-        derived = derive_phrases_for_phones(self.phrase, max_pause=500)
+        derived = syllabify.derive_phrases_for_phones(self.phrase,
+            max_pause=500)
         self.assertEqual(len(derived), 2)
 
     def test_donor_untouched(self):
-        derive_phrases_for_phones(self.phones, max_pause=500)
+        syllabify.derive_phrases_for_phones(self.phones, max_pause=500)
         self.assertEqual([p.phrase_id for p in self.phones],
             [self.phrase.identifier] * 5)
         self.assertEqual(len(self.phrase.words), 2)
@@ -297,15 +301,15 @@ class TestDerivePhrasesForPhones(StoreTestCase):
     def test_multiple_speakers_raise(self):
         self.phones[0].speaker_id = b'\x01' * 8
         with self.assertRaises(ValueError):
-            derive_phrases_for_phones(self.phones)
+            syllabify.derive_phrases_for_phones(self.phones)
 
     def test_multiple_audio_raise(self):
         self.phones[0].audio_id = b'\x02' * 8
         with self.assertRaises(ValueError):
-            derive_phrases_for_phones(self.phones)
+            syllabify.derive_phrases_for_phones(self.phones)
 
     def test_empty_input_returns_no_phrases(self):
-        self.assertEqual(derive_phrases_for_phones([]), [])
+        self.assertEqual(syllabify.derive_phrases_for_phones([]), [])
 
     def test_unsyllabifiable_run_raises_with_time_range(self):
         phones = self.build([('ɑ', 2000, 2100), ('p', 2100, 2200),
@@ -313,7 +317,7 @@ class TestDerivePhrasesForPhones(StoreTestCase):
             [('ap', 2000, 2200), ('st', 3200, 3400)],
             [(2000, 2200), (3200, 3400)])[3]
         with self.assertRaises(ValueError) as caught:
-            derive_phrases_for_phones(phones, max_pause=500)
+            syllabify.derive_phrases_for_phones(phones, max_pause=500)
         self.assertIn('phones 3200-3400 ms', str(caught.exception))
 
 
@@ -326,14 +330,14 @@ class TestDeriveToTargetStore(StoreTestCase):
 
     def test_donor_store_refused(self):
         with self.assertRaises(ValueError):
-            derive_phrases_for_phones(self.phones, store=self.store)
+            syllabify.derive_phrases_for_phones(self.phones, store=self.store)
         self.assertEqual(len(self.store.DB.all_keys()), self.donor_rows)
 
     def test_saved_and_reloaded_from_target(self):
         target = self.target_store()
         with redirect_stdout(io.StringIO()):
-            derived = derive_phrases_for_phones(self.phones, max_pause=500,
-                store=target)
+            derived = syllabify.derive_phrases_for_phones(self.phones,
+                max_pause=500, store=target)
             keys = [p.key for p in derived]
             target.close()
             target.open()
@@ -348,19 +352,22 @@ class TestDeriveToTargetStore(StoreTestCase):
     def test_rerun_overwrites(self):
         target = self.target_store()
         with redirect_stdout(io.StringIO()):
-            derive_phrases_for_phones(self.phones, max_pause=500, store=target)
+            syllabify.derive_phrases_for_phones(self.phones, max_pause=500,
+                store=target)
             rows = len(target.DB.all_keys())
-            derive_phrases_for_phones(self.phones, max_pause=500, store=target)
+            syllabify.derive_phrases_for_phones(self.phones, max_pause=500,
+                store=target)
         self.assertEqual(len(target.DB.all_keys()), rows)
 
     def test_donor_store_unchanged(self):
         target = self.target_store()
         with redirect_stdout(io.StringIO()):
-            derive_words_and_syllables_for_phrase(self.phrase, store=target)
+            syllabify.derive_words_and_syllables_for_phrase(self.phrase,
+                store=target)
         self.assertEqual(len(self.store.DB.all_keys()), self.donor_rows)
 
     def test_in_memory_result_cannot_be_saved(self):
-        derived = derive_words_and_syllables_for_phrase(self.phrase)
+        derived = syllabify.derive_words_and_syllables_for_phrase(self.phrase)
         self.assertEqual(derived.audio.filename, 'x.wav')
         with self.assertRaises(UnboundStoreError):
             derived.save()
@@ -370,14 +377,13 @@ class TestLanguage(StoreTestCase):
     def test_other_languages_not_implemented(self):
         phrase, words, _, phones = self.build(APRIL_PHONES,
             [('april', 0, 500)], APRIL_SYLS)
-        calls = [lambda: derive_syllables_for_word(words[0], language='en'),
-            lambda: derive_words_and_syllables_for_phrase(phrase,
-                language='en'),
-            lambda: derive_phrases_for_phones(phones, language='en'),
-            lambda: repair_word_syllables(words[0], language='en')]
-        for call in calls:
+        calls = [(syllabify.derive_syllables_for_word, words[0]),
+            (syllabify.derive_words_and_syllables_for_phrase, phrase),
+            (syllabify.derive_phrases_for_phones, phones),
+            (syllabify.repair_word_syllables, words[0])]
+        for function, argument in calls:
             with self.assertRaises(NotImplementedError):
-                call()
+                function(argument, language='en')
 
 
 if __name__ == '__main__':
