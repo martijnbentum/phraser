@@ -723,6 +723,22 @@ layout and rejects unrecognized paths. Variant `nl`/`vl` is distinct from
 Audio language metadata (`nld`). Component selection returns all matching
 recordings; compose it with sampling or `copy_audio_materials` as needed.
 
+## Repair records
+
+`phraser.repair` supports reviewed byte changes and segment edits, with
+numbered JSON records saved alongside an audit. Proposals retain original
+bytes and readable examples before application. Related row/index changes
+are applied atomically; stale original bytes cause refusal.
+
+Use `plan_delete` for combined tree deletions and `plan_update` for routine
+field edits. Re-audit afterward. Immediate undo is available only before
+later writes; interrupted operations have a read-only state check, not an
+automatic retry. Bulk scripts can maintain one progress receipt without
+using the ordinary execution machinery.
+
+See [Repair records beside an audit](docs/NOTE_repairs.md) for the workflow,
+examples and reconstruction limits.
+
 ## Repository layout
 
 ```text

@@ -12,7 +12,7 @@ warning), how many items it examined and a Finding per problem found.
 
 Modules:
     findings          Finding, CheckResult and the other result records
-    store_snapshot    AuditData and load_audit_data, the decoded rows
+    store_snapshot    AuditData and load_audit_data, all or some recordings
     hierarchy         checks on the parent and child segment tree
     timing            checks on the time range of each segment
     references        checks on the label index and speaker-audio links
@@ -20,7 +20,7 @@ Modules:
     overlap_checks    checks on the stored overlap codes
     outliers          duration outlier checks
     speaker_tempo     per-speaker tempo summary
-    report            AuditReport, saving and load_report
+    report            AuditReport, saving, load_report and compare_reports
     run               audit_store() and the ordered check groups
 
 Typical use:
@@ -44,7 +44,8 @@ from .outliers import check_outliers_phrase, check_outliers_word
 from .overlap_checks import check_overlap_code_matches, check_overlap_computed
 from .references import check_label_index, check_speaker_audio_links
 from .references import check_speaker_exists
-from .report import AuditReport, load_report
+from .report import AuditReport, ReportComparison, compare_reports
+from .report import load_report
 from .run import ERROR_CHECKS, OUTLIER_CHECKS, OVERLAP_CHECKS, QUALITY_CHECKS
 from .run import audit_outliers, audit_overlap, audit_quality, audit_store
 from .run import audit_structure
@@ -54,7 +55,8 @@ from .timing import check_same_speaker_phrases, check_start_before_end
 from .timing import check_within_audio
 
 __all__ = ['audit_store', 'load_audit_data', 'load_report', 'AuditData',
-    'AuditReport', 'CheckResult', 'Finding', 'OutlierGroup', 'SpeakerTempo',
+    'AuditReport', 'ReportComparison', 'compare_reports', 'CheckResult',
+    'Finding', 'OutlierGroup', 'SpeakerTempo',
     'ERROR', 'WARNING', 'DEFAULT_K', 'DEFAULT_MIN_COUNT', 'ERROR_CHECKS',
     'QUALITY_CHECKS', 'OVERLAP_CHECKS', 'OUTLIER_CHECKS', 'audit_structure',
     'audit_quality', 'audit_overlap', 'audit_outliers', 'audit_speakers',

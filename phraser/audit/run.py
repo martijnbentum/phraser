@@ -61,7 +61,7 @@ def audit_outliers(data, k=DEFAULT_K, min_count=DEFAULT_MIN_COUNT):
 
 
 def audit_store(store, data=None, k=DEFAULT_K, min_count=DEFAULT_MIN_COUNT,
-    save=True, directory='.'):
+    save=True, directory='.', audio_ids=None):
     '''Survey a store without changing it and return an AuditReport.
     store:        open Store to audit
     data:         AuditData from load_audit_data, to skip loading the rows
@@ -69,21 +69,33 @@ def audit_store(store, data=None, k=DEFAULT_K, min_count=DEFAULT_MIN_COUNT,
     min_count:    smallest group that is judged for outliers
     save:         write the report to audit_{stamp}; False for an experiment
     directory:    parent folder of the audit_{stamp} folder
+    audio_ids:    audit only these recordings; ignored when data is given
+
+    A scoped audit skips the outlier checks and speaker tempo, which
+    compare against the whole store.
     '''
     stamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
     if save: _make_audit_directory(directory, stamp, store.path)
-    if data is None: data = load_audit_data(store)
+    if data is None: data = load_audit_data(store, audio_ids)
     if not data.segments: print(f'warning: no segments in {data.path}')
     results = audit_structure(data) + audit_quality(data)
-    results += audit_overlap(data) + audit_outliers(data, k, min_count)
-    speakers = audit_speakers(data, k, min_count)
+    results += audit_overlap(data)
+    speakers = []
+    if data.audio_ids is None:
+        results += audit_outliers(data, k, min_count)
+        speakers = audit_speakers(data, k, min_count)
     groups = [group for result in results for group in result.groups]
     info = SimpleNamespace(store_path=str(data.path), stamp=stamp,
         phraser_version=_phraser_version(), k=k, min_count=min_count,
-        row_counts=data.row_counts)
+        row_counts=data.row_counts, audio_ids=_hex_ids(data.audio_ids))
     report = AuditReport(results, speakers, groups, info)
     if save: print(f'saved audit to {report.save(directory)}')
     return report
+
+
+def _hex_ids(audio_ids):
+    if audio_ids is None: return None
+    return sorted(audio_id.hex() for audio_id in audio_ids)
 
 
 def _phraser_version():

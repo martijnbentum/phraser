@@ -65,7 +65,8 @@ def _broken_reference_kind(data, segment, identifier):
 
 
 def check_parent_exists(data):
-    '''Find parent and phrase references pointing at no row.'''
+    '''Find parent and phrase references pointing at no row.
+    On a scoped snapshot a parent in another recording is missing_row.'''
     findings = []
     n_checked = 0
     for segment in data.segments:

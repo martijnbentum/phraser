@@ -17,7 +17,9 @@ from phraser.audit import check_siblings_do_not_overlap, check_start_before_end
 from phraser.audit import check_speaker_audio_links, check_within_audio
 from phraser.audit import check_syllable_label_matches_phones
 from phraser.audit import check_unknown_phone_labels, check_within_parent
+from phraser.audit import compare_reports
 from phraser.models import Audio, Phone, Phrase, Speaker, Syllable, Word
+from phraser.storage import key_helper, struct_value
 
 
 def quiet_store(path):
@@ -318,6 +320,20 @@ class TestOutliers(AuditCase):
         self.assertGreaterEqual(group.n_k_1_5, group.n_k_3)
         self.assertGreaterEqual(group.n_k_3, group.n_k_5)
 
+    def test_comparison_can_exclude_population_outliers(self):
+        start = self.make_phones(100, 80)
+        with redirect_stdout(io.StringIO()):
+            before = audit_store(self.store, save=False)
+        self.store.save(Phone('a', start, start + 2000, **self.identity()))
+        with redirect_stdout(io.StringIO()):
+            after = audit_store(self.store, save=False)
+        comparison = compare_reports(before, after)
+        self.assertEqual(len(comparison.new['outliers_phone']), 1)
+        filtered = compare_reports(before, after, include_outliers=False)
+        self.assertNotIn('outliers_phone', filtered.new)
+        self.assertNotIn('outliers_phrase', filtered.resolved)
+        self.assertEqual(filtered.new['orphans'], comparison.new['orphans'])
+
     def test_small_group_is_not_judged(self):
         self.make_phones(5, 80)
         result = check_outliers_phone(self.data())
@@ -432,6 +448,84 @@ class TestAuditRun(AuditCase):
             report.summary()
         self.assertIn('within_parent', output.getvalue())
         self.assertIn('>10ms', output.getvalue())
+
+
+class TestScopedAudit(AuditCase):
+    def setUp(self):
+        super().setUp()
+        self.phrase, _, _, self.phones = self.make_tree()
+        self.other = self.store.create(Audio, filename='other.wav',
+            duration=1000, save=True)
+        self.speaker.add_audio(self.other)
+
+    def audit(self, audio_ids=None):
+        with redirect_stdout(io.StringIO()):
+            return audit_store(self.store, save=False, audio_ids=audio_ids)
+
+    def test_scoped_snapshot_holds_only_its_recordings(self):
+        data = load_audit_data(self.store, [self.audio.identifier])
+        self.assertEqual(data.row_counts['audios'], 1)
+        self.assertEqual(data.row_counts['phones'], 2)
+        self.assertEqual(data.row_counts['speakers'], 1)
+        self.assertEqual(len(data.label_index_keys), 5)
+        self.assertEqual(len(data.speaker_audio_links), 1)
+
+    def test_scoped_audit_skips_outliers_and_records_scope(self):
+        report = self.audit([self.audio.identifier])
+        self.assertNotIn('outliers_phone', vars(report.checks))
+        self.assertEqual(report.info.audio_ids, [self.audio.identifier.hex()])
+        self.assertEqual(report.speakers, [])
+        self.assertIn('outliers_phone', vars(self.audit().checks))
+
+    def test_scoped_before_must_cover_after(self):
+        before = self.audit([self.audio.identifier])
+        with self.assertRaisesRegex(ValueError, 'cover'):
+            compare_reports(before, self.audit())
+        with self.assertRaisesRegex(ValueError, 'cover'):
+            compare_reports(before, self.audit([self.other.identifier]))
+
+    def test_cross_recording_reference_has_no_false_changes(self):
+        word = Word('stray', 0, 50, audio_id=self.other.identifier,
+            speaker_id=self.speaker.identifier, store=self.store,
+            parent_id=self.phrase.identifier, parent_start=self.phrase.start)
+        self.store.save(word)
+        before = self.audit()
+        after = self.audit([self.other.identifier])
+        comparison = compare_reports(before, after)
+        self.assertEqual(comparison.n_new_errors, 0)
+        self.assertEqual(comparison.new['parent_exists'], [])
+        self.assertEqual(comparison.resolved['parent_exists'], [])
+        self.assertEqual(before.checks.parent_exists.findings[0].kind,
+            'other_audio')
+        self.assertEqual(after.checks.parent_exists.findings[0].kind,
+            'missing_row')
+        word.parent_id = b'absent00'
+        self.store.DB.write(word.key, struct_value.pack_instance(word),
+            overwrite=True)
+        comparison = compare_reports(before, self.audit())
+        self.assertEqual(len(comparison.new['parent_exists']), 1)
+        self.assertEqual(len(comparison.resolved['parent_exists']), 1)
+
+    def test_stale_index_entries_have_distinct_saved_identities(self):
+        phone = self.phones[0]
+        entries = []
+        for label in ('old', 'older'):
+            entry = key_helper.label_to_label_index_key(label, 'Phone',
+                phone.key)
+            self.store.DB.write(entry, b'', db_name='label_segment')
+            entries.append(entry)
+        before = self.audit()
+        directory = before.save(Path(self.directory.name) / 'reports')
+        before = load_report(directory)
+        with self.store.DB.env.begin(write=True) as txn:
+            txn.delete(entries[0], db=self.store.DB.db['label_segment'])
+        after = self.audit([self.audio.identifier])
+        comparison = compare_reports(before, after)
+        self.assertEqual(comparison.new['label_index'], [])
+        resolved = comparison.resolved['label_index']
+        self.assertEqual(len(resolved), 1)
+        self.assertEqual(resolved[0].index_key, entries[0])
+        self.assertEqual(resolved[0].load(self.store).key, phone.key)
 
 
 if __name__ == '__main__':

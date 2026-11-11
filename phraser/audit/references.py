@@ -38,7 +38,7 @@ def check_label_index(data):
         n_entries += 1
         if entry in expected: continue
         key = key_helper.label_index_key_to_instance_key(entry)
-        findings.append(Finding(key=key, kind='stale_entry',
+        findings.append(Finding(key=key, index_key=entry, kind='stale_entry',
             row_exists=key in data.by_key))
     n_checked = len(data.segments) + n_entries
     return CheckResult('label_index', ERROR, n_checked, findings)

@@ -39,17 +39,21 @@ class CheckResult:
         self.name = name
         self.severity = severity
         self.n_checked = n_checked
-        self.findings = findings
+        self.findings = []
         self.n_unjudged = n_unjudged
         self.groups = groups or []
-        for finding in findings:
-            finding.check = name
-            finding.severity = severity
+        for finding in findings: self.add(finding)
 
     def __repr__(self):
         m = f'<CheckResult {self.name} {self.severity} '
         m += f'{self.n_findings}/{self.n_checked}>'
         return m
+
+    def add(self, finding):
+        '''Append a finding, stamped with this check's name and severity.'''
+        finding.check = self.name
+        finding.severity = self.severity
+        self.findings.append(finding)
 
     @property
     def n_findings(self):

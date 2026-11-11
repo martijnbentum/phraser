@@ -11,8 +11,11 @@ from types import SimpleNamespace
 
 from .findings import ERROR, WARNING, CheckResult, Finding, OutlierGroup
 from .findings import SpeakerTempo
+from .store_snapshot import segment_key_audio_id
 
-BYTES_FIELDS = ('key', 'other_key', 'audio_id', 'speaker_id')
+BYTES_FIELDS = ('key', 'other_key', 'index_key', 'audio_id', 'speaker_id')
+IDENTITY_FIELDS = ('key', 'other_key', 'index_key', 'kind', 'field', 'reference',
+    'audio_id', 'speaker_id')
 
 
 class AuditReport:
@@ -162,3 +165,128 @@ def load_report(path):
         result.groups = [g for g in groups if result.name == _check_name(g)]
     info = SimpleNamespace(**summary['info'])
     return AuditReport(results, speakers, groups, info)
+
+
+class ReportComparison:
+    '''Findings new in a later report and resolved since an earlier one.'''
+
+    def __init__(self, before, after, new, resolved, severities):
+        self.before_stamp = before.info.stamp
+        self.after_stamp = after.info.stamp
+        self.audio_ids = _report_scope(after)
+        self.new = new
+        self.resolved = resolved
+        self.severities = severities
+
+    def __repr__(self):
+        m = f'<ReportComparison {self.before_stamp} -> {self.after_stamp} '
+        m += f'new={self.n_new} resolved={self.n_resolved}>'
+        return m
+
+    @property
+    def n_new(self):
+        return sum(len(findings) for findings in self.new.values())
+
+    @property
+    def n_resolved(self):
+        return sum(len(findings) for findings in self.resolved.values())
+
+    @property
+    def n_new_errors(self):
+        counts = [len(f) for n, f in self.new.items() if self._is_error(n)]
+        return sum(counts)
+
+    def _is_error(self, name):
+        return self.severities[name] == ERROR
+
+    def summary(self):
+        '''Print the new and resolved findings per check that changed.'''
+        scope = 'all recordings'
+        if self.audio_ids is not None:
+            scope = f'{len(self.audio_ids):,} recordings'
+        print(f'{self.before_stamp} -> {self.after_stamp} ({scope})')
+        for name in self.severities:
+            n_new, n_resolved = len(self.new[name]), len(self.resolved[name])
+            if not n_new and not n_resolved: continue
+            m = f'  {name:<32} {self.severities[name]:<8} '
+            m += f'new {n_new:>8,}  resolved {n_resolved:>8,}'
+            print(m)
+        print(f'new errors: {self.n_new_errors:,}')
+
+
+def compare_reports(before, after, include_outliers=True):
+    '''Compare the findings of two audits of one store, per check.
+    before:              earlier AuditReport, full or scoped
+    after:               later AuditReport; when scoped, before is limited
+                         to its recordings for comparison
+    include_outliers:    compare population outliers too; their fences may
+                         shift when other durations or group sizes change
+
+    Only checks present in both reports are compared; a scoped audit has no
+    outlier checks. Across different scopes, missing_row and other_audio
+    parent findings share an identity; their displayed kinds are preserved.
+    '''
+    audio_ids = _report_scope(after)
+    before_ids = _report_scope(before)
+    if before_ids is not None and not _covers(before_ids, audio_ids):
+        raise ValueError('before does not cover the recordings of after')
+    earlier = {result.name: result for result in before.results}
+    new, resolved, severities = {}, {}, {}
+    for result in after.results:
+        if result.name not in earlier: continue
+        if not include_outliers and result.name.startswith('outliers_'):
+            continue
+        old = _scoped_findings(earlier[result.name].findings, audio_ids)
+        normalize_parent = result.name == 'parent_exists'
+        normalize_parent = normalize_parent and before_ids != audio_ids
+        new[result.name] = _missing_from(result.findings, old,
+            normalize_parent)
+        resolved[result.name] = _missing_from(old, result.findings,
+            normalize_parent)
+        severities[result.name] = result.severity
+    return ReportComparison(before, after, new, resolved, severities)
+
+
+def _report_scope(report):
+    '''Return the audited recordings as a set of bytes, or None for all.'''
+    audio_ids = getattr(report.info, 'audio_ids', None)
+    if audio_ids is None: return None
+    return {bytes.fromhex(audio_id) for audio_id in audio_ids}
+
+
+def _covers(before_ids, after_ids):
+    return after_ids is not None and after_ids <= before_ids
+
+
+def _finding_identity(finding, normalize_parent):
+    values = []
+    for field in IDENTITY_FIELDS:
+        value = getattr(finding, field, None)
+        if normalize_parent and field == 'kind':
+            if value in ('other_audio', 'missing_row'): value = 'missing_row'
+        values.append(value)
+    return tuple(values)
+
+
+def _finding_audio_id(finding):
+    audio_id = getattr(finding, 'audio_id', None)
+    if audio_id is not None: return audio_id
+    key = getattr(finding, 'key', None)
+    return None if key is None else segment_key_audio_id(key)
+
+
+def _scoped_findings(findings, audio_ids):
+    if audio_ids is None: return findings
+    return [f for f in findings if _finding_audio_id(f) in audio_ids]
+
+
+def _missing_from(findings, others, normalize_parent=False):
+    '''Return the findings with no finding of the same identity in others.'''
+    identities = set()
+    for other in others:
+        identities.add(_finding_identity(other, normalize_parent))
+    missing = []
+    for finding in findings:
+        if _finding_identity(finding, normalize_parent) not in identities:
+            missing.append(finding)
+    return missing
