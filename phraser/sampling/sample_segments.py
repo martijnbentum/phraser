@@ -73,12 +73,8 @@ def _sample_segment_tokens(attribute, type_label, audios, store, n_tokens,
     min_duration_ms, max_duration_ms, exclude_duration_outliers, speakers,
     gender, insufficient, random_seed, return_report):
     '''Collect tokens matching restrictions and recorded flags, then draw.'''
-    if type_label is not None and not isinstance(type_label, str):
-        raise ValueError('type_label must be a string or None')
-    selection.validate_bounds(min_duration_ms, max_duration_ms, 'duration')
-    if type(exclude_duration_outliers) is not bool:
-        raise ValueError('exclude_duration_outliers must be a bool')
-    selection.validate_speaker_filters(gender)
+    _validate_token_filters(type_label, min_duration_ms, max_duration_ms,
+        exclude_duration_outliers, gender)
     keys = selection.speaker_keys(speakers)
     audios = selection.get_audios(audios, store)
     tokens = []
@@ -91,6 +87,17 @@ def _sample_segment_tokens(attribute, type_label, audios, store, n_tokens,
         min_duration_ms, max_duration_ms, exclude_duration_outliers)
     return selection.draw(tokens, n_tokens, random_seed, insufficient,
         report, return_report)
+
+
+def _validate_token_filters(type_label, minimum, maximum, exclude_outliers,
+    gender):
+    '''Validate common sampler and lexicon eligibility restrictions.'''
+    if type_label is not None and not isinstance(type_label, str):
+        raise ValueError('type_label must be a string or None')
+    selection.validate_bounds(minimum, maximum, 'duration')
+    if type(exclude_outliers) is not bool:
+        raise ValueError('exclude_duration_outliers must be a bool')
+    selection.validate_speaker_filters(gender)
 
 
 def _filter_tokens(tokens, report, type_label, keys, gender, minimum, maximum,

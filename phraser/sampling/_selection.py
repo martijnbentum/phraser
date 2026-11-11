@@ -61,16 +61,26 @@ def describe_bounds(name, minimum, maximum, unit):
     return f'{name} {minimum}–{maximum} {unit}'
 
 
-def draw(items, count, random_seed, insufficient, report, return_report):
-    '''Draw without replacement in stable key order using local random state.'''
-    validate_count(count, 'sample count')
-    if type(return_report) is not bool:
-        raise ValueError('return_report must be a bool')
-    if insufficient not in ('raise', 'drop'):
-        raise ValueError("insufficient must be 'raise' or 'drop'")
+def validate_seed(random_seed):
+    '''Require an integer seed or an explicitly unseeded draw.'''
     if (random_seed is not None and (isinstance(random_seed, bool)
         or not isinstance(random_seed, Integral))):
         raise ValueError('random_seed must be an integer or None')
+
+
+def validate_draw(count, random_seed, insufficient):
+    '''Validate draw options before accessing a candidate population.'''
+    validate_count(count, 'sample count')
+    if insufficient not in ('raise', 'drop'):
+        raise ValueError("insufficient must be 'raise' or 'drop'")
+    validate_seed(random_seed)
+
+
+def draw(items, count, random_seed, insufficient, report, return_report):
+    '''Draw without replacement in stable key order using local random state.'''
+    validate_draw(count, random_seed, insufficient)
+    if type(return_report) is not bool:
+        raise ValueError('return_report must be a bool')
     items = sorted(unique_items(items), key=lambda item: item.key)
     if len(items) < count:
         if insufficient == 'raise': raise InsufficientSampleError(report)

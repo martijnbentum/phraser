@@ -21,16 +21,16 @@ class SelectionReport:
     '''Sequential eligibility losses and the final random draw.
     population:       description of the sampled object level
     starting_count:   unique candidates within the provided source material
-    requested_count:  number requested for the final draw
+    requested_count:  number requested; None for eligibility-only reports
     type_label:       requested segment label, or None for all labels
     '''
 
     population: str
     starting_count: int
-    requested_count: int
+    requested_count: int | None
     type_label: str | None = None
     stages: list[SelectionStage] = field(default_factory=list)
-    selected_count: int = 0
+    selected_count: int | None = 0
 
     @property
     def eligible_count(self):
@@ -38,11 +38,13 @@ class SelectionReport:
 
     @property
     def shortfall(self):
+        if self.requested_count is None: return None
         return max(0, self.requested_count - self.eligible_count)
 
     @property
     def unselected_count(self):
         '''Eligible candidates not included in the final draw.'''
+        if self.selected_count is None: return None
         return self.eligible_count - self.selected_count
 
     def add_stage(self, condition, before, after):
@@ -58,11 +60,13 @@ class SelectionReport:
         for stage in self.stages:
             lines.append(f'{stage.condition}: {stage.after:,} '
                 f'(removed {stage.removed:,})')
-        lines.extend([f'Eligible: {self.eligible_count:,}',
-            f'Requested: {self.requested_count:,}',
-            f'Selected: {self.selected_count:,}',
-            f'Eligible but unselected: {self.unselected_count:,}',
-            'Losses are sequential; each candidate is removed only once.'])
+        lines.append(f'Eligible: {self.eligible_count:,}')
+        if self.requested_count is not None:
+            lines.append(f'Requested: {self.requested_count:,}')
+        if self.selected_count is not None:
+            lines.append(f'Selected: {self.selected_count:,}')
+            lines.append(f'Eligible but unselected: {self.unselected_count:,}')
+        lines.append('Losses are sequential; each candidate is removed once.')
         if self.shortfall: lines.append(f'Shortfall: {self.shortfall:,}')
         return '\n'.join(lines)
 

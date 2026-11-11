@@ -656,6 +656,68 @@ records zero selected objects and the shortfall. Invalid arguments still
 raise ordinary validation errors. Report classes are available from both
 `phraser` and `phraser.sampling`.
 
+### Lexicons
+
+Build a reusable label-to-entry inventory when selecting many types from the
+same material. `build_phone_lexicon`, `build_syllable_lexicon`,
+`build_word_lexicon`, and `build_phrase_lexicon` return the same `Lexicon`
+class. They are available from `phraser` and `phraser.sampling`, together
+with `Lexicon` and `Entry`.
+
+```python
+from phraser import build_word_lexicon
+
+lexicon = build_word_lexicon(store=store, max_keys_per_type=None,
+    min_duration_ms=100, max_duration_ms=1500, gender='female')
+lexicon.segment_class       # phraser.Word
+lexicon.labels              # sorted exact labels
+lexicon.counts              # label: total eligible token count
+print(lexicon.report)       # eligibility losses before retaining keys
+
+entry = lexicon['huis']
+entry.total_count           # all eligible occurrences of huis
+entry.retained_count        # len(entry.keys)
+keys = entry.sample(n_tokens=100, random_seed=42)
+words = store.load_many(keys)
+```
+
+Each builder accepts `audios`, `store`, `min_duration_ms`, `max_duration_ms`,
+`exclude_duration_outliers`, `speakers`, and `gender`, with the same defaults
+and conditions as its corresponding token sampler. Labels are literal
+segment labels at every level; phrase text is not normalized. Only labels
+with eligible tokens appear in the mapping. Iteration yields sorted labels;
+`len(lexicon)` counts types. The read-only `labels` and `counts` properties
+return fresh lists/dictionaries derived from the entries.
+
+`max_keys_per_type=None` retains all eligible keys by default. An integer
+cap retains a uniform random reservoir of at most that many keys per label;
+`0` builds counts-only entries. `Entry.total_count` and `lexicon.counts`
+always count all eligible tokens, regardless of the cap. Keys are unique and
+sorted within each entry. Capped builds use a local `random_seed` (default
+0), and traverse recordings and their tokens in key order, making retention
+independent of supplied recording order. Duplicate recordings count once.
+
+`Entry.sample()` draws without replacement from retained keys only, without
+store access or changing the entry. It accepts `n_tokens`, `random_seed`,
+and `insufficient='raise'` or `'drop'`. Requesting more keys than retained
+raises `InsufficientSampleError` even when `total_count` is higher; its
+report describes the retained pool. Entries remain usable after closing
+the source store, but loading their keys requires the appropriate open
+store. Selected keys and counts describe the material at build time;
+later annotation or flag changes are not reflected automatically.
+
+`lexicon.report` aggregates eligibility losses across recordings, before
+the retention cap. Its `requested_count`, `selected_count`,
+`unselected_count`, and `shortfall` are `None`, since building an inventory
+does not perform a final token draw. Retention limits are not reported as
+eligibility failures.
+
+Builders process one recording at a time and do not collect all segment
+objects into a single list. A cap limits retained keys, not the source
+Store's normal object cache. Building never saves records or changes flags;
+source objects may be cached during loading. Lexicons are returned in memory;
+no persistence is performed implicitly.
+
 CGN selection checks the `comp-X/nl/filename` or `comp-X/vl/filename` path
 layout and rejects unrecognized paths. Variant `nl`/`vl` is distinct from
 Audio language metadata (`nld`). Component selection returns all matching
