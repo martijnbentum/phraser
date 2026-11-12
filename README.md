@@ -241,20 +241,24 @@ corpus-level recording bar. LMDB retains its existing segment-batch progress
 display. Equal-sized segment bars are the main segment rows followed by their
 label-index entries; small bars usually represent newly saved speakers.
 
-### Timing and shared-phone flags
+### Timing and phone annotation flags
 
-Segments expose three independent boolean properties:
+Segments expose four independent boolean properties:
 
 | Property | Intended objects | Meaning when set |
 | --- | --- | --- |
 | `timing_uncertain` | Any segment with a timing concern | A known concern about this object's timing, including a boundary inferred without acoustic verification |
 | `shared_phone` | Phone | The source identifies this phone as shared across words |
 | `missing_shared_phone` | Word or Syllable | A source-confirmed shared phone is missing from this object's linked phones |
+| `inserted_phone` | Phone | The source identifies an inserted linking sound between words |
 
 False means no concern or sharing information has been recorded for that
 flag; it does not mean the annotation was verified. Sharing alone does not
 imply uncertain timing. These properties describe each object's own state:
 setting one does not set flags on parents, children, or neighboring words.
+`inserted_phone` records inserted linking sounds separately from sharing.
+Setting `phone.inserted_phone = True` does not set `shared_phone` or
+`timing_uncertain`; it takes effect in the store only after explicitly saving.
 
 ```python
 phone.shared_phone = True
@@ -276,7 +280,8 @@ these flags automatically.
 
 The existing flags byte stores duration assessments in bits 0–1,
 `timing_uncertain` in bit 2, `shared_phone` in bit 3, and
-`missing_shared_phone` in bit 4. Setters preserve every unrelated bit.
+`missing_shared_phone` in bit 4. `inserted_phone` uses bit 5 (`0x20`);
+bits 6–7 remain unallocated. Setters preserve every unrelated bit.
 Existing zero-valued flags read False, and the binary layout is unchanged.
 
 ### Speech overlap

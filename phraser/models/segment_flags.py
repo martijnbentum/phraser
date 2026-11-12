@@ -5,6 +5,7 @@ DURATION_OUTLIER_STATES = ('unset', 'short', 'long', 'within_range')
 TIMING_UNCERTAIN_MASK = 0b00000100
 SHARED_PHONE_MASK = 0b00001000
 MISSING_SHARED_PHONE_MASK = 0b00010000
+INSERTED_PHONE_MASK = 0b00100000
 
 
 def _set_boolean_flag(segment, mask, value):
@@ -43,6 +44,16 @@ def get_missing_shared_phone(segment):
 def set_missing_shared_phone(segment, value):
     '''Record or clear a missing shared-phone link on this object alone.'''
     _set_boolean_flag(segment, MISSING_SHARED_PHONE_MASK, value)
+
+
+def get_inserted_phone(segment):
+    '''Whether this phone is recorded as an inserted linking sound.'''
+    return bool(segment.flags & INSERTED_PHONE_MASK)
+
+
+def set_inserted_phone(segment, value):
+    '''Record or clear insertion without changing other flags or links.'''
+    _set_boolean_flag(segment, INSERTED_PHONE_MASK, value)
 
 
 def get_duration_outlier_code(segment):

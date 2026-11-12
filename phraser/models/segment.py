@@ -437,6 +437,15 @@ class Segment:
         segment_flags.set_missing_shared_phone(self, value)
 
     @property
+    def inserted_phone(self):
+        '''For phones: a source-confirmed inserted sound linking words.'''
+        return segment_flags.get_inserted_phone(self)
+
+    @inserted_phone.setter
+    def inserted_phone(self, value):
+        segment_flags.set_inserted_phone(self, value)
+
+    @property
     def overlap(self):
         '''Whether this span intersects another speaker's non-silence word.
 

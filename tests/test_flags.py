@@ -55,6 +55,8 @@ class TestFlags(unittest.TestCase):
                 self.assertEqual(loaded.shared_phone, bool(expected & 8))
                 self.assertEqual(loaded.missing_shared_phone,
                     bool(expected & 16))
+                expected_inserted = bool(expected & 32)
+                self.assertEqual(loaded.inserted_phone, expected_inserted)
 
     def test_duration_states_preserve_other_bits(self):
         for obj in self.objects[2:]:
@@ -126,7 +128,8 @@ class TestFlags(unittest.TestCase):
 
     def test_boolean_flags_default_false_and_require_booleans(self):
         phone = self.objects[5]
-        names = ('timing_uncertain', 'shared_phone', 'missing_shared_phone')
+        names = ('timing_uncertain', 'shared_phone', 'missing_shared_phone',
+            'inserted_phone')
         for name in names:
             self.assertFalse(getattr(phone, name))
             for invalid in (0, 1, 'yes', None):
@@ -134,6 +137,38 @@ class TestFlags(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         setattr(phone, name, invalid)
                     self.assertEqual(phone.flags, 0)
+
+    def test_inserted_phone_preserves_every_other_bit(self):
+        phone = self.objects[5]
+        for flags in range(256):
+            with self.subTest(flags=flags):
+                phone.flags = flags
+                expected = bool(flags & 32)
+                self.assertEqual(phone.inserted_phone, expected)
+                phone.inserted_phone = True
+                self.assertEqual(phone.flags, flags | 32)
+                phone.inserted_phone = False
+                self.assertEqual(phone.flags, flags & ~32)
+
+    def test_inserted_phone_requires_save_and_preserves_row_bytes(self):
+        phone = self.objects[5]
+        self.store.save_many(self.objects[:6])
+        original = self.store.DB.load(phone.key)
+        phone.inserted_phone = True
+        stored = self.store.DB.load(phone.key)
+        self.assertEqual(stored, original)
+        proposed = struct_value.pack_instance(phone)
+        self.assertEqual(proposed[1], 32)
+        self.assertEqual(proposed[:1] + proposed[2:],
+            original[:1] + original[2:])
+        phone.save(overwrite=True)
+        self._assert_persisted_flags([phone], 32)
+        self._assert_persisted_flags(self.objects[2:5], 0)
+        self.assertFalse(phone.shared_phone)
+        self.assertFalse(phone.timing_uncertain)
+        phone.inserted_phone = False
+        phone.save(overwrite=True)
+        self._assert_persisted_flags([phone], 0)
 
     def test_shared_phone_and_missing_links_are_independent(self):
         phrase, word, syllable, phone = self.objects[2:6]
