@@ -109,6 +109,27 @@ class TestLexicon(unittest.TestCase):
         self.assertEqual(lexicon.token_keys, expected)
         self.assertEqual(lexicon.retained_counts, {'boom': 2, 'huis': 3})
 
+    def test_progress_and_quiet_build_select_the_same_tokens(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            shown = phraser.build_word_lexicon(store=self.store,
+                max_retained_tokens_per_type=3)
+        text = output.getvalue()
+        self.assertIn('Loading lexicon recordings...', text)
+        self.assertIn('Loaded 2 recordings in ', text)
+        self.assertIn('Recordings 1/2', text)
+        self.assertIn('Recordings 2/2 | words scanned 18 | eligible 18', text)
+        self.assertIn('types 2 | elapsed ', text)
+        self.assertIn('ETA ', text)
+        self.assertIn('Lexicon ready: 2 types; 5 retained tokens', text)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            quiet = phraser.build_word_lexicon(store=self.store,
+                max_retained_tokens_per_type=3, verbose=False)
+        self.assertEqual(output.getvalue(), '')
+        self.assertEqual(shown.token_keys, quiet.token_keys)
+        self.assertEqual(shown.report, quiet.report)
+
     def test_empty_and_counts_only_token_access(self):
         for minimum in (None, 100):
             with self.subTest(min_tokens_per_type=minimum):
@@ -119,6 +140,68 @@ class TestLexicon(unittest.TestCase):
                 self.assertEqual(lexicon.load_tokens(self.store), [])
                 self.assertEqual(sum(lexicon.retained_counts.values()), 0)
                 self.assertEqual(len(lexicon), 2 if minimum is None else 0)
+
+    def test_lexicon_sampling_drops_rare_types_and_preserves_inventory(self):
+        lexicon = phraser.build_word_lexicon(store=self.store,
+            max_retained_tokens_per_type=4)
+        original = lexicon.token_keys
+        self.assertEqual(lexicon.sample(2).retained_counts,
+            {'boom': 2, 'huis': 2})
+        state = random.getstate()
+        sampled = lexicon.sample(n_tokens=3, random_seed=42)
+        self.assertIsInstance(sampled, phraser.Lexicon)
+        self.assertEqual(sampled.labels, ['huis'])
+        self.assertEqual(sampled.retained_counts, {'huis': 3})
+        self.assertEqual(sampled.counts, {'huis': 16})
+        self.assertTrue(set(sampled.token_keys) <= set(lexicon['huis'].keys))
+        self.assertEqual(sampled.token_keys, sorted(sampled.token_keys))
+        self.assertEqual(sampled.token_keys,
+            lexicon.sample(3, random_seed=42).token_keys)
+        self.assertEqual(lexicon.token_keys, original)
+        self.assertEqual(random.getstate(), state)
+        self.assertEqual(sampled.report, lexicon.report)
+        self.assertIsNot(sampled.report, lexicon.report)
+        report = sampled.sampling_report
+        self.assertEqual(report.starting_count, 6)
+        self.assertEqual(report.eligible_count, 4)
+        self.assertEqual(report.selected_count, 3)
+        self.assertEqual(report.stages[0].types_removed, 1)
+        sampled['huis'].keys.clear()
+        self.assertEqual(lexicon.token_keys, original)
+        self.assertIsNone(lexicon.sampling_report)
+
+    def test_sampling_uses_retained_keys_and_handles_insufficient_types(self):
+        lexicon = phraser.build_word_lexicon(store=self.store,
+            max_retained_tokens_per_type=2)
+        self.assertEqual(len(lexicon.sample(3)), 0)
+        with self.assertRaises(phraser.InsufficientSampleError):
+            lexicon.sample(3, insufficient='raise')
+        for kwargs in ({'n_tokens': -1}, {'n_tokens': True},
+            {'n_tokens': 1.5}, {'insufficient': 'partial'}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                lexicon.sample(**kwargs)
+
+    def test_defaults_exclude_timing_concerns_and_overlapping_speech(self):
+        phrase = self.make_tree(self.first, self.older, 'intruder', 50, 100)
+        self.store.save_phrase_trees([phrase])
+        self.store.refresh_query_roots()
+        words = self.first.words
+        target = next(word for word in words if word.start == 0)
+        uncertain = next(word for word in words if word.start == 1000)
+        uncertain.timing_uncertain = True
+        self.store.save(uncertain, overwrite=True)
+        raw = self.store.DB.load(target.key)
+        lexicon = phraser.build_word_lexicon(audios=[self.first])
+        self.assertNotIn(target.key, lexicon.token_keys)
+        self.assertNotIn(uncertain.key, lexicon.token_keys)
+        stages = {stage.condition: stage for stage in lexicon.report.stages}
+        self.assertGreater(stages['Exclude overlapping speech'].removed, 0)
+        self.assertEqual(stages['Recorded timing uncertain'].removed, 1)
+        included = phraser.build_word_lexicon(audios=[self.first],
+            exclude_overlap=False, exclude_timing_uncertain=False)
+        self.assertIn(target.key, included.token_keys)
+        self.assertIn(uncertain.key, included.token_keys)
+        self.assertEqual(self.store.DB.load(target.key), raw)
 
     def test_capped_build_is_reproducible_across_recording_order(self):
         state = random.getstate()
@@ -136,7 +219,8 @@ class TestLexicon(unittest.TestCase):
         self.store.save(word, overwrite=True)
         raw = self.store.DB.load(word.key)
         lexicon = phraser.build_word_lexicon(store=self.store,
-            speakers=[self.young], gender='female', max_duration_ms=175)
+            speakers=[self.young], gender='female', max_duration_ms=175,
+            exclude_timing_uncertain=False, exclude_overlap=False)
         self.assertEqual(lexicon.counts, {'huis': 7})
         tokens, report = phraser.sample_word_tokens(None, store=self.store,
             n_tokens=7, speakers=[self.young], gender='female',
@@ -156,7 +240,7 @@ class TestLexicon(unittest.TestCase):
         self.assertNotIn('Requested:', str(lexicon.report))
         self.assertEqual(self.store.DB.load(word.key), raw)
         included = phraser.build_word_lexicon(store=self.store,
-            include_only_within_range=False)
+            exclude_duration_outliers=False)
         self.assertEqual(included.counts, {'boom': 2, 'huis': 16})
 
     def test_phone_count_and_timing_uncertain_restrictions(self):
@@ -168,8 +252,8 @@ class TestLexicon(unittest.TestCase):
         self.assertEqual(lexicon.counts, {'boom': 2, 'huis': 15})
         conditions = [stage.condition for stage in lexicon.report.stages]
         self.assertEqual(conditions[0], 'At least 1 phones')
-        self.assertEqual(conditions[-1], 'Recorded timing uncertain')
-        self.assertEqual(lexicon.report.stages[-1].removed, 1)
+        self.assertEqual(conditions[-1], 'Exclude overlapping speech')
+        self.assertEqual(lexicon.report.stages[-2].removed, 1)
         lexicon = phraser.build_word_lexicon(store=self.store, min_phones=2)
         self.assertEqual(lexicon.counts, {})
         self.assertEqual(lexicon.report.stages[0].removed, 18)
@@ -210,8 +294,11 @@ class TestLexicon(unittest.TestCase):
         self.assertEqual((stage.types_before, stage.types_after), (2, 1))
         self.assertEqual(stage.types_removed, 1)
         self.assertEqual(stage.types_below_minimum, 1)
-        self.assertIn('1 types (removed 1; 1 fell below 2 tokens per type)',
-            str(lexicon.report))
+        text = str(lexicon.report)
+        row = next(line for line in text.splitlines()
+            if line.startswith('Duration 100'))
+        self.assertEqual(row.split()[-5:], ['8', '10', '1', '1', '1'])
+        self.assertIn('Below quota: types newly below 2 tokens', text)
         stage = lexicon.report.stages[-1]
         self.assertEqual((stage.types_before, stage.types_after), (1, 1))
         self.assertEqual(stage.types_below_minimum, 0)
@@ -265,7 +352,7 @@ class TestLexicon(unittest.TestCase):
             {'max_retained_tokens_per_type': 1.5}, {'min_tokens_per_type': -1},
             {'min_tokens_per_type': 1.5}, {'random_seed': True},
             {'min_duration_ms': 200, 'max_duration_ms': 100},
-            {'include_only_within_range': None}, {'gender': 'invalid'},
+            {'exclude_duration_outliers': None}, {'gender': 'invalid'},
             {'min_phones': -1}, {'min_phones': 1.5},
             {'exclude_timing_uncertain': None}]
         for kwargs in options:

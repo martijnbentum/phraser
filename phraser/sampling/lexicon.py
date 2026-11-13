@@ -1,10 +1,13 @@
-'''Build read-only inventories of eligible segment keys grouped by label.'''
+'''Build reusable inventories of eligible segment keys grouped by label.'''
 
 from collections import Counter
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 import random
+from time import monotonic
 
+from .. import overlap
 from ..models import Phone, Phrase, Syllable, Word
 from . import _selection as selection
 from .selection_report import InsufficientSampleError, SelectionReport
@@ -56,6 +59,7 @@ class Lexicon(Mapping):
     segment_class: Phone, Syllable, Word, or Phrase model class
     entries:       mapping of exact labels to Entry objects
     report:        eligibility report before key retention; None if absent
+    sampling_report: retained-pool losses and draw counts after .sample()
     '''
 
     def __init__(self, segment_class, entries, report=None):
@@ -68,6 +72,7 @@ class Lexicon(Mapping):
             if not isinstance(entry, Entry) or label != entry.label:
                 raise ValueError('entry labels must match their mapping keys')
         self.report = report
+        self.sampling_report = None
 
     @property
     def labels(self):
@@ -100,6 +105,35 @@ class Lexicon(Mapping):
         '''Load retained tokens in token_keys order from an open Store.'''
         return store.load_many(self.token_keys)
 
+    def sample(self, n_tokens=100, random_seed=0, insufficient='drop'):
+        '''Return a new lexicon with exactly n_tokens retained keys per type.
+        n_tokens:      draw size per type, using retained keys only
+        random_seed:   local seed; None gives an unseeded draw
+        insufficient:  drop types below the quota, or raise
+
+        Keys follow label order, then key order. Eligible counts and the
+        eligibility report are preserved; sampling_report describes this
+        draw. The source lexicon is unchanged. No store access occurs.
+        '''
+        selection.validate_draw(n_tokens, random_seed, insufficient)
+        rng = random.Random(random_seed)
+        entries = {}
+        for label, entry in self.items():
+            if entry.retained_count < n_tokens:
+                if insufficient == 'raise': entry.sample(n_tokens)
+                continue
+            keys = sorted(rng.sample(entry.keys, n_tokens))
+            entries[label] = Entry(label, keys, entry.total_count)
+        result = Lexicon(self.segment_class, entries, deepcopy(self.report))
+        eligible = sum(self[label].retained_count for label in entries)
+        report = SelectionReport('retained tokens', self.n_tokens,
+            len(entries) * n_tokens, selected_count=result.n_tokens,
+            min_tokens_per_type=n_tokens)
+        report.add_stage(f'At least {n_tokens} retained tokens per type',
+            self.n_tokens, eligible, len(self), len(entries), 0)
+        result.sampling_report = report
+        return result
+
     def __repr__(self):
         eligible = sum(self.counts.values())
         text = f'Lexicon({self.segment_class.__name__}, {len(self):,} types, '
@@ -118,8 +152,9 @@ class Lexicon(Mapping):
 
 def build_word_lexicon(audios=None, store=None, min_tokens_per_type=None,
     max_retained_tokens_per_type=None, random_seed=0, min_duration_ms=100,
-    max_duration_ms=1500, include_only_within_range=True, speakers=None,
-    gender=None, min_phones=None, exclude_timing_uncertain=False):
+    max_duration_ms=1500, exclude_duration_outliers=True, speakers=None,
+    gender=None, min_phones=None, exclude_timing_uncertain=True, verbose=True,
+    exclude_overlap=True):
     '''Return a Lexicon of eligible word keys grouped by exact label.
     audios:                        recordings; None loads all audios from store
     store:                         open Store, needed when audios is None
@@ -128,11 +163,13 @@ def build_word_lexicon(audios=None, store=None, min_tokens_per_type=None,
     random_seed:                   local seed for capped key retention
     min_duration_ms:               inclusive duration minimum; None disables it
     max_duration_ms:               inclusive duration maximum; None disables it
-    include_only_within_range:     keep only tokens flagged within_range
+    exclude_duration_outliers:    require assessed, within_range duration flags
     speakers:                      eligible Speaker objects or keys, or None
     gender:                        female, male, unknown, or None
     min_phones:                    minimum linked phones; None disables it
     exclude_timing_uncertain:      exclude tokens with a recorded timing concern
+    exclude_overlap:              exclude tokens overlapping other-speaker speech
+    verbose:                      print loading time and periodic scan progress
 
     Counts include all eligible tokens. Positive caps use uniform reservoir
     sampling without replacement; final keys and labels are sorted. Recordings
@@ -144,81 +181,127 @@ def build_word_lexicon(audios=None, store=None, min_tokens_per_type=None,
     '''
     keys = selection.speaker_keys(speakers)
     filters = selection.TokenFilters(None, keys, gender, min_phones,
-        min_duration_ms, max_duration_ms, include_only_within_range,
-        exclude_timing_uncertain)
+        min_duration_ms, max_duration_ms, exclude_duration_outliers,
+        exclude_timing_uncertain, exclude_overlap)
     return _build_lexicon(Word, 'words', filters, audios, store,
-        min_tokens_per_type, max_retained_tokens_per_type, random_seed)
+        min_tokens_per_type, max_retained_tokens_per_type, random_seed, verbose)
 
 
 def build_phrase_lexicon(audios=None, store=None, min_tokens_per_type=None,
     max_retained_tokens_per_type=None, random_seed=0, min_duration_ms=None,
-    max_duration_ms=None, include_only_within_range=True, speakers=None,
-    gender=None, min_phones=None, exclude_timing_uncertain=False):
+    max_duration_ms=None, exclude_duration_outliers=True, speakers=None,
+    gender=None, min_phones=None, exclude_timing_uncertain=True, verbose=True,
+    exclude_overlap=True):
     '''Build phrase entries; parameters follow build_word_lexicon.
     Duration bounds are disabled by default; phrase labels are literal text.
     '''
     keys = selection.speaker_keys(speakers)
     filters = selection.TokenFilters(None, keys, gender, min_phones,
-        min_duration_ms, max_duration_ms, include_only_within_range,
-        exclude_timing_uncertain)
+        min_duration_ms, max_duration_ms, exclude_duration_outliers,
+        exclude_timing_uncertain, exclude_overlap)
     return _build_lexicon(Phrase, 'phrases', filters, audios, store,
-        min_tokens_per_type, max_retained_tokens_per_type, random_seed)
+        min_tokens_per_type, max_retained_tokens_per_type, random_seed, verbose)
 
 
 def build_syllable_lexicon(audios=None, store=None, min_tokens_per_type=None,
     max_retained_tokens_per_type=None, random_seed=0, min_duration_ms=None,
-    max_duration_ms=None, include_only_within_range=True, speakers=None,
-    gender=None, min_phones=None, exclude_timing_uncertain=False):
+    max_duration_ms=None, exclude_duration_outliers=True, speakers=None,
+    gender=None, min_phones=None, exclude_timing_uncertain=True, verbose=True,
+    exclude_overlap=True):
     '''Build syllable entries; parameters follow build_word_lexicon.
     Duration bounds are disabled by default.
     '''
     keys = selection.speaker_keys(speakers)
     filters = selection.TokenFilters(None, keys, gender, min_phones,
-        min_duration_ms, max_duration_ms, include_only_within_range,
-        exclude_timing_uncertain)
+        min_duration_ms, max_duration_ms, exclude_duration_outliers,
+        exclude_timing_uncertain, exclude_overlap)
     return _build_lexicon(Syllable, 'syllables', filters, audios, store,
-        min_tokens_per_type, max_retained_tokens_per_type, random_seed)
+        min_tokens_per_type, max_retained_tokens_per_type, random_seed, verbose)
 
 
 def build_phone_lexicon(audios=None, store=None, min_tokens_per_type=None,
     max_retained_tokens_per_type=None, random_seed=0, min_duration_ms=None,
-    max_duration_ms=None, include_only_within_range=True, speakers=None,
-    gender=None, exclude_timing_uncertain=False):
+    max_duration_ms=None, exclude_duration_outliers=True, speakers=None,
+    gender=None, exclude_timing_uncertain=True, verbose=True,
+    exclude_overlap=True):
     '''Build phone entries; parameters follow build_word_lexicon.
     Duration bounds are disabled by default.
     '''
     keys = selection.speaker_keys(speakers)
     filters = selection.TokenFilters(None, keys, gender, None,
-        min_duration_ms, max_duration_ms, include_only_within_range,
-        exclude_timing_uncertain)
+        min_duration_ms, max_duration_ms, exclude_duration_outliers,
+        exclude_timing_uncertain, exclude_overlap)
     return _build_lexicon(Phone, 'phones', filters, audios, store,
-        min_tokens_per_type, max_retained_tokens_per_type, random_seed)
+        min_tokens_per_type, max_retained_tokens_per_type, random_seed, verbose)
 
 
 def _build_lexicon(segment_class, attribute, filters, audios, store,
-    min_count, cap, random_seed):
+    min_count, cap, random_seed, verbose):
     '''Build per-recording inventories without materializing all tokens.'''
     if min_count is not None:
         selection.validate_count(min_count, 'min_tokens_per_type')
     if cap is not None:
         selection.validate_count(cap, 'max_retained_tokens_per_type')
     selection.validate_seed(random_seed)
+    started = monotonic()
+    if verbose: print('Loading lexicon recordings...', flush=True)
     audios = sorted(selection.get_audios(audios, store), key=lambda a: a.key)
+    if verbose:
+        print(f'Loaded {len(audios):,} recordings in '
+            f'{monotonic() - started:.1f}s', flush=True)
+        print(f'Scanning {attribute} and applying filters...', flush=True)
+    progress = _LexiconProgress(len(audios), attribute, verbose)
     conditions = _stage_conditions(attribute, filters)
     totals = [Counter() for _ in range(len(conditions) + 1)]
     entries = {}
     rng = random.Random(random_seed)
-    for audio in audios:
+    for index, audio in enumerate(audios, 1):
         tokens, report = _recording_tokens(audio, attribute, filters)
         for total, counts in zip(totals, report.label_counts):
             total.update(counts)
         _collect_entries(entries, tokens, cap, rng)
+        progress.update(index, report, len(entries))
+    if verbose:
+        print('Sorting retained keys and preparing report...', flush=True)
     for entry in entries.values(): entry.keys.sort()
     report = _combine_reports(attribute, conditions, totals, min_count)
     filters.check_assessed(report)
     if min_count is not None:
         entries = _drop_rare_types(entries, report, min_count)
-    return Lexicon(segment_class, entries, report)
+    lexicon = Lexicon(segment_class, entries, report)
+    if verbose:
+        print(f'Lexicon ready: {len(lexicon):,} types; '
+            f'{lexicon.n_tokens:,} retained tokens; '
+            f'{monotonic() - started:.1f}s total', flush=True)
+    return lexicon
+
+
+class _LexiconProgress:
+    '''Report scan totals periodically and at the first/last recording.'''
+
+    def __init__(self, n_audios, attribute, verbose):
+        self.n_audios = n_audios
+        self.attribute = attribute
+        self.verbose = verbose
+        self.started = self.last_update = monotonic()
+        self.scanned = self.eligible = 0
+
+    def update(self, index, report, n_types):
+        '''Include one completed recording; always show the first and last.'''
+        if not self.verbose: return
+        self.scanned += report.starting_count
+        self.eligible += report.eligible_count
+        now = monotonic()
+        if index not in (1, self.n_audios) and now - self.last_update < 5:
+            return
+        elapsed = now - self.started
+        remaining = elapsed / index * (self.n_audios - index)
+        text = f'Recordings {index:,}/{self.n_audios:,} | '
+        text += f'{self.attribute} scanned {self.scanned:,} | '
+        text += f'eligible {self.eligible:,} | types {n_types:,} | '
+        text += f'elapsed {elapsed:.1f}s | ETA {remaining:.1f}s'
+        print(text, flush=True)
+        self.last_update = now
 
 
 def _recording_tokens(audio, attribute, filters):
@@ -228,7 +311,23 @@ def _recording_tokens(audio, attribute, filters):
     label_counts = [Counter(token.label for token in tokens)]
     report = SelectionReport(attribute[:-1] + ' tokens', len(tokens), None,
         selected_count=None, label_counts=label_counts)
-    return filters.apply(tokens, report), report
+    overlap_test = _AudioOverlap(audio) if filters.exclude_overlap else None
+    return filters.apply(tokens, report, overlap_test), report
+
+
+class _AudioOverlap:
+    '''Use stored overlap flags, indexing words once for unassessed tokens.'''
+
+    def __init__(self, audio):
+        self.audio = audio
+        self.timeline = None
+
+    def __call__(self, token):
+        if token.overlap_code != 9: return token.overlap
+        if self.timeline is None:
+            words = overlap._load_audio_segments(self.audio, 'Word')
+            self.timeline = overlap._WordTimeline(words)
+        return bool(self.timeline.matching_words(token))
 
 
 def _collect_entries(entries, tokens, cap, rng):

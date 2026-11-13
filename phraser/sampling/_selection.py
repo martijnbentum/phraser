@@ -143,6 +143,7 @@ class TokenFilters:
     max_duration_ms: float | None = None
     include_only_within_range: bool = True
     exclude_timing_uncertain: bool = False
+    exclude_overlap: bool = False
 
     def __post_init__(self):
         if self.type_label is not None and not isinstance(self.type_label, str):
@@ -155,11 +156,14 @@ class TokenFilters:
             raise ValueError('include_only_within_range must be a bool')
         if type(self.exclude_timing_uncertain) is not bool:
             raise ValueError('exclude_timing_uncertain must be a bool')
+        if type(self.exclude_overlap) is not bool:
+            raise ValueError('exclude_overlap must be a bool')
 
-    def apply(self, tokens, report):
+    def apply(self, tokens, report, overlap_test=None):
         '''Record each active condition as a report stage; return survivors.
         Order: label, speaker, gender, phone count, positive duration,
-        duration bounds, assessed and within_range flags, timing flag.
+        duration bounds, assessed and within_range flags, timing flag,
+        then overlap. overlap_test optionally checks one token for overlap.
         '''
         tokens = self._apply_identity(tokens, report)
         if self.min_phones is not None:
@@ -171,6 +175,11 @@ class TokenFilters:
             tokens = filter_candidates(tokens, report,
                 'Recorded timing uncertain',
                 lambda token: not token.timing_uncertain)
+        if self.exclude_overlap:
+            if overlap_test is None: overlap_test = lambda token: token.overlap
+            tokens = filter_candidates(tokens, report,
+                'Exclude overlapping speech',
+                lambda token: not overlap_test(token))
         return tokens
 
     def _apply_identity(self, tokens, report):
@@ -214,5 +223,5 @@ class TokenFilters:
             if stage.before == 0 or stage.after > 0: return
             message = 'duration flags are not assessed for these '
             message += f'{report.population}; run the duration assessment '
-            message += 'or pass include_only_within_range=False'
+            message += 'or disable duration-outlier filtering'
             raise ValueError(message)

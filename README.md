@@ -680,13 +680,17 @@ with `Lexicon` and `Entry`.
 ```python
 from phraser import build_word_lexicon
 
-lexicon = build_word_lexicon(store=store,
-    max_retained_tokens_per_type=None, min_duration_ms=100,
-    max_duration_ms=1500, gender='female')
+lexicon = build_word_lexicon(store=store, min_duration_ms=100,
+    max_duration_ms=1500, gender='female', exclude_duration_outliers=True,
+    exclude_timing_uncertain=True, exclude_overlap=True)
 lexicon.segment_class       # phraser.Word
 lexicon.labels              # sorted exact labels
 lexicon.counts              # label: total eligible token count
 print(lexicon.report)       # eligibility losses before retaining keys
+sampled = lexicon.sample(n_tokens=100, random_seed=42)
+keys = sampled.token_keys   # label order, then key order
+words = sampled.load_tokens(store)
+print(sampled.sampling_report)
 
 entry = lexicon['huis']
 entry.total_count           # all eligible occurrences of huis
@@ -696,9 +700,14 @@ words = store.load_many(keys)
 ```
 
 Each builder accepts `audios`, `store`, `min_duration_ms`, `max_duration_ms`,
-`include_only_within_range`, `speakers`, `gender`, `min_phones` (not for
-phones), and `exclude_timing_uncertain`, with the same defaults
-and conditions as its corresponding token sampler. Labels are literal
+`exclude_duration_outliers`, `speakers`, `gender`, `min_phones` (not for
+phones), `exclude_timing_uncertain`, `exclude_overlap`, and `verbose`.
+The three exclusion flags default to `True`. Duration-outlier exclusion
+requires assessed `within_range` flags; absolute duration bounds apply
+independently. Overlap means intersecting another speaker's non-silence
+word in the same recording, using Phraser's overlap status. Touching
+boundaries do not overlap. Unassessed overlap is computed without saving,
+using one lazily built reference-word index per recording. Labels are literal
 segment labels at every level; phrase text is not normalized. Only labels
 with eligible tokens appear in the mapping. Iteration yields sorted labels;
 `len(lexicon)` counts types. The read-only `labels` and `counts` properties
@@ -723,9 +732,24 @@ per label. The minimum uses the full eligible count, so the two combine:
 Lexicon report stages also count types: `types_before`, `types_after` and
 `types_removed`. With `min_tokens_per_type` set, `types_below_minimum`
 counts labels that met the minimum before a stage and fall below it after,
-showing which filter costs labels; the printed report names the minimum,
-e.g. `1 fell below 100 tokens per type`. Sampler reports leave these as
+showing which filter costs labels. The printed table aligns surviving
+tokens/types, losses, and newly below-quota types in separate columns. Sampler reports leave these as
 `None`.
+
+`Lexicon.sample(n_tokens=100, random_seed=0, insufficient='drop')` returns
+another lexicon with exactly that many retained keys per surviving type.
+Types with too few retained keys are dropped; use `insufficient='raise'`
+to raise `InsufficientSampleError` instead. The draw uses retained keys,
+even if the full eligible count is larger. Keys are sampled without
+replacement using a local RNG, then sorted by label and key. The source
+lexicon is unchanged. Eligible counts and a copy of the original eligibility
+report are preserved; `sampling_report` records retained-pool type losses
+and selected token counts. `token_keys` returns a fresh flattened key list;
+`n_tokens` and `retained_counts` describe retained keys, and
+`load_tokens(store)` loads them in that order.
+
+Builders print recording-loading time and scan progress at recording
+boundaries, roughly every five seconds. Use `verbose=False` to suppress it.
 
 `Entry.sample()` draws without replacement from retained keys only, without
 store access or changing the entry. It accepts `n_tokens`, `random_seed`,

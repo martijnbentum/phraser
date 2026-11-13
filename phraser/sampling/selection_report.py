@@ -83,9 +83,13 @@ class SelectionReport:
     def __str__(self):
         title = f'Selection: {self.population}'
         if self.type_label is not None: title += f' ({self.type_label!r})'
-        lines = [title, f'Starting: {self.starting_count:,}']
-        for stage in self.stages:
-            lines.append(stage.describe(self.min_tokens_per_type))
+        lines = [title]
+        if self.stages and self.stages[0].types_before is not None:
+            lines.extend(self._type_table())
+        else:
+            lines.append(f'Starting: {self.starting_count:,}')
+            for stage in self.stages:
+                lines.append(stage.describe(self.min_tokens_per_type))
         lines.append(f'Eligible: {self.eligible_count:,}')
         if self.requested_count is not None:
             lines.append(f'Requested: {self.requested_count:,}')
@@ -95,6 +99,42 @@ class SelectionReport:
         lines.append('Losses are sequential; each candidate is removed once.')
         if self.shortfall: lines.append(f'Shortfall: {self.shortfall:,}')
         return '\n'.join(lines)
+
+    def _type_table(self):
+        '''Align lexicon token and type losses, including the starting pool.'''
+        quota = self.min_tokens_per_type
+        headers = ['Filter', 'Tokens', 'Tokens lost', 'Types', 'Types lost']
+        if quota is not None: headers.append('Below quota')
+        rows = [['Starting', f'{self.starting_count:,}', '-',
+            f'{self.stages[0].types_before:,}', '-']]
+        if quota is not None: rows[0].append('-')
+        for stage in self.stages:
+            row = [stage.condition, f'{stage.after:,}', f'{stage.removed:,}',
+                f'{stage.types_after:,}', f'{stage.types_removed:,}']
+            if quota is not None:
+                below = stage.types_below_minimum
+                row.append('-' if below is None else f'{below:,}')
+            rows.append(row)
+        lines = _aligned_table(headers, rows)
+        if quota is not None:
+            lines.append(f'Below quota: types newly below {quota:,} tokens '
+                'at each filter (including types lost).')
+        return lines
+
+
+def _aligned_table(headers, rows):
+    '''Left-align descriptions and right-align numeric columns.'''
+    widths = []
+    for i in range(len(headers)):
+        widths.append(max(len(row[i]) for row in [headers] + rows))
+    lines = []
+    for row in [headers] + rows:
+        cells = [row[0].ljust(widths[0])]
+        for value, width in zip(row[1:], widths[1:]):
+            cells.append(value.rjust(width))
+        lines.append('  '.join(cells))
+    lines.insert(1, '  '.join('-' * width for width in widths))
+    return lines
 
 
 class InsufficientSampleError(ValueError):
