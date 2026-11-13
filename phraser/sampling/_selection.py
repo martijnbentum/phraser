@@ -1,5 +1,6 @@
 '''Private population selection, validation, and reproducible draws.'''
 
+from collections import Counter
 from dataclasses import dataclass
 from math import isfinite
 from numbers import Integral, Real
@@ -52,6 +53,8 @@ def filter_candidates(items, report, condition, predicate):
     '''Apply one sampling condition and record its sequential loss.'''
     eligible = [item for item in items if predicate(item)]
     report.add_stage(condition, len(items), len(eligible))
+    if report.label_counts is not None:
+        report.label_counts.append(Counter(item.label for item in eligible))
     return eligible
 
 

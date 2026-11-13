@@ -720,6 +720,13 @@ per label. The minimum uses the full eligible count, so the two combine:
 `min_tokens_per_type=100, max_retained_tokens_per_type=100` keeps exactly
 100 random keys for every label with at least 100 eligible tokens.
 
+Lexicon report stages also count types: `types_before`, `types_after` and
+`types_removed`. With `min_tokens_per_type` set, `types_below_minimum`
+counts labels that met the minimum before a stage and fall below it after,
+showing which filter costs labels; the printed report names the minimum,
+e.g. `1 fell below 100 tokens per type`. Sampler reports leave these as
+`None`.
+
 `Entry.sample()` draws without replacement from retained keys only, without
 store access or changing the entry. It accepts `n_tokens`, `random_seed`,
 and `insufficient='raise'` or `'drop'`. Requesting more keys than retained

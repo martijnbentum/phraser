@@ -1,5 +1,6 @@
 '''Build read-only inventories of eligible segment keys grouped by label.'''
 
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 import random
@@ -176,14 +177,17 @@ def _build_lexicon(segment_class, attribute, filters, audios, store,
         selection.validate_count(cap, 'max_retained_tokens_per_type')
     selection.validate_seed(random_seed)
     audios = sorted(selection.get_audios(audios, store), key=lambda a: a.key)
-    entries, reports = {}, []
+    conditions = _stage_conditions(attribute, filters)
+    totals = [Counter() for _ in range(len(conditions) + 1)]
+    entries = {}
     rng = random.Random(random_seed)
     for audio in audios:
         tokens, report = _recording_tokens(audio, attribute, filters)
-        reports.append(report)
+        for total, counts in zip(totals, report.label_counts):
+            total.update(counts)
         _collect_entries(entries, tokens, cap, rng)
     for entry in entries.values(): entry.keys.sort()
-    report = _combine_reports(reports, attribute, filters)
+    report = _combine_reports(attribute, conditions, totals, min_count)
     filters.check_assessed(report)
     if min_count is not None:
         entries = _drop_rare_types(entries, report, min_count)
@@ -194,8 +198,9 @@ def _recording_tokens(audio, attribute, filters):
     '''Apply the shared sampler restrictions to one recording's tokens.'''
     tokens = selection.unique_items(getattr(audio, attribute))
     tokens.sort(key=lambda token: token.key)
+    label_counts = [Counter(token.label for token in tokens)]
     report = SelectionReport(attribute[:-1] + ' tokens', len(tokens), None,
-        selected_count=None)
+        selected_count=None, label_counts=label_counts)
     return filters.apply(tokens, report), report
 
 
@@ -219,18 +224,35 @@ def _retain_key(entry, key, cap, rng):
         if index < cap: entry.keys[index] = key
 
 
-def _combine_reports(reports, attribute, filters):
-    '''Sum matching per-recording stages, keeping retention out of losses.'''
+def _stage_conditions(attribute, filters):
+    '''The active filter conditions, in order, from an empty run.'''
     template = SelectionReport(attribute[:-1] + ' tokens', 0, None,
         selected_count=None)
     filters.apply([], template)
-    report = SelectionReport(template.population,
-        sum(item.starting_count for item in reports), None, selected_count=None)
-    for index, stage in enumerate(template.stages):
-        before = sum(item.stages[index].before for item in reports)
-        after = sum(item.stages[index].after for item in reports)
-        report.add_stage(stage.condition, before, after)
+    return [stage.condition for stage in template.stages]
+
+
+def _combine_reports(attribute, conditions, totals, min_count):
+    '''Build stages from per-label survivor counts merged across recordings.
+    totals[0] counts starting tokens; totals[i + 1] survivors of stage i.
+    '''
+    report = SelectionReport(attribute[:-1] + ' tokens',
+        sum(totals[0].values()), None, selected_count=None,
+        min_tokens_per_type=min_count)
+    for condition, before, after in zip(conditions, totals, totals[1:]):
+        below = _count_fell_below(before, after, min_count)
+        report.add_stage(condition, sum(before.values()),
+            sum(after.values()), len(before), len(after), below)
     return report
+
+
+def _count_fell_below(before, after, min_count):
+    '''Labels reaching min_count before a stage but not after; None if unset.'''
+    if min_count is None: return None
+    count = 0
+    for label, n_tokens in before.items():
+        if n_tokens >= min_count and after[label] < min_count: count += 1
+    return count
 
 
 def _drop_rare_types(entries, report, min_count):
@@ -240,5 +262,5 @@ def _drop_rare_types(entries, report, min_count):
         if entry.total_count >= min_count: kept[label] = entry
     after = sum(entry.total_count for entry in kept.values())
     report.add_stage(f'At least {min_count} tokens per type',
-        report.eligible_count, after)
+        report.eligible_count, after, len(entries), len(kept), 0)
     return kept

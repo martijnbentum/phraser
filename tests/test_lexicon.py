@@ -112,7 +112,11 @@ class TestLexicon(unittest.TestCase):
             n_tokens=7, speakers=[self.young], gender='female',
             max_duration_ms=175, return_report=True)
         self.assertEqual(set(lexicon['huis'].keys), {w.key for w in tokens})
-        self.assertEqual(lexicon.report.stages, report.stages)
+        stages = lexicon.report.stages
+        built = [(s.condition, s.before, s.after) for s in stages]
+        sampled = [(s.condition, s.before, s.after) for s in report.stages]
+        self.assertEqual(built, sampled)
+        self.assertTrue(all(s.types_before is None for s in report.stages))
         self.assertEqual(lexicon.report.starting_count, 18)
         self.assertEqual(lexicon.report.eligible_count, 7)
         self.assertIsNone(lexicon.report.requested_count)
@@ -166,6 +170,27 @@ class TestLexicon(unittest.TestCase):
         lexicon = phraser.build_word_lexicon(store=self.store,
             min_tokens_per_type=2)
         self.assertEqual(lexicon.counts, {'boom': 2, 'huis': 16})
+
+    def test_report_counts_types_and_labels_falling_below_minimum(self):
+        lexicon = phraser.build_word_lexicon(store=self.store,
+            min_tokens_per_type=2, max_duration_ms=175)
+        stages = {stage.condition: stage for stage in lexicon.report.stages}
+        stage = stages['Duration 100–175 ms']
+        self.assertEqual((stage.before, stage.after), (18, 8))
+        self.assertEqual((stage.types_before, stage.types_after), (2, 1))
+        self.assertEqual(stage.types_removed, 1)
+        self.assertEqual(stage.types_below_minimum, 1)
+        self.assertIn('1 types (removed 1; 1 fell below 2 tokens per type)',
+            str(lexicon.report))
+        stage = lexicon.report.stages[-1]
+        self.assertEqual((stage.types_before, stage.types_after), (1, 1))
+        self.assertEqual(stage.types_below_minimum, 0)
+        lexicon = phraser.build_word_lexicon(store=self.store,
+            max_duration_ms=175)
+        stage = lexicon.report.stages[1]
+        self.assertEqual(stage.types_after, 1)
+        self.assertIsNone(stage.types_below_minimum)
+        self.assertNotIn('fell below', str(lexicon.report))
 
     def test_all_segment_classes_and_duplicate_recordings(self):
         cases = [(phraser.build_phone_lexicon, Phone, {'b': 1, 'h': 8}),
