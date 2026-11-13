@@ -10,6 +10,7 @@ from phraser import load_audit_data, update_audio_overlap
 from phraser.audit import audit_speakers, check_childless, check_label_index
 from phraser.audit import check_children_span_parent, check_orphans
 from phraser.audit import check_outliers_phone, check_outliers_phrase
+from phraser.audit import check_outliers_syllable
 from phraser.audit import check_outliers_word, check_overlap_code_matches
 from phraser.audit import check_overlap_computed, check_parent_exists
 from phraser.audit import check_phone_positions, check_same_speaker_phrases
@@ -296,6 +297,18 @@ class TestOverlapChecks(AuditCase):
 
 
 class TestOutliers(AuditCase):
+    def make_syllable(self, label, start, duration, n_phones=1):
+        syllable = Syllable(label, start, start + duration, **self.identity())
+        phones = []
+        for index in range(n_phones):
+            phone_start = start + duration * index // n_phones
+            phone_end = start + duration * (index + 1) // n_phones
+            phones.append(Phone('a', phone_start, phone_end,
+                **self.identity()))
+        syllable.add_children(phones)
+        self.store.save_many([syllable] + phones)
+        return syllable
+
     def make_phones(self, n, duration, start=0, speaker=None, label='a'):
         '''Save phones in a row, without a tree, and return the next start.'''
         phones = []
@@ -341,6 +354,62 @@ class TestOutliers(AuditCase):
         self.assertEqual(result.n_unjudged, 5)
         self.assertFalse(result.groups[0].judged)
 
+    def test_syllable_labels_normalize_spaces_and_flag_both_directions(self):
+        for index in range(40):
+            label = 'a a' if index % 2 else 'aa'
+            self.make_syllable(label, index * 1000, 200, n_phones=2)
+        short = self.make_syllable('aa', 40_000, 10, n_phones=2)
+        long = self.make_syllable('a a', 41_000, 2000, n_phones=2)
+        result = check_outliers_syllable(self.data())
+        self.assertEqual(result.n_checked, 42)
+        self.assertEqual(result.n_unjudged, 0)
+        findings = {f.key: f for f in result.findings}
+        self.assertEqual(set(findings), {short.key, long.key})
+        self.assertEqual(findings[short.key].direction, 'short')
+        self.assertEqual(findings[long.key].direction, 'long')
+        self.assertEqual(findings[long.key].label, 'a a')
+        group = result.groups[0]
+        self.assertEqual((group.level, group.name, group.unit),
+            ('syllable', 'aa', 'ms'))
+        self.assertEqual(group.n_k_3, 2)
+
+    def test_rare_syllables_pool_duration_per_phone(self):
+        for index in range(40):
+            n_phones = 1 + index % 2
+            self.make_syllable(f'rare{index}', index * 1000,
+                100 * n_phones, n_phones=n_phones)
+        long = self.make_syllable('long', 40_000, 2000, n_phones=2)
+        self.make_syllable('childless', 43_000, 100, n_phones=0)
+        result = check_outliers_syllable(self.data())
+        self.assertEqual(result.n_checked, 41)
+        self.assertEqual(result.n_unjudged, 1)
+        self.assertEqual(result.n_findings, 1)
+        finding = result.findings[0]
+        self.assertEqual(finding.key, long.key)
+        self.assertEqual(finding.value, 1000)
+        self.assertEqual(finding.unit, 'ms_per_phone')
+        self.assertEqual(finding.group, 'rare_syllables')
+
+    def test_small_rare_syllable_pool_is_unjudged(self):
+        self.make_syllable('a', 0, 100)
+        self.make_syllable('aa', 1000, 200, n_phones=2)
+        self.make_syllable('childless', 2000, 100, n_phones=0)
+        result = check_outliers_syllable(self.data())
+        self.assertEqual(result.n_checked, 0)
+        self.assertEqual(result.n_unjudged, 3)
+        self.assertEqual(result.findings, [])
+        self.assertEqual(result.groups[0].n, 2)
+        self.assertFalse(result.groups[0].judged)
+
+    def test_syllables_skip_nonpositive_and_non_speech_durations(self):
+        self.make_syllable('a', 0, 0, n_phones=0)
+        self.make_syllable('aa', 1000, -10, n_phones=0)
+        self.make_syllable('<p:>', 2000, 100, n_phones=0)
+        result = check_outliers_syllable(self.data(), min_count=1)
+        self.assertEqual(result.n_checked, 0)
+        self.assertEqual(result.n_unjudged, 0)
+        self.assertEqual(result.findings, [])
+
     def test_pause_words_do_not_count_as_speech(self):
         word = Word('<p:>', 0, 5000, **self.identity())
         self.store.save(word)
@@ -353,6 +422,9 @@ class TestOutliers(AuditCase):
 
     def test_min_count_zero_handles_empty_groups(self):
         data = self.data()
+        result = check_outliers_syllable(data, min_count=0)
+        self.assertEqual(result.findings, [])
+        self.assertFalse(result.groups[0].judged)
         self.assertEqual(check_outliers_word(data, min_count=0).findings, [])
         self.assertEqual(check_outliers_phrase(data, min_count=0).findings, [])
 
@@ -422,6 +494,10 @@ class TestAuditRun(AuditCase):
             len(report.outlier_groups))
         self.assertEqual(len(loaded.checks.outliers_phone.groups),
             len(report.checks.outliers_phone.groups))
+        groups = loaded.checks.outliers_syllable.groups
+        self.assertEqual(groups[0].level, 'syllable')
+        self.assertEqual(groups[0].median,
+            report.checks.outliers_syllable.groups[0].median)
 
     def test_refuses_folder_inside_store_before_loading(self):
         self.make_tree()
@@ -473,9 +549,11 @@ class TestScopedAudit(AuditCase):
     def test_scoped_audit_skips_outliers_and_records_scope(self):
         report = self.audit([self.audio.identifier])
         self.assertNotIn('outliers_phone', vars(report.checks))
+        self.assertNotIn('outliers_syllable', vars(report.checks))
         self.assertEqual(report.info.audio_ids, [self.audio.identifier.hex()])
         self.assertEqual(report.speakers, [])
         self.assertIn('outliers_phone', vars(self.audit().checks))
+        self.assertIn('outliers_syllable', vars(self.audit().checks))
 
     def test_scoped_before_must_cover_after(self):
         before = self.audit([self.audio.identifier])

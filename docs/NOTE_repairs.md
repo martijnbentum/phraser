@@ -11,6 +11,7 @@ The Store is assumed to remain otherwise unchanged while a repair runs.
 from phraser import audit_store
 from phraser.audit import compare_reports
 from phraser.repair import apply_change_plan, create_change_plan, plan_delete
+from phraser.repair import audit_change_plan, verify_change_plan
 from phraser.repair import load_change_plan, plan_audio_ids, save_change_plan
 
 before = audit_store(store, directory='reports')
@@ -26,12 +27,13 @@ with store.DB.env.begin() as txn:
 
 plan.summary()                       # counts and up to five examples
 plan.changes                         # every affected row, including indexes
+baseline = audit_change_plan(store, plan)
 path = save_change_plan(plan, audit_directory, 'remove_empty_pairs')
 preview = load_change_plan(path)      # does not read the live Store
 apply_change_plan(store, path)
 
-after = audit_store(store, audio_ids=plan_audio_ids(plan), save=False)
-compare_reports(before, after).summary()
+after = verify_change_plan(store, path, baseline)
+load_change_plan(path).summary()
 ```
 
 Records are named `change_001_remove_empty_pairs.json`,
@@ -41,7 +43,9 @@ undo chain. Audit loading ignores these extra files. You can instead use
 never overwritten by save; applying updates the existing execution receipt.
 Reports must be outside the LMDB directory.
 
-`plan.changes` contains database, key, before/after bytes as hex, operation
+`plan.changes` returns an ordered inspection snapshot; extend plans through
+the helpers rather than mutating that list. List mutation raises a clear
+error; use `merge_change_plan(plan, other)` to combine plans. Each entry contains database, key, before/after bytes as hex, operation
 and captured context. `None` means an absent row; `''` means empty bytes.
 Context includes decoded fields where available, so previewing a saved
 record never substitutes newer database values. For arbitrary byte edits,
@@ -58,8 +62,51 @@ Bulk receipts and malformed ordinary records are refused.
 
 Verification checks resulting bytes and refreshes the Store cache and query
 roots. It does not perform a domain audit or refresh references to objects
-already held by your code. Reload those objects. Whether to proceed after
-re-auditing is your decision; there is no package-enforced verification gate.
+already held by your code. Reload those objects. `audit_change_plan` and
+`verify_change_plan` provide optional field-based
+domain verification, recorded separately as `domain_verification`. Application
+itself still performs only byte verification. There is no automatic rollback:
+if domain verification finds new errors, stop further writes and ask the user.
+Waiting for approval does not invalidate rollback; an intervening write does.
+
+## Combining plans
+
+```python
+from phraser.repair import merge_change_plan
+
+merge_change_plan(plan, local_plan)
+```
+
+This replaces the former `plan.changes.extend(local_plan.changes)` pattern,
+which now raises an error instead of silently discarding edits. Both plans
+must be planned against the same store and transaction. Duplicate keys or
+invalid source records refuse the entire addition, leaving the destination
+unchanged. The source remains unchanged; the destination reason and metadata
+remain in effect. Duration-assessment plans must be applied separately so
+merging cannot drop their assessment policy.
+
+## Store loading and repair refresh
+
+`Store(path, eager_query_roots=False)` opts out of the initial main-key scan.
+The default remains `True`. Direct reads and repair planning can work without
+initializing query-root keys; querying the whole class loads them when needed.
+Sampling or requesting database counts also needs key loading.
+
+Application and rollback always clear cached objects and preload markers,
+and recreate the Store's query objects. For in-place updates they retain key
+collections when those collections match the pre-repair transaction. Label
+index changes do not invalidate main-key membership. If keys have not yet
+been loaded in a deferred Store, an in-place repair leaves them unloaded.
+
+Insertion/deletion of main rows, or a cached collection predating other
+writes, triggers the existing full rebuild. This conservative fallback also
+covers general writes made before the repair. Subsequent in-place repairs
+can reuse the refreshed collections.
+
+This optimization belongs to repair application/rollback. General saves and
+loads keep their behavior, and an explicit `store.refresh_query_roots()` still
+rebuilds from the database. Objects and derived queries already held by callers
+remain snapshots and must be reloaded/recreated after a repair.
 
 ## Segment helpers
 
@@ -84,7 +131,11 @@ Start, version, identity and relationship fields are refused. The helper
 moves the index for a changed label; unrelated stale index entries require
 separate cleanup. Children are not checked against a new end.
 
-Helpers stage their additions: if a helper fails, the proposal is unchanged.
+Helpers stage only their new additions: if a helper fails, the proposal is
+unchanged. The plan centrally tracks changed keys and rejects duplicates at
+addition, including low-level `add_change` calls. Repeated segment updates do
+not copy or rescan the accumulated plan. Save/load still validate the complete
+record, and the persisted `changes` list format is unchanged.
 For unusual corrections, use `add_change(plan, database, key, before, after)`
 with exact bytes read from your transaction. That low-level API performs no
 domain validation or automatic index maintenance. Metadata must be a plain
@@ -99,6 +150,11 @@ state = check_change_state(store, path)
 print(state)
 rollback_changes(store, path)         # only if still immediately undoable
 ```
+
+Rollback attempts retain the domain-verification result for the original
+applied transaction, including when rollback is refused. Its transaction IDs
+identify the state it describes; it is not a fresh audit of the rolled-back
+store.
 
 Immediate undo requires a completed ordinary record, matching resulting
 bytes and the exact database transaction ID recorded after application.
@@ -123,26 +179,74 @@ The caller still assumes no intervening changes made the repair inappropriate.
 Interrupted undo requires reviewed reconstruction. This package does not
 automatically reconcile receipts.
 
-## Scoped verification
+## Selected verification
 
-`plan_audio_ids(plan)` derives recording IDs from main, label-index and
-speaker/audio-link keys. Speaker-only changes cannot be scoped from these
-keys; use a full audit or broader inspection for those changes.
+`verification_checks(plan)` returns check names, affected recording IDs and
+reasons for omitted checks. `audit_change_plan(store, plan)` takes a fresh
+baseline with that selection. After application,
+`verify_change_plan(store, path, before)` runs the same selection and updates
+the receipt's domain-verification result, returning the after report.
 
-Scoped audits skip population-wide outlier checks and speaker tempo. Report
-comparison tracks finding identities, not changes in their magnitude. The
-original audit remains a historical snapshot.
+- Duration-assessment and timing-uncertainty flags: byte verification only.
+- Shared/missing-shared flags: containment interpretation as well.
+- Ends: relevant timing, containment, sibling, coverage and overlap checks.
+- Labels: relevant structural/quality/overlap and label-index checks.
+- Deletions: structural/quality/overlap and index/link checks.
+- Unknown fields or unsupported row types: a full audit.
 
-Comparisons between full audits include outlier checks by default. Their
-population fences can move when durations or group membership change, so an
-unchanged segment can become or cease to be an outlier. Use
-`compare_reports(before, after, include_outliers=False)` to omit these checks.
-Across different scopes, parent-reference kinds `other_audio` and
-`missing_row` compare as the same problem because a scoped snapshot cannot
-see the other recording. Their original kinds remain available for display.
-New reports retain each stale label-index entry's `index_key` so partial
-index cleanup is visible. Older reports lack that identity and should be
-regenerated for precise stale-entry comparisons.
+Known changes leave population reassessment to an explicit milestone. Omitted
+checks and reasons are recorded; byte verification and `not_run` domain status
+are distinct from a passed domain audit. Losing a sharing explanation counts
+as a new domain error even when the raw finding identity is unchanged.
+Increasing containment/audio excess or overlap, or making an invalid duration
+more negative, also fails verification. Each regressed finding counts once.
+`new_errors` includes these regressions; `worsened_errors` and
+`new_attention_errors` provide the breakdown. Reduced or unchanged error
+measurements do not count as regressions. No rollback is automatic.
+
+The verification helper requires a baseline from immediately before the
+application and no writes between application and verification. A finding-only
+recheck does not establish absence of new errors elsewhere. Keep the no-other-
+writer assumption throughout the repair cycle.
+
+`plan_audio_ids(plan)` remains available for manual workflows. Speaker-only
+changes cannot be scoped from these keys. Scoped audits skip population
+outliers and speaker tempo. Check selection is available through
+`audit_store(store, checks=['within_parent', 'within_audio'])`.
+
+Report comparison remains optional. It tracks finding identities, not changes
+in magnitude. `compare_reports(before, after, include_outliers=False)` excludes
+moving population fences. Parent-reference `other_audio` and `missing_row`
+findings normalize across scopes, and stale label-index entries retain their
+`index_key` identity. Current store flags and relationships are sufficient for
+assessment/interpretation reporting without an earlier audit.
+
+## Persisting duration assessments
+
+```python
+from phraser.repair import plan_duration_assessments
+
+plan = plan_duration_assessments(store, 'Assess current durations',
+    levels=['phone', 'syllable', 'word', 'phrase'], k=3, min_count=30)
+plan.summary()
+print(plan.metadata['duration_assessment'])
+# Review and approve, then use the ordinary baseline/save/apply/verify flow.
+```
+
+This computes fresh whole-store log-IQR judgments using the audit's grouping
+and pooling rules. It prepares an ordinary byte-change plan and never writes
+the store. It accepts no historical report, so stale measurements cannot be
+used as input. Application requires the same store transaction as assessment planning, so
+changes to population or child normalization inputs require a fresh plan.
+Original-byte checks remain in place.
+
+Only judged, timing-certain rows are eligible. By default, existing assessments
+are preserved and only unset values receive `short`, `long` or `within_range`.
+`reassess=True` explicitly replaces existing eligible assessments. Unjudged
+and timing-uncertain rows remain unchanged, including any old flags; the audit
+reports those separately. All unrelated bits are preserved. Counts and settings
+are included in the plan metadata. This is distinct from fiemrok's raw-duration
+per-type assessments.
 
 ## Exceptional bulk operations
 

@@ -1,4 +1,4 @@
-'''Every persisted row of a store, decoded once from disk for the checks.
+'''Required persisted rows, decoded fresh from disk for selected checks.
 
 Rows are decoded straight from disk into fresh objects, never walked through
 the cache or .children: that is a time-range scan, so a child starting
@@ -8,11 +8,14 @@ give checks one definition of speech where speech filtering applies;
 structural checks still see pauses and placeholder labels.
 '''
 
+from pathlib import Path
+
 from ..overlap import SILENCE_LABELS
 from ..phonology.phone_types import PHONE_TYPES
 from ..storage import key_helper
 from ..storage.key_helper import EMPTY_ID
 from ..storage.store import value_key_to_instance
+from .selection import Progress, required_data, select_checks
 
 SEGMENT_CLASSES = ('Phrase', 'Word', 'Syllable', 'Phone')
 
@@ -22,6 +25,9 @@ class AuditData:
 
     def __init__(self, path, rows, label_index_keys, speaker_audio_links,
         audio_ids=None):
+        self.loaded_dependencies = None
+        self.transaction_id = None
+        self.store_identity = None
         self.path = path
         self.audio_ids = audio_ids
         self.audios = rows['Audio']
@@ -55,32 +61,58 @@ class AuditData:
         return self.by_key.get(segment.parent_key)
 
 
-def load_audit_data(store, audio_ids=None):
-    '''Decode every row of a store from disk, bypassing its cache.
-    store:        open Store; it is read and left unchanged, markers are
-                  skipped
-    audio_ids:    only decode these recordings (and every speaker); index
-                  entries and speaker-audio links are limited to them too
+def load_audit_data(store, audio_ids=None, checks=None, progress=False):
+    '''Load fresh persisted rows and indexes required by selected checks.
+    store:       open Store, assumed to have no concurrent writer
+    audio_ids:   optional recording IDs; population checks are skipped
+    checks:      check names; None loads dependencies of all applicable checks
+    progress:    True to print phases, False for silence, or a callback
 
-    A scoped snapshot cannot see rows in other recordings: a parent link
-    into another recording is reported as missing_row, not other_audio.
-    Scoped audits still scan the full label index and speaker-audio links,
-    filtering by recording so stale entries remain detectable.
+    Label-index checks scan the full index to detect stale entries. Other
+    checks do not load it. Store construction and cache behavior are unchanged.
     '''
     store._ensure_open()
-    if audio_ids is None: keys_by_class = _all_keys_by_class(store)
+    names, _ = select_checks(checks, audio_ids is not None)
+    required = required_data(names)
+    emit = progress if isinstance(progress, Progress) else Progress(progress)
+    transaction_id = store.DB.env.info()['last_txnid']
+    emit('scanning main keys')
+    if audio_ids is None:
+        keys_by_class = _all_keys_by_class(store) if required else {}
     else:
         audio_ids = set(audio_ids)
-        keys_by_class = _scoped_keys_by_class(store, audio_ids)
+        keys_by_class = _scoped_keys_by_class(store, audio_ids, required)
     rows = {}
-    for class_name, keys in keys_by_class.items():
-        rows[class_name] = _decode_rows(store, keys)
-    label_index_keys = set(store.DB.all_label_index_keys())
-    links = {(link[:8], link[8:]) for link in store.DB.all_links()}
-    if audio_ids is not None:
-        label_index_keys = _scoped_index_keys(label_index_keys, audio_ids)
-        links = {link for link in links if link[1] in audio_ids}
-    return AuditData(store.path, rows, label_index_keys, links, audio_ids)
+    for name in ('Audio', 'Speaker') + SEGMENT_CLASSES:
+        rows[name] = []
+        if name not in required: continue
+        keys = keys_by_class.get(name, [])
+        emit(f'loading {name}: {len(keys):,} rows')
+        rows[name] = _decode_rows(store, keys)
+    label_index_keys, links = set(), set()
+    if 'label_index' in required:
+        emit('scanning label index')
+        label_index_keys = set(store.DB.all_label_index_keys())
+        if audio_ids is not None:
+            label_index_keys = _scoped_index_keys(label_index_keys, audio_ids)
+    if 'speaker_audio_links' in required:
+        emit('scanning speaker/audio links')
+        links = {(link[:8], link[8:]) for link in store.DB.all_links()}
+        if audio_ids is not None:
+            links = {link for link in links if link[1] in audio_ids}
+    data = AuditData(store.path, rows, label_index_keys, links, audio_ids)
+    data.loaded_dependencies = required
+    data.transaction_id = transaction_id
+    data.store_identity = store_identity(store.path)
+    return data
+
+
+def store_identity(path):
+    '''Identify the database file without hashing or scanning its contents.'''
+    path = Path(path)
+    stat = (path / 'data.mdb').stat()
+    return {'path': str(path.resolve()), 'device': stat.st_dev,
+        'inode': stat.st_ino}
 
 
 def _all_keys_by_class(store):
@@ -92,15 +124,18 @@ def _all_keys_by_class(store):
     return keys_by_class
 
 
-def _scoped_keys_by_class(store, audio_ids):
+def _scoped_keys_by_class(store, audio_ids, required):
     '''Return the keys of the given recordings, plus every speaker key.'''
-    keys_by_class = {'Audio': [], 'Speaker': store.DB.all_speaker_keys()}
+    keys_by_class = {'Audio': [], 'Speaker': []}
+    if 'Speaker' in required:
+        keys_by_class['Speaker'] = store.DB.all_speaker_keys()
     for class_name in SEGMENT_CLASSES: keys_by_class[class_name] = []
     for audio_id in sorted(audio_ids):
         audio_key = key_helper.audio_id_to_key(audio_id)
-        if store.DB.key_exists(audio_key):
+        if 'Audio' in required and store.DB.key_exists(audio_key):
             keys_by_class['Audio'].append(audio_key)
         for class_name in SEGMENT_CLASSES:
+            if class_name not in required: continue
             keys = store.DB.audio_id_to_child_keys(audio_id, class_name)
             keys_by_class[class_name].extend(keys)
     return keys_by_class

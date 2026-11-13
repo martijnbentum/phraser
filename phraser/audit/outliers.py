@@ -1,15 +1,16 @@
 '''Duration outlier checks; these are always warnings.
 
-Phones and frequent words are grouped by label; rare words are pooled and
-compared on ms per phone, phrases are pooled and compared on ms per speech
-word. Each group gets IQR fences at k on a log scale; groups smaller than
-min_count are recorded but not judged.
+Phones and frequent syllables and words are grouped by label; rare syllables
+and words are pooled per level and compared on ms per phone. Phrases are
+pooled and compared on ms per speech word. Each group gets IQR fences at k
+on a log scale; groups smaller than min_count are recorded but not judged.
 '''
 
 from types import SimpleNamespace
 
 import numpy as np
 
+from .assessment import annotate_duration
 from .findings import WARNING, CheckResult, OutlierGroup, _finding
 from .store_snapshot import _is_speech, _speech_phones, _speech_words
 
@@ -62,7 +63,7 @@ def _flagged_findings(pairs, log_values, fences, group):
     return findings
 
 
-def _measure_groups(level, unit, pairs_by_name, k, min_count):
+def _measure_groups(level, unit, pairs_by_name, k, min_count, judgments):
     '''Judge each group of (segment, value) pairs against its own fences.
     A group smaller than min_count is recorded but not judged.'''
     groups, findings = [], []
@@ -78,7 +79,10 @@ def _measure_groups(level, unit, pairs_by_name, k, min_count):
         fences = _fences(log_values, k)
         group = _outlier_group(level, name, unit, log_values, fences, k)
         groups.append(group)
-        findings += _flagged_findings(pairs, log_values, fences, group)
+        flagged = _flagged_findings(pairs, log_values, fences, group)
+        for segment, _ in pairs: judgments[segment.key] = 'within_range'
+        for finding in flagged: judgments[finding.key] = finding.direction
+        findings += flagged
     return groups, findings, n_checked, n_unjudged
 
 
@@ -97,11 +101,61 @@ def check_outliers_phone(data, k=DEFAULT_K, min_count=DEFAULT_MIN_COUNT):
     k:            IQR multiplier on log duration
     min_count:    smallest label count that gets judged
     '''
+    judgments = {}
     pairs = _duration_pairs_by_label(_speech_phones(data))
     groups, findings, n_checked, n_unjudged = _measure_groups('phone', 'ms',
-        pairs, k, min_count)
-    return CheckResult('outliers_phone', WARNING, n_checked, findings,
+        pairs, k, min_count, judgments)
+    result = CheckResult('outliers_phone', WARNING, n_checked, findings,
         n_unjudged, groups)
+    return annotate_duration(result, data.phones, judgments)
+
+
+def _syllable_pairs_by_label(data):
+    '''Group positive speech syllable durations by space-normalized label.'''
+    pairs_by_label = {}
+    for syllable in data.syllables:
+        if syllable.duration <= 0 or not _is_speech(syllable): continue
+        label = syllable.label.replace(' ', '')
+        pairs_by_label.setdefault(label, []).append((syllable,
+            syllable.duration))
+    return pairs_by_label
+
+
+def _rare_syllable_pairs(data, rare_pairs_by_label):
+    '''Express rare syllables as ms per phone so they can be pooled.'''
+    pairs = []
+    for label_pairs in rare_pairs_by_label.values():
+        for syllable, duration in label_pairs:
+            children = data.children.get(syllable.identifier, [])
+            n_phones = sum(p.object_type == 'Phone' for p in children)
+            if n_phones > 0: pairs.append((syllable, duration / n_phones))
+    return pairs
+
+
+def check_outliers_syllable(data, k=DEFAULT_K, min_count=DEFAULT_MIN_COUNT):
+    '''Find extreme syllable durations; pool rare labels as ms per phone.
+    data:         audit snapshot with syllables and persisted child links
+    k:            IQR multiplier on log value
+    min_count:    smallest group that gets judged
+    '''
+    judgments = {}
+    frequent, rare = {}, {}
+    for label, pairs in _syllable_pairs_by_label(data).items():
+        group = frequent if len(pairs) >= min_count else rare
+        group[label] = pairs
+    groups, findings, n_checked, _ = _measure_groups('syllable', 'ms',
+        frequent, k, min_count, judgments)
+    pooled = {'rare_syllables': _rare_syllable_pairs(data, rare)}
+    rare_result = _measure_groups('syllable', 'ms_per_phone', pooled, k,
+        min_count, judgments)
+    groups += rare_result[0]
+    findings += rare_result[1]
+    n_checked += rare_result[2]
+    n_all = sum(len(pairs) for pairs in rare.values())
+    n_unjudged = n_all - rare_result[2]
+    result = CheckResult('outliers_syllable', WARNING, n_checked, findings,
+        n_unjudged, groups)
+    return annotate_duration(result, data.syllables, judgments)
 
 
 def _phone_count(data, word):
@@ -125,22 +179,25 @@ def check_outliers_word(data, k=DEFAULT_K, min_count=DEFAULT_MIN_COUNT):
     k:            IQR multiplier on log value
     min_count:    smallest label count that gets its own group
     '''
+    judgments = {}
     frequent, rare = {}, {}
     words = _speech_words(data)
     for label, pairs in _duration_pairs_by_label(words).items():
         group = frequent if len(pairs) >= min_count else rare
         group[label] = pairs
     groups, findings, n_checked, _ = _measure_groups('word', 'ms', frequent,
-        k, min_count)
+        k, min_count, judgments)
     pooled = {'rare_words': _rare_word_pairs(data, rare)}
-    rare_result = _measure_groups('word', 'ms_per_phone', pooled, k, min_count)
+    rare_result = _measure_groups('word', 'ms_per_phone', pooled, k,
+        min_count, judgments)
     groups += rare_result[0]
     findings += rare_result[1]
     n_checked += rare_result[2]
     n_all = sum(len(pairs) for pairs in rare.values())
     n_unjudged = n_all - rare_result[2]
-    return CheckResult('outliers_word', WARNING, n_checked, findings,
+    result = CheckResult('outliers_word', WARNING, n_checked, findings,
         n_unjudged, groups)
+    return annotate_duration(result, data.words, judgments)
 
 
 def check_outliers_phrase(data, k=DEFAULT_K, min_count=DEFAULT_MIN_COUNT):
@@ -149,6 +206,7 @@ def check_outliers_phrase(data, k=DEFAULT_K, min_count=DEFAULT_MIN_COUNT):
     min_count:    smallest phrase count that gets judged
     '''
     pairs = []
+    judgments = {}
     n_without_rate = 0
     for phrase in data.phrases:
         words = data.children.get(phrase.identifier, [])
@@ -158,7 +216,8 @@ def check_outliers_phrase(data, k=DEFAULT_K, min_count=DEFAULT_MIN_COUNT):
             continue
         pairs.append((phrase, phrase.duration / n_words))
     result = _measure_groups('phrase', 'ms_per_word', {'all_phrases': pairs},
-        k, min_count)
+        k, min_count, judgments)
     groups, findings, n_checked, n_unjudged = result
-    return CheckResult('outliers_phrase', WARNING, n_checked, findings,
+    result = CheckResult('outliers_phrase', WARNING, n_checked, findings,
         n_unjudged + n_without_rate, groups)
+    return annotate_duration(result, data.phrases, judgments)

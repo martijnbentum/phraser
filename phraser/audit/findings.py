@@ -42,6 +42,9 @@ class CheckResult:
         self.findings = []
         self.n_unjudged = n_unjudged
         self.groups = groups or []
+        self.assessments = []
+        self.assessment_counts = {}
+        self.judgments = {}
         for finding in findings: self.add(finding)
 
     def __repr__(self):
@@ -51,6 +54,7 @@ class CheckResult:
 
     def add(self, finding):
         '''Append a finding, stamped with this check's name and severity.'''
+        if not hasattr(finding, 'status'): finding.status = 'needs_attention'
         finding.check = self.name
         finding.severity = self.severity
         self.findings.append(finding)

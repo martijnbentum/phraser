@@ -49,6 +49,11 @@ class AuditReport:
     def n_warnings(self):
         return sum(r.n_findings for r in self.warnings)
 
+    @property
+    def n_attention_errors(self):
+        return sum(r.count_by('status').get('needs_attention', 0)
+            for r in self.errors)
+
     def summary(self):
         '''Print row counts and the findings per check.'''
         print(f'audit of {self.info.store_path} at {self.info.stamp}')
@@ -59,6 +64,12 @@ class AuditReport:
             print(f'\n{title}')
             for result in results:
                 print(_summary_line(result))
+                print(f'    status: {result.count_by("status")}')
+                if result.assessment_counts:
+                    print(f'    assessments: {result.assessment_counts}')
+        skipped = getattr(self.info, 'skipped_checks', {})
+        if skipped: print(f'\nskipped: {skipped}')
+        print(f'\nerrors needing attention: {self.n_attention_errors:,}')
         print(f'\noutlier groups: {len(self.outlier_groups):,}', end=' | ')
         print(f'speakers: {len(self.speakers):,}')
 
@@ -119,13 +130,20 @@ def _record_from_json(cls, content):
 def _result_to_json(result):
     return {'name': result.name, 'severity': result.severity,
         'n_checked': result.n_checked, 'n_unjudged': result.n_unjudged,
-        'findings': _records_to_json(result.findings)}
+        'findings': _records_to_json(result.findings),
+        'assessments': _records_to_json(result.assessments),
+        'assessment_counts': result.assessment_counts}
 
 
 def _result_from_json(content):
     findings = [_record_from_json(Finding, f) for f in content['findings']]
-    return CheckResult(content['name'], content['severity'],
+    result = CheckResult(content['name'], content['severity'],
         content['n_checked'], findings, content['n_unjudged'])
+    result.assessments = []
+    for row in content.get('assessments', []):
+        result.assessments.append(_record_from_json(Finding, row))
+    result.assessment_counts = content.get('assessment_counts', {})
+    return result
 
 
 def _summary_to_json(report):

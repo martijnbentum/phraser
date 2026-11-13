@@ -7,6 +7,7 @@ overlap, and that children fill their parent without gaps.
 
 from ..storage.key_helper import EMPTY_ID
 from .findings import ERROR, WARNING, CheckResult, _finding, _size_group
+from .sharing import explain_sharing, following_words
 from .store_snapshot import _speech_phones, _speech_words
 
 
@@ -26,7 +27,8 @@ def _overlap_finding(segment, other, overlap):
 
 
 def check_within_parent(data):
-    '''Find children extending past the boundaries of their parent.'''
+    '''Retain raw containment findings and explain simple shared crossings.'''
+    following = following_words(data)
     findings = []
     n_checked = 0
     for segment in data.segments:
@@ -37,7 +39,11 @@ def check_within_parent(data):
         end_excess = max(segment.end - parent.end, 0)
         excess = max(start_excess, end_excess)
         if excess == 0: continue
+        explained = explain_sharing(data, segment, parent, following)
+        status = 'explained' if explained else 'needs_attention'
+        explanation = 'shared_phone' if explained else None
         findings.append(_finding(segment, other_key=parent.key,
+            status=status, explanation=explanation,
             start_excess_ms=start_excess, end_excess_ms=end_excess,
             excess_ms=excess, size=_size_group(excess)))
     return CheckResult('within_parent', ERROR, n_checked, findings)

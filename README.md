@@ -133,6 +133,25 @@ syllable = store.create(Syllable, label="he", start=0, end=250, **identity)
 phone = store.create(Phone, label="h", start=0, end=100, **identity)
 ```
 
+### Defer query-root loading
+
+`Store(path)` keeps `eager_query_roots=True`: opening scans the main keys to
+populate roots such as `store.words` and `store.phones`. For work on known
+keys, opt out explicitly:
+
+```python
+store = Store('/path/to/lmdb', eager_query_roots=False)
+phone = store.load(phone_key)  # direct read, no whole-store key scan
+phones = store.phones.filter(label='a')  # constructing a query does not scan
+list(phones)  # evaluating it initializes the root key collections
+```
+
+This defers key loading, not model-object loading. `repr(store)` is cheap;
+`str(store)` requests database counts and can trigger the scan. An explicit
+`fraction` requests sampling and also needs key loading. Calling
+`store.refresh_query_roots()` explicitly always rebuilds key collections,
+even with deferred loading. General save/load behavior is unchanged.
+
 ### Stage and save a phrase tree
 
 On a `Segment`, only `save` and `delete` touch the database; every other

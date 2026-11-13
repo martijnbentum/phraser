@@ -29,8 +29,14 @@ class Store:
     before relying on store-level query roots.
     """
 
-    def __init__(self, path = locations.cgn_lmdb, fraction = None,
-        verbose = False):
+    def __init__(self, path=locations.cgn_lmdb, fraction=None,
+        verbose=False, eager_query_roots=True):
+        '''Open a Store and optionally defer query-root key loading.
+        path:                 LMDB directory
+        fraction:             optional sample to preload; requires key loading
+        verbose:              print additional loading information
+        eager_query_roots:     load root keys now; False loads on query use
+        '''
         t = time.time()
         self.DB = lmdb_helper.DB(path = path)
         self.path = path
@@ -40,6 +46,7 @@ class Store:
         self.load_counter = {}
         self.save_key_counter = {}
         self.verbose = verbose
+        self.eager_query_roots = eager_query_roots
         self._classes_loaded = {}
         self.fraction = None
         self.closed = False
@@ -110,7 +117,8 @@ class Store:
         self._query_roots = {}
         for class_name, cls in self.CLASS_MAP.items():
             attr = class_name.lower() + 's'  # Audio->audios, Phrase->phrases
-            root = query.get_class_object(cls, self)
+            root = query.get_class_object(cls, self,
+                eager=self.eager_query_roots)
             setattr(self, attr, root)
             self.relations_to_class_map[attr] = cls
             self._query_roots[cls] = root
@@ -130,8 +138,7 @@ class Store:
         read/query phase. Saves and deletes intentionally do not update query
         roots live.
         '''
-        if hasattr(self, '_rank_to_keys_dict'):
-            del self._rank_to_keys_dict
+        self.rank_to_keys_dict(update=True)
         self.attach_query_roots()
 
     def create(self, cls, **kwargs):
@@ -410,6 +417,7 @@ class Store:
         self._ensure_open()
         d = self.DB.rank_to_keys_dict()
         self._rank_to_keys_dict = d
+        self._rank_to_keys_transaction_id = self.DB.env.info()['last_txnid']
         return self._rank_to_keys_dict
 
     def all_keys(self):

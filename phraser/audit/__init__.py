@@ -1,6 +1,8 @@
 '''Read-only survey of the rows in a Phraser store.
 
-audit_store(store) runs every named check and returns an AuditReport. Rows are
+audit_store(store) runs every named check and returns an AuditReport. Pass
+checks=[...] to select individual checks and load only their dependencies.
+Rows are
 decoded straight from disk into fresh objects, never walked through
 .children: that is a time-range scan, so a child starting outside its parent
 would be invisible to the check meant to find it. The store and its cache
@@ -12,6 +14,9 @@ warning), how many items it examined and a Finding per problem found.
 
 Modules:
     findings          Finding, CheckResult and the other result records
+    assessment        stored duration assessment agreement
+    sharing           simple persisted shared-phone interpretation
+    selection         check dependencies and phase progress
     store_snapshot    AuditData and load_audit_data, all or some recordings
     hierarchy         checks on the parent and child segment tree
     timing            checks on the time range of each segment
@@ -40,7 +45,8 @@ from .hierarchy import check_within_parent
 from .labels import check_phone_positions, check_syllable_label_matches_phones
 from .labels import check_syllable_nucleus, check_unknown_phone_labels
 from .outliers import DEFAULT_K, DEFAULT_MIN_COUNT, check_outliers_phone
-from .outliers import check_outliers_phrase, check_outliers_word
+from .outliers import check_outliers_phrase, check_outliers_syllable
+from .outliers import check_outliers_word
 from .overlap_checks import check_overlap_code_matches, check_overlap_computed
 from .references import check_label_index, check_speaker_audio_links
 from .references import check_speaker_exists
@@ -68,4 +74,5 @@ __all__ = ['audit_store', 'load_audit_data', 'load_report', 'AuditData',
     'check_unknown_phone_labels', 'check_phone_positions',
     'check_syllable_nucleus', 'check_syllable_label_matches_phones',
     'check_overlap_computed', 'check_overlap_code_matches',
-    'check_outliers_phone', 'check_outliers_word', 'check_outliers_phrase']
+    'check_outliers_phone', 'check_outliers_syllable', 'check_outliers_word',
+    'check_outliers_phrase']

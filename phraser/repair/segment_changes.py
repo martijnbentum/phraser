@@ -43,7 +43,7 @@ def plan_delete(plan, store, txn, keys):
         selected.update(chosen)
         _delete_unused_links(staged, store, txn, rows, chosen, deleted,
             existing)
-    _delete_label_entries(staged, store, txn, selected)
+    _delete_label_entries(staged, store, txn, selected, existing)
     _commit_staged(plan, staged)
 
 
@@ -60,7 +60,7 @@ def plan_update(plan, store, txn, key, **fields):
     Children are not checked against a new end; verify and re-audit afterward.
     '''
     staged = _staged_plan(plan)
-    if key in _planned_keys(plan):
+    if plan._contains('main', key):
         raise ValueError(f'Plan already changes {key.hex()}')
     row = _load_segment(store, txn, key)
     _check_fields(row, fields)
@@ -77,18 +77,12 @@ def _staged_plan(plan):
     if plan.status != 'planned':
         raise ValueError('Only planned changes can be extended')
     staged = copy(plan)
-    staged.changes = list(plan.changes)
+    staged._changes = {}
     return staged
 
 
 def _commit_staged(plan, staged):
-    seen = set()
-    for change in staged.changes:
-        identity = (change['database'], change['key'])
-        if identity in seen:
-            raise ValueError(f'Plan already changes {identity}')
-        seen.add(identity)
-    plan.changes = staged.changes
+    plan._extend(staged.changes)
 
 
 def _planned_keys(plan):
@@ -200,11 +194,8 @@ def _delete_unused_links(plan, store, txn, rows, selected, deleted, existing):
             _add_deletion(plan, 'speaker_audio', key, value, existing)
 
 
-def _delete_label_entries(plan, store, txn, selected):
+def _delete_label_entries(plan, store, txn, selected, existing):
     if not selected: return
-    existing = {}
-    for change in plan.changes:
-        existing[(change['database'], change['key'])] = change
     with txn.cursor(db=store.DB.db['label_segment']) as cursor:
         for key, value in cursor:
             target = key_helper.label_index_key_to_instance_key(key)

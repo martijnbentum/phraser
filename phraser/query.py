@@ -29,8 +29,8 @@ def queryset_from_items(items, store = None):
     if store is None:
         store = items[0].store
 
-    # Data starts with every key of cls; narrowed to the items below
-    data = Data(cls, store)
+    # Respect deferred loading when the items already supply their own keys.
+    data = Data(cls, store, eager=store.eager_query_roots)
 
     # Convert to LMDB keys and restrict
     keys = objects_to_keys(items)
@@ -41,19 +41,29 @@ def queryset_from_items(items, store = None):
     return QuerySet(data)
 
 
-def get_class_object(cls, store):
+def get_class_object(cls, store, eager=True):
     '''Return a store-scoped query object for a class.'''
-    data = Data(cls, store)
+    data = Data(cls, store, eager=eager)
     return QuerySet(data)
 
 class Data:
     '''handles loading objects of a given class from store'''
-    def __init__(self, cls, store):
+    def __init__(self, cls, store, eager=True):
         self.cls = cls
         self.store = store
         self.object_type = cls.__name__
         self.rank = key_helper.CLASS_RANK_MAP[self.object_type]
-        self._get_keys(update = False)
+        self._keys = None
+        if eager: self._get_keys()
+
+    @property
+    def keys(self):
+        if self._keys is None: self._get_keys()
+        return self._keys
+
+    @keys.setter
+    def keys(self, keys):
+        self._keys = keys
 
     def _get_keys(self, update = False):
         d = self.store.rank_to_keys_dict(update = update)

@@ -4,6 +4,7 @@ Records support inspection and reviewed reconstruction. Interrupted writes
 are inspected with check_change_state; they are never retried implicitly.
 '''
 
+from copy import deepcopy
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -16,7 +17,21 @@ from .records import save_record, write_receipt
 DATABASES = ('main', 'label_segment', 'speaker_audio')
 STATUSES = ('planned', 'applying', 'applied', 'rolling_back', 'rolled_back')
 EXECUTION_DEFAULTS = {'applied_txn_id': None, 'verified': False,
-    'rollback_transaction_id': None, 'rollback_verified': False, 'error': None}
+    'rollback_transaction_id': None, 'rollback_verified': False, 'error': None,
+    'domain_verification': None}
+
+
+class _ChangeList(list):
+    '''Inspection snapshot that rejects accidental list mutation.'''
+
+    def _readonly(self, *args, **kwargs):
+        message = 'plan.changes is read-only; use merge_change_plan '
+        message += 'or the planning helpers'
+        raise TypeError(message)
+
+    append = clear = extend = insert = pop = remove = _readonly
+    reverse = sort = __setitem__ = __delitem__ = _readonly
+    __iadd__ = __imul__ = _readonly
 
 
 class ChangePlan:
@@ -24,17 +39,37 @@ class ChangePlan:
 
     def __init__(self, content):
         vars(self).update(EXECUTION_DEFAULTS)
-        vars(self).update(content)
+        vars(self).update({k: v for k, v in content.items() if k != 'changes'})
+        self._changes = {}
+        self._extend(content['changes'])
+
+    @property
+    def changes(self):
+        '''Return ordered changes for inspection; extend through helpers.'''
+        return _ChangeList(dict(c) for c in self._changes.values())
+
+    def _extend(self, changes):
+        '''Validate a complete addition before extending the plan.'''
+        pending = {}
+        for change in changes:
+            identity = (change['database'], change['key'])
+            if identity in self._changes or identity in pending:
+                raise ValueError(f'Plan already changes {identity}')
+            pending[identity] = change
+        self._changes.update(pending)
+
+    def _contains(self, database, key):
+        return (database, key.hex()) in self._changes
 
     def __repr__(self):
-        return f'<ChangePlan {self.status} changes={len(self.changes)}>'
+        return f'<ChangePlan {self.status} changes={len(self._changes)}>'
 
     def count_changes(self, by='database'):
         '''Count by database, operation or main-row type; indexes separately.'''
         if by not in ('database', 'operation', 'object_type'):
             raise ValueError('Count by database, operation or object_type')
         counts = {}
-        for change in self.changes:
+        for change in self._changes.values():
             value = change.get(by, 'unknown')
             if by == 'object_type':
                 value = change['database']
@@ -49,6 +84,9 @@ class ChangePlan:
             raise ValueError('limit must be a non-negative integer')
         print(self.reason)
         print(f'status: {self.status}  database: {self.database["path"]}')
+        print(f'bytes verified: {self.verified}')
+        domain = self.domain_verification or {'status': 'not_run'}
+        print(f'domain verification: {domain["status"]}')
         print(f'changes: {len(self.changes):,}  {self.count_changes()}')
         print(f'operations: {self.count_changes("operation")}')
         print(f'row types: {self.count_changes("object_type")}')
@@ -59,7 +97,9 @@ class ChangePlan:
         if self.error: print(f'error: {self.error}')
 
     def to_json(self):
-        return dict(vars(self))
+        content = {k: v for k, v in vars(self).items() if k != '_changes'}
+        content['changes'] = list(self.changes)
+        return content
 
 
 def _preview(change):
@@ -126,10 +166,32 @@ def add_change(plan, database, key, before, after):
     operation = 'update'
     if before is None: operation = 'insert'
     elif after is None: operation = 'delete'
-    plan.changes.append({'database': database, 'key': key.hex(),
+    plan._extend([{'database': database, 'key': key.hex(),
         'before': _hex_value(before), 'after': _hex_value(after),
         'operation': operation, 'context': _row_context(database, key,
-            before, after)})
+            before, after)}])
+
+
+def merge_change_plan(plan, other):
+    '''Extend a planned repair with another plan from the same snapshot.
+    plan:     destination; its reason and metadata remain in effect
+    other:    source plan, left unchanged; duplicate keys are refused
+
+    The whole addition is validated before mutation. Duration assessment
+    plans must be applied separately to preserve their assessment policy.
+    '''
+    if plan.status != 'planned' or other.status != 'planned':
+        raise ValueError('Only planned changes can be merged')
+    if plan.database != other.database:
+        raise ValueError('Cannot merge plans from different stores')
+    if plan.transaction_id != other.transaction_id:
+        raise ValueError('Cannot merge plans from different transactions')
+    assessments = 'duration_assessment' in plan.metadata
+    assessments = assessments or 'duration_assessment' in other.metadata
+    if assessments:
+        raise ValueError('Duration assessment plans must be applied separately')
+    _validate_plan(other.to_json())
+    plan._extend(deepcopy(list(other.changes)))
 
 
 def _row_context(database, key, before, after):
@@ -296,6 +358,7 @@ def rollback_changes(store, path):
 def _run_change(store, path, plan, reverse):
     previous = plan.status
     plan.status = 'rolling_back' if reverse else 'applying'
+    if not reverse: plan.domain_verification = None
     field = 'rollback_transaction_id' if reverse else 'applied_txn_id'
     write_receipt(path, plan.to_json())
     try: _execute(store, plan, reverse)
@@ -313,11 +376,18 @@ def _run_change(store, path, plan, reverse):
 def _execute(store, plan, reverse):
     before, after = ('after', 'before') if reverse else ('before', 'after')
     committed = False
+    reuse_keys = False
     field = 'rollback_transaction_id' if reverse else 'applied_txn_id'
     try:
         with store.DB.env.begin(write=True) as txn:
+            reuse_keys = _can_reuse_query_keys(store, plan, txn.id() - 1)
             if reverse and txn.id() - 1 != plan.applied_txn_id:
                 raise ValueError('Database changed; immediate undo is stale')
+            if not reverse and 'duration_assessment' in plan.metadata:
+                if txn.id() - 1 != plan.transaction_id:
+                    message = 'Store changed since duration assessment; '
+                    message += 'prepare a fresh assessment plan'
+                    raise ValueError(message)
             _check_values(store, txn, plan, before)
             for change in plan.changes:
                 _write_change(store, txn, change, after)
@@ -330,7 +400,7 @@ def _execute(store, plan, reverse):
         verified = 'rollback_verified' if reverse else 'verified'
         setattr(plan, verified, True)
     finally:
-        if committed: _refresh_store(store)
+        if committed: _refresh_store(store, reuse_keys)
 
 
 def check_change_state(store, path):
@@ -402,6 +472,22 @@ def _write_change(store, txn, change, field):
     else: txn.put(key, value, db=database)
 
 
-def _refresh_store(store):
+def _can_reuse_query_keys(store, plan, transaction_id):
+    '''Reuse current membership only for repairs that keep every main key.'''
+    for change in plan.changes:
+        if change['database'] != 'main': continue
+        if change['before'] is None or change['after'] is None: return False
+    if not hasattr(store, '_rank_to_keys_dict'):
+        return not store.eager_query_roots
+    return store._rank_to_keys_transaction_id == transaction_id
+
+
+def _refresh_store(store, reuse_keys):
     store._cache.clear()
-    store.refresh_query_roots()
+    store._classes_loaded.clear()
+    if not reuse_keys:
+        store.refresh_query_roots()
+        return
+    if hasattr(store, '_rank_to_keys_dict'):
+        store._rank_to_keys_transaction_id = store.DB.env.info()['last_txnid']
+    store.attach_query_roots()
