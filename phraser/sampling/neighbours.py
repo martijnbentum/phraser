@@ -191,7 +191,10 @@ def _context_window(sequence, breaks, index, n_neighbours):
 
 
 def _audio_sequences(audio, attribute, within_phrase, max_gap_ms):
-    '''Segment sequences with breaks, ordered by speaker key then time.'''
+    '''Segment sequences with breaks, ordered by speaker key then time.
+    Each speaker's sequence rescans the audio's segments and words; cheap
+    for the few speakers per recording, so not grouped in one pass.
+    '''
     if not within_phrase:
         segments, words = getattr(audio, attribute), audio.words
         speaker_keys = sorted({segment.speaker_key for segment in segments})

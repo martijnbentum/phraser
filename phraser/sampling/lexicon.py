@@ -6,7 +6,6 @@ import random
 
 from ..models import Phone, Phrase, Syllable, Word
 from . import _selection as selection
-from . import sample_segments
 from .selection_report import InsufficientSampleError, SelectionReport
 
 
@@ -89,97 +88,115 @@ class Lexicon(Mapping):
         return len(self._entries)
 
 
-def build_word_lexicon(audios=None, store=None, max_keys_per_type=None,
-    random_seed=0, min_duration_ms=100, max_duration_ms=1500,
-    exclude_duration_outliers=True, speakers=None, gender=None):
+def build_word_lexicon(audios=None, store=None, min_tokens_per_type=None,
+    max_retained_tokens_per_type=None, random_seed=0, min_duration_ms=100,
+    max_duration_ms=1500, include_only_within_range=True, speakers=None,
+    gender=None, min_phones=None, exclude_timing_uncertain=False):
     '''Return a Lexicon of eligible word keys grouped by exact label.
-    audios:                     recordings; None loads all audios from store
-    store:                      open Store, needed when audios is None
-    max_keys_per_type:          None retains all; 0 counts only; else a cap
-    random_seed:                local seed for capped key retention
-    min_duration_ms:            inclusive duration minimum; None disables it
-    max_duration_ms:            inclusive duration maximum; None disables it
-    exclude_duration_outliers:  exclude stored short/long assessments
-    speakers:                   eligible Speaker objects or keys, or None
-    gender:                     female, male, unknown, or None
+    audios:                        recordings; None loads all audios from store
+    store:                         open Store, needed when audios is None
+    min_tokens_per_type:           drop labels with fewer eligible tokens
+    max_retained_tokens_per_type:  None retains all; 0 counts only; else a cap
+    random_seed:                   local seed for capped key retention
+    min_duration_ms:               inclusive duration minimum; None disables it
+    max_duration_ms:               inclusive duration maximum; None disables it
+    include_only_within_range:     keep only tokens flagged within_range
+    speakers:                      eligible Speaker objects or keys, or None
+    gender:                        female, male, unknown, or None
+    min_phones:                    minimum linked phones; None disables it
+    exclude_timing_uncertain:      exclude tokens with a recorded timing concern
 
     Counts include all eligible tokens. Positive caps use uniform reservoir
     sampling without replacement; final keys and labels are sorted. Recordings
     are processed in key order, independently of supplied recording order.
-    The report counts sequential eligibility losses, before any retention
-    cap. Building never saves annotations or changes flags. Source objects
-    may enter the Store's normal cache during loading.
+    The report counts sequential eligibility losses, then whole labels
+    dropped by min_tokens_per_type, before any retention cap. Building never
+    saves annotations or changes flags. Source objects may enter the
+    Store's normal cache during loading.
     '''
-    return _build_lexicon(Word, 'words', audios, store, max_keys_per_type,
-        random_seed, min_duration_ms, max_duration_ms,
-        exclude_duration_outliers, speakers, gender)
+    keys = selection.speaker_keys(speakers)
+    filters = selection.TokenFilters(None, keys, gender, min_phones,
+        min_duration_ms, max_duration_ms, include_only_within_range,
+        exclude_timing_uncertain)
+    return _build_lexicon(Word, 'words', filters, audios, store,
+        min_tokens_per_type, max_retained_tokens_per_type, random_seed)
 
 
-def build_phrase_lexicon(audios=None, store=None, max_keys_per_type=None,
-    random_seed=0, min_duration_ms=None, max_duration_ms=None,
-    exclude_duration_outliers=True, speakers=None, gender=None):
+def build_phrase_lexicon(audios=None, store=None, min_tokens_per_type=None,
+    max_retained_tokens_per_type=None, random_seed=0, min_duration_ms=None,
+    max_duration_ms=None, include_only_within_range=True, speakers=None,
+    gender=None, min_phones=None, exclude_timing_uncertain=False):
     '''Build phrase entries; parameters follow build_word_lexicon.
     Duration bounds are disabled by default; phrase labels are literal text.
     '''
-    return _build_lexicon(Phrase, 'phrases', audios, store, max_keys_per_type,
-        random_seed, min_duration_ms, max_duration_ms,
-        exclude_duration_outliers, speakers, gender)
+    keys = selection.speaker_keys(speakers)
+    filters = selection.TokenFilters(None, keys, gender, min_phones,
+        min_duration_ms, max_duration_ms, include_only_within_range,
+        exclude_timing_uncertain)
+    return _build_lexicon(Phrase, 'phrases', filters, audios, store,
+        min_tokens_per_type, max_retained_tokens_per_type, random_seed)
 
 
-def build_syllable_lexicon(audios=None, store=None, max_keys_per_type=None,
-    random_seed=0, min_duration_ms=None, max_duration_ms=None,
-    exclude_duration_outliers=True, speakers=None, gender=None):
+def build_syllable_lexicon(audios=None, store=None, min_tokens_per_type=None,
+    max_retained_tokens_per_type=None, random_seed=0, min_duration_ms=None,
+    max_duration_ms=None, include_only_within_range=True, speakers=None,
+    gender=None, min_phones=None, exclude_timing_uncertain=False):
     '''Build syllable entries; parameters follow build_word_lexicon.
     Duration bounds are disabled by default.
     '''
-    return _build_lexicon(Syllable, 'syllables', audios, store,
-        max_keys_per_type, random_seed, min_duration_ms, max_duration_ms,
-        exclude_duration_outliers, speakers, gender)
+    keys = selection.speaker_keys(speakers)
+    filters = selection.TokenFilters(None, keys, gender, min_phones,
+        min_duration_ms, max_duration_ms, include_only_within_range,
+        exclude_timing_uncertain)
+    return _build_lexicon(Syllable, 'syllables', filters, audios, store,
+        min_tokens_per_type, max_retained_tokens_per_type, random_seed)
 
 
-def build_phone_lexicon(audios=None, store=None, max_keys_per_type=None,
-    random_seed=0, min_duration_ms=None, max_duration_ms=None,
-    exclude_duration_outliers=True, speakers=None, gender=None):
+def build_phone_lexicon(audios=None, store=None, min_tokens_per_type=None,
+    max_retained_tokens_per_type=None, random_seed=0, min_duration_ms=None,
+    max_duration_ms=None, include_only_within_range=True, speakers=None,
+    gender=None, exclude_timing_uncertain=False):
     '''Build phone entries; parameters follow build_word_lexicon.
     Duration bounds are disabled by default.
     '''
-    return _build_lexicon(Phone, 'phones', audios, store, max_keys_per_type,
-        random_seed, min_duration_ms, max_duration_ms,
-        exclude_duration_outliers, speakers, gender)
-
-
-def _build_lexicon(segment_class, attribute, audios, store, cap, random_seed,
-    minimum, maximum, exclude_outliers, speakers, gender):
-    '''Build per-recording inventories without materializing all tokens.'''
-    if cap is not None: selection.validate_count(cap, 'max_keys_per_type')
-    selection.validate_seed(random_seed)
-    sample_segments._validate_token_filters(None, minimum, maximum,
-        exclude_outliers, gender)
     keys = selection.speaker_keys(speakers)
+    filters = selection.TokenFilters(None, keys, gender, None,
+        min_duration_ms, max_duration_ms, include_only_within_range,
+        exclude_timing_uncertain)
+    return _build_lexicon(Phone, 'phones', filters, audios, store,
+        min_tokens_per_type, max_retained_tokens_per_type, random_seed)
+
+
+def _build_lexicon(segment_class, attribute, filters, audios, store,
+    min_count, cap, random_seed):
+    '''Build per-recording inventories without materializing all tokens.'''
+    if min_count is not None:
+        selection.validate_count(min_count, 'min_tokens_per_type')
+    if cap is not None:
+        selection.validate_count(cap, 'max_retained_tokens_per_type')
+    selection.validate_seed(random_seed)
     audios = sorted(selection.get_audios(audios, store), key=lambda a: a.key)
     entries, reports = {}, []
     rng = random.Random(random_seed)
     for audio in audios:
-        tokens, report = _recording_tokens(audio, attribute, keys, gender,
-            minimum, maximum, exclude_outliers)
+        tokens, report = _recording_tokens(audio, attribute, filters)
         reports.append(report)
         _collect_entries(entries, tokens, cap, rng)
     for entry in entries.values(): entry.keys.sort()
-    report = _combine_reports(reports, attribute, keys, gender, minimum,
-        maximum, exclude_outliers)
+    report = _combine_reports(reports, attribute, filters)
+    filters.check_assessed(report)
+    if min_count is not None:
+        entries = _drop_rare_types(entries, report, min_count)
     return Lexicon(segment_class, entries, report)
 
 
-def _recording_tokens(audio, attribute, keys, gender, minimum, maximum,
-    exclude_outliers):
+def _recording_tokens(audio, attribute, filters):
     '''Apply the shared sampler restrictions to one recording's tokens.'''
     tokens = selection.unique_items(getattr(audio, attribute))
     tokens.sort(key=lambda token: token.key)
     report = SelectionReport(attribute[:-1] + ' tokens', len(tokens), None,
         selected_count=None)
-    tokens = sample_segments._filter_tokens(tokens, report, None, keys,
-        gender, minimum, maximum, exclude_outliers)
-    return tokens, report
+    return filters.apply(tokens, report), report
 
 
 def _collect_entries(entries, tokens, cap, rng):
@@ -202,13 +219,11 @@ def _retain_key(entry, key, cap, rng):
         if index < cap: entry.keys[index] = key
 
 
-def _combine_reports(reports, attribute, keys, gender, minimum, maximum,
-    exclude_outliers):
+def _combine_reports(reports, attribute, filters):
     '''Sum matching per-recording stages, keeping retention out of losses.'''
     template = SelectionReport(attribute[:-1] + ' tokens', 0, None,
         selected_count=None)
-    sample_segments._filter_tokens([], template, None, keys, gender,
-        minimum, maximum, exclude_outliers)
+    filters.apply([], template)
     report = SelectionReport(template.population,
         sum(item.starting_count for item in reports), None, selected_count=None)
     for index, stage in enumerate(template.stages):
@@ -216,3 +231,14 @@ def _combine_reports(reports, attribute, keys, gender, minimum, maximum,
         after = sum(item.stages[index].after for item in reports)
         report.add_stage(stage.condition, before, after)
     return report
+
+
+def _drop_rare_types(entries, report, min_count):
+    '''Keep labels with at least min_count eligible tokens; record the loss.'''
+    kept = {}
+    for label, entry in entries.items():
+        if entry.total_count >= min_count: kept[label] = entry
+    after = sum(entry.total_count for entry in kept.values())
+    report.add_stage(f'At least {min_count} tokens per type',
+        report.eligible_count, after)
+    return kept

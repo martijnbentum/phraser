@@ -1,5 +1,6 @@
 '''Private population selection, validation, and reproducible draws.'''
 
+from dataclasses import dataclass
 from math import isfinite
 from numbers import Integral, Real
 import random
@@ -122,3 +123,93 @@ def matches_speaker(speaker, keys=None, gender=None, age=None,
     if min_age is None and max_age is None: return True
     if speaker.age == 0: return False
     return within_bounds(speaker.age, min_age, max_age)
+
+
+ASSESSED_CONDITION = 'Duration flag assessed'
+
+
+@dataclass(frozen=True)
+class TokenFilters:
+    '''Validated segment token restrictions, applied in a fixed order.'''
+
+    type_label: str | None = None
+    speaker_keys: set | None = None
+    gender: str | None = None
+    min_phones: int | None = None
+    min_duration_ms: float | None = None
+    max_duration_ms: float | None = None
+    include_only_within_range: bool = True
+    exclude_timing_uncertain: bool = False
+
+    def __post_init__(self):
+        if self.type_label is not None and not isinstance(self.type_label, str):
+            raise ValueError('type_label must be a string or None')
+        validate_speaker_filters(self.gender)
+        if self.min_phones is not None:
+            validate_count(self.min_phones, 'min_phones')
+        validate_bounds(self.min_duration_ms, self.max_duration_ms, 'duration')
+        if type(self.include_only_within_range) is not bool:
+            raise ValueError('include_only_within_range must be a bool')
+        if type(self.exclude_timing_uncertain) is not bool:
+            raise ValueError('exclude_timing_uncertain must be a bool')
+
+    def apply(self, tokens, report):
+        '''Record each active condition as a report stage; return survivors.
+        Order: label, speaker, gender, phone count, positive duration,
+        duration bounds, assessed and within_range flags, timing flag.
+        '''
+        tokens = self._apply_identity(tokens, report)
+        if self.min_phones is not None:
+            tokens = filter_candidates(tokens, report,
+                f'At least {self.min_phones} phones',
+                lambda token: len(token.phones) >= self.min_phones)
+        tokens = self._apply_duration(tokens, report)
+        if self.exclude_timing_uncertain:
+            tokens = filter_candidates(tokens, report,
+                'Recorded timing uncertain',
+                lambda token: not token.timing_uncertain)
+        return tokens
+
+    def _apply_identity(self, tokens, report):
+        '''Label, speaker and gender restrictions.'''
+        if self.type_label is not None:
+            tokens = filter_candidates(tokens, report,
+                f'Label {self.type_label!r}',
+                lambda token: token.label == self.type_label)
+        if self.speaker_keys is not None:
+            tokens = filter_candidates(tokens, report, 'Speaker selection',
+                lambda token: matches_speaker(token.speaker,
+                self.speaker_keys))
+        if self.gender is not None:
+            tokens = filter_candidates(tokens, report, f'Gender {self.gender}',
+                lambda token: matches_speaker(token.speaker,
+                gender=self.gender))
+        return tokens
+
+    def _apply_duration(self, tokens, report):
+        '''Positive duration, optional bounds and the duration flag stages.'''
+        minimum, maximum = self.min_duration_ms, self.max_duration_ms
+        tokens = filter_candidates(tokens, report, 'Positive duration',
+            lambda token: token.duration > 0)
+        if minimum is not None or maximum is not None:
+            condition = describe_bounds('Duration', minimum, maximum, 'ms')
+            tokens = filter_candidates(tokens, report, condition,
+                lambda token: within_bounds(token.duration, minimum, maximum))
+        if self.include_only_within_range:
+            tokens = filter_candidates(tokens, report, ASSESSED_CONDITION,
+                lambda token: token.duration_outlier != 'unset')
+            tokens = filter_candidates(tokens, report,
+                'Duration flag within_range',
+                lambda token: token.duration_outlier == 'within_range')
+        return tokens
+
+    def check_assessed(self, report):
+        '''Raise when no candidate reaching the flag stage was assessed.'''
+        if not self.include_only_within_range: return
+        for stage in report.stages:
+            if stage.condition != ASSESSED_CONDITION: continue
+            if stage.before == 0 or stage.after > 0: return
+            message = 'duration flags are not assessed for these '
+            message += f'{report.population}; run the duration assessment '
+            message += 'or pass include_only_within_range=False'
+            raise ValueError(message)

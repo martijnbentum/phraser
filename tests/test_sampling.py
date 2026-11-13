@@ -46,7 +46,7 @@ class TestSampling(unittest.TestCase):
             dataset='cgn', language='nld', dialect='nl-NL', save=True)
 
     def make_tree(self, audio, speaker, label, start, duration):
-        '''Build a complete phrase with one word, syllable, and phone.'''
+        '''Build an assessed phrase with one word, syllable, and phone.'''
         identity = {'audio_id': audio.identifier,
             'speaker_id': speaker.identifier, 'store': self.store}
         end = start + duration
@@ -54,6 +54,8 @@ class TestSampling(unittest.TestCase):
         word = Word(label, start, end, **identity)
         syllable = Syllable(label, start, end, **identity)
         phone = Phone(label[0], start, end, **identity)
+        for segment in (phrase, word, syllable, phone):
+            segment.duration_outlier = 'within_range'
         syllable.add_children([phone])
         word.add_children([syllable])
         phrase.add_children([word])
@@ -76,7 +78,7 @@ class TestSampling(unittest.TestCase):
             n_tokens=1, min_duration_ms=900, max_duration_ms=900)
         self.assertEqual(words[0].duration, 900)
 
-    def test_recorded_outlier_states_at_every_segment_level(self):
+    def test_only_within_range_at_every_segment_level(self):
         cases = [
             (phraser.sample_word_tokens, self.second.words[0]),
             (phraser.sample_phrase_tokens, self.second.phrases[0]),
@@ -88,15 +90,37 @@ class TestSampling(unittest.TestCase):
                     token.duration_outlier = state
                     self.store.save(token, overwrite=True)
                     raw = self.store.DB.load(token.key)
+                    if state == 'unset':
+                        with self.assertRaisesRegex(ValueError,
+                            'not assessed'):
+                            function(token.label, audios=[self.second],
+                                n_tokens=1)
+                    else:
+                        result = function(token.label, audios=[self.second],
+                            n_tokens=1, insufficient='drop')
+                        expected = [token] if state == 'within_range' else []
+                        self.assertEqual(result, expected)
                     result = function(token.label, audios=[self.second],
-                        n_tokens=1, insufficient='drop')
-                    expected = [] if token.is_duration_outlier else [token]
-                    self.assertEqual(result, expected)
-                    result = function(token.label, audios=[self.second],
-                        n_tokens=1, exclude_duration_outliers=False)
+                        n_tokens=1, include_only_within_range=False)
                     self.assertEqual(result, [token])
                     self.assertEqual(self.store.DB.load(token.key), raw)
                     self.assertEqual(token.duration_outlier, state)
+
+    def test_unassessed_tokens_are_reported_separately(self):
+        token = self.first.words[0]
+        token.duration_outlier = 'unset'
+        words, report = phraser.sample_word_tokens('huis', store=self.store,
+            n_tokens=1, return_report=True)
+        stages = {stage.condition: stage for stage in report.stages}
+        self.assertEqual(stages['Duration flag assessed'].removed, 1)
+        self.assertEqual(stages['Duration flag within_range'].removed, 0)
+        for word in self.first.words: word.duration_outlier = 'unset'
+        with self.assertRaisesRegex(ValueError, 'not assessed for these word'):
+            phraser.sample_word_tokens('huis', audios=[self.first],
+                n_tokens=1)
+        words = phraser.sample_word_tokens('huis', audios=[self.first],
+            n_tokens=1, include_only_within_range=False)
+        self.assertEqual(len(words), 1)
 
     def test_parent_flag_does_not_exclude_word_and_bounds_still_apply(self):
         self.second.phrases[0].duration_outlier = 'long'
@@ -108,7 +132,7 @@ class TestSampling(unittest.TestCase):
             phraser.sample_word_tokens('boom', audios=[self.second],
                 n_tokens=1)
         words = phraser.sample_word_tokens('boom', audios=[self.second],
-            n_tokens=1, exclude_duration_outliers=False, max_duration_ms=200,
+            n_tokens=1, include_only_within_range=False, max_duration_ms=200,
             insufficient='drop')
         self.assertEqual(words, [])
 
@@ -211,7 +235,7 @@ class TestSampling(unittest.TestCase):
         self.assertEqual(phraser.sample_audios(audios=[], n_audios=0), [])
         options = [{'n_tokens': -1}, {'random_seed': True},
             {'min_duration_ms': 200, 'max_duration_ms': 100},
-            {'exclude_duration_outliers': None}, {'gender': 'invalid'},
+            {'include_only_within_range': None}, {'gender': 'invalid'},
             {'insufficient': 'anything'}]
         for kwargs in options:
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
@@ -229,7 +253,7 @@ class TestSampling(unittest.TestCase):
         self.assertEqual(report.type_label, 'huis')
         counts = [(s.before, s.after, s.removed) for s in report.stages]
         self.assertEqual(counts, [(8, 7, 1), (7, 6, 1), (6, 6, 0),
-            (6, 5, 1), (5, 4, 1)])
+            (6, 5, 1), (5, 5, 0), (5, 4, 1)])
         self.assertEqual(report.requested_count, 2)
         self.assertEqual(report.eligible_count, 4)
         self.assertEqual(report.selected_count, len(words))

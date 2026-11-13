@@ -573,7 +573,7 @@ from phraser.sampling import cgn
 audios = cgn.select_audios(store=store, components='befg', variant='nl')
 words = sample_word_tokens('huis', audios=audios, n_tokens=100,
     min_duration_ms=100, max_duration_ms=1500,
-    exclude_duration_outliers=True,
+    include_only_within_range=True,
     gender='female', random_seed=0)
 speakers = sample_speakers(store=store, n_speakers=10, gender='female',
     min_age=20, max_age=40)
@@ -588,13 +588,21 @@ for that call, not a quota per label. Word sampling defaults to inclusive
 100–1500 ms bounds. Other segment levels default to no duration bounds.
 Pass `None` to disable either bound.
 
-All token samplers default to `exclude_duration_outliers=True`, excluding
-tokens whose own recorded `duration_outlier` assessment is `short` or `long`.
-Both `unset` (not assessed) and `within_range` remain eligible. Set the option
-to `False` to ignore these assessments; absolute duration bounds still apply.
-Sampling never calculates IQR fences, assesses durations, or changes flags.
-Assessments must be populated separately; the current audit reports outliers
-without writing these flags. A parent's flag does not exclude its children.
+All token samplers default to `include_only_within_range=True`, keeping only
+tokens whose own `duration_outlier` flag is `within_range`. The flag is
+assessed per label over the whole store; `unset`, `short` and `long` tokens
+are excluded. The report shows unassessed (`Duration flag assessed`) and
+outlier (`Duration flag within_range`) losses as separate stages. If no
+candidate reaching that stage is assessed, sampling raises a `ValueError`
+naming the likely cause: the store's flags were never populated. Set the
+option to `False` to ignore the flag; absolute duration bounds still apply.
+Sampling never assesses durations or changes flags. A parent's flag does not
+exclude its children.
+
+`min_phones` (words, syllables and phrases) keeps tokens with at least that
+many linked phones. `exclude_timing_uncertain=True` drops tokens with a
+recorded timing concern. Report stages follow label, speaker, gender, phone
+count, duration, within_range flag, then timing order.
 
 Speaker, duration, and flag restrictions apply before the final availability
 check and random draw. Segment durations must be positive.
@@ -672,8 +680,9 @@ with `Lexicon` and `Entry`.
 ```python
 from phraser import build_word_lexicon
 
-lexicon = build_word_lexicon(store=store, max_keys_per_type=None,
-    min_duration_ms=100, max_duration_ms=1500, gender='female')
+lexicon = build_word_lexicon(store=store,
+    max_retained_tokens_per_type=None, min_duration_ms=100,
+    max_duration_ms=1500, gender='female')
 lexicon.segment_class       # phraser.Word
 lexicon.labels              # sorted exact labels
 lexicon.counts              # label: total eligible token count
@@ -687,20 +696,29 @@ words = store.load_many(keys)
 ```
 
 Each builder accepts `audios`, `store`, `min_duration_ms`, `max_duration_ms`,
-`exclude_duration_outliers`, `speakers`, and `gender`, with the same defaults
+`include_only_within_range`, `speakers`, `gender`, `min_phones` (not for
+phones), and `exclude_timing_uncertain`, with the same defaults
 and conditions as its corresponding token sampler. Labels are literal
 segment labels at every level; phrase text is not normalized. Only labels
 with eligible tokens appear in the mapping. Iteration yields sorted labels;
 `len(lexicon)` counts types. The read-only `labels` and `counts` properties
 return fresh lists/dictionaries derived from the entries.
 
-`max_keys_per_type=None` retains all eligible keys by default. An integer
-cap retains a uniform random reservoir of at most that many keys per label;
-`0` builds counts-only entries. `Entry.total_count` and `lexicon.counts`
-always count all eligible tokens, regardless of the cap. Keys are unique and
-sorted within each entry. Capped builds use a local `random_seed` (default
-0), and traverse recordings and their tokens in key order, making retention
-independent of supplied recording order. Duplicate recordings count once.
+`max_retained_tokens_per_type=None` retains all eligible keys by default.
+An integer cap retains a uniform random reservoir of at most that many keys
+per label; `0` builds counts-only entries. `Entry.total_count` and
+`lexicon.counts` always count all eligible tokens, regardless of the cap.
+Keys are unique and sorted within each entry. Capped builds use a local
+`random_seed` (default 0), and traverse recordings and their tokens in key
+order, making retention independent of supplied recording order. Duplicate
+recordings count once.
+
+`min_tokens_per_type=n` is an inclusion condition: it drops labels with
+fewer than `n` eligible tokens, recorded as a final `At least n tokens per
+type` report stage. `max_retained_tokens_per_type` only caps the keys kept
+per label. The minimum uses the full eligible count, so the two combine:
+`min_tokens_per_type=100, max_retained_tokens_per_type=100` keeps exactly
+100 random keys for every label with at least 100 eligible tokens.
 
 `Entry.sample()` draws without replacement from retained keys only, without
 store access or changing the entry. It accepts `n_tokens`, `random_seed`,
