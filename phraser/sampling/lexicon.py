@@ -79,6 +79,33 @@ class Lexicon(Mapping):
         '''Return full eligible counts, independent of retained-key limits.'''
         return {label: entry.total_count for label, entry in self.items()}
 
+    @property
+    def token_keys(self):
+        '''Return retained token keys in label order, then stored key order.'''
+        keys = []
+        for entry in self.values(): keys.extend(entry.keys)
+        return keys
+
+    @property
+    def n_tokens(self):
+        '''Return the number of retained tokens across all types.'''
+        return sum(entry.retained_count for entry in self.values())
+
+    @property
+    def retained_counts(self):
+        '''Return retained token counts per label as a fresh dictionary.'''
+        return {label: entry.retained_count for label, entry in self.items()}
+
+    def load_tokens(self, store):
+        '''Load retained tokens in token_keys order from an open Store.'''
+        return store.load_many(self.token_keys)
+
+    def __repr__(self):
+        eligible = sum(self.counts.values())
+        text = f'Lexicon({self.segment_class.__name__}, {len(self):,} types, '
+        text += f'{self.n_tokens:,} retained tokens, {eligible:,} eligible tokens)'
+        return text
+
     def __getitem__(self, label):
         return self._entries[label]
 

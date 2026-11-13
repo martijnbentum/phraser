@@ -90,6 +90,36 @@ class TestLexicon(unittest.TestCase):
                     self.assertTrue(set(entry.keys) <= set(full[label].keys))
                 self.assertEqual(lexicon.report, full.report)
 
+    def test_retained_token_access_preserves_counts_and_order(self):
+        lexicon = phraser.build_word_lexicon(store=self.store,
+            max_retained_tokens_per_type=3)
+        expected = lexicon['boom'].keys + lexicon['huis'].keys
+        self.assertEqual(lexicon.token_keys, expected)
+        self.assertEqual(lexicon.n_tokens, 5)
+        self.assertEqual(lexicon.retained_counts, {'boom': 2, 'huis': 3})
+        self.assertEqual(lexicon.counts, {'boom': 2, 'huis': 16})
+        tokens = lexicon.load_tokens(self.store)
+        self.assertEqual([token.key for token in tokens], expected)
+        self.assertEqual([token.label for token in tokens],
+            ['boom'] * 2 + ['huis'] * 3)
+        self.assertEqual(repr(lexicon),
+            'Lexicon(Word, 2 types, 5 retained tokens, 18 eligible tokens)')
+        lexicon.token_keys.clear()
+        lexicon.retained_counts.clear()
+        self.assertEqual(lexicon.token_keys, expected)
+        self.assertEqual(lexicon.retained_counts, {'boom': 2, 'huis': 3})
+
+    def test_empty_and_counts_only_token_access(self):
+        for minimum in (None, 100):
+            with self.subTest(min_tokens_per_type=minimum):
+                lexicon = phraser.build_word_lexicon(store=self.store,
+                    min_tokens_per_type=minimum, max_retained_tokens_per_type=0)
+                self.assertEqual(lexicon.token_keys, [])
+                self.assertEqual(lexicon.n_tokens, 0)
+                self.assertEqual(lexicon.load_tokens(self.store), [])
+                self.assertEqual(sum(lexicon.retained_counts.values()), 0)
+                self.assertEqual(len(lexicon), 2 if minimum is None else 0)
+
     def test_capped_build_is_reproducible_across_recording_order(self):
         state = random.getstate()
         first = phraser.build_word_lexicon(audios=[self.first, self.second],
