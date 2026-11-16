@@ -2,9 +2,12 @@
 
 from contextlib import redirect_stdout
 import io
+from pathlib import Path
+import pickle
 import random
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import phraser
 from phraser.models import Audio, Phone, Phrase, Speaker, Syllable, Word
@@ -89,6 +92,80 @@ class TestLexicon(unittest.TestCase):
                     self.assertEqual(len(set(entry.keys)), entry.retained_count)
                     self.assertTrue(set(entry.keys) <= set(full[label].keys))
                 self.assertEqual(lexicon.report, full.report)
+
+    def test_default_sampling_keeps_all_retained_keys_independently(self):
+        lexicon = phraser.build_word_lexicon(store=self.store,
+            max_retained_tokens_per_type=3)
+        original = lexicon.token_keys
+        for value in (lexicon.sample(), lexicon.sample(n_tokens=None)):
+            self.assertEqual(value.labels, lexicon.labels)
+            self.assertEqual(value.counts, lexicon.counts)
+            self.assertEqual(value.token_keys, original)
+            self.assertEqual(value.report, lexicon.report)
+            value['huis'].keys.clear()
+            self.assertEqual(lexicon.token_keys, original)
+        keys = lexicon['huis'].sample()
+        self.assertEqual(keys, lexicon['huis'].keys)
+        keys.clear()
+        self.assertEqual(lexicon.token_keys, original)
+        with self.assertRaises(ValueError): lexicon.sample(insufficient='bad')
+        with self.assertRaises(ValueError):
+            lexicon['huis'].sample(random_seed=1.5)
+
+    def test_save_load_preserves_counts_keys_and_reports_without_store(self):
+        lexicon = phraser.build_word_lexicon(store=self.store,
+            max_retained_tokens_per_type=4).sample(3, random_seed=42)
+        path = Path(self.directory.name) / 'inventories' / 'words.pkl'
+        self.assertEqual(lexicon.save(path), path)
+        self.store.close()
+        loaded = phraser.Lexicon.load(path)
+        self.assertIs(loaded.segment_class, Word)
+        self.assertEqual(loaded.labels, lexicon.labels)
+        self.assertEqual(loaded.counts, lexicon.counts)
+        self.assertEqual(loaded.retained_counts, lexicon.retained_counts)
+        self.assertEqual(loaded.token_keys, lexicon.token_keys)
+        self.assertEqual(loaded.report, lexicon.report)
+        self.assertEqual(loaded.sampling_report, lexicon.sampling_report)
+        self.assertEqual(loaded.sample(2, random_seed=1).token_keys,
+            lexicon.sample(2, random_seed=1).token_keys)
+
+    def test_save_load_handles_empty_counts_only_and_other_levels(self):
+        path = Path(self.directory.name) / 'lexicon.pkl'
+        for level in ('phone', 'syllable', 'word', 'phrase'):
+            builder = getattr(phraser, f'build_{level}_lexicon')
+            for minimum in (None, 100):
+                with self.subTest(level=level, minimum=minimum):
+                    lexicon = builder(store=self.store,
+                        min_tokens_per_type=minimum,
+                        max_retained_tokens_per_type=0)
+                    lexicon.save(path)
+                    loaded = phraser.Lexicon.load(path)
+                    self.assertIs(loaded.segment_class, lexicon.segment_class)
+                    self.assertEqual(loaded.counts, lexicon.counts)
+                    self.assertEqual(loaded.token_keys, [])
+                    self.assertEqual(loaded.report, lexicon.report)
+
+    def test_failed_save_preserves_existing_file(self):
+        lexicon = phraser.build_word_lexicon(store=self.store)
+        path = Path(self.directory.name) / 'lexicon.pkl'
+        lexicon.save(path)
+        original = path.read_bytes()
+
+        def fail_after_writing(value, handle, **kwargs):
+            handle.write(b'incomplete')
+            raise OSError('save interrupted')
+
+        with patch('phraser.sampling.lexicon.pickle.dump', fail_after_writing):
+            with self.assertRaisesRegex(OSError, 'save interrupted'):
+                lexicon.save(path)
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(list(path.parent.glob('.lexicon.pkl.*')), [])
+
+    def test_load_rejects_non_lexicon_pickle(self):
+        path = Path(self.directory.name) / 'other.pkl'
+        with path.open('wb') as handle: pickle.dump({'keys': []}, handle)
+        with self.assertRaisesRegex(ValueError, 'does not contain a Lexicon'):
+            phraser.Lexicon.load(path)
 
     def test_retained_token_access_preserves_counts_and_order(self):
         lexicon = phraser.build_word_lexicon(store=self.store,

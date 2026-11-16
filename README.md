@@ -798,8 +798,10 @@ showing which filter costs labels. The printed table aligns surviving
 tokens/types, losses, and newly below-quota types in separate columns. Sampler reports leave these as
 `None`.
 
-`Lexicon.sample(n_tokens=100, random_seed=0, insufficient='drop')` returns
-another lexicon with exactly that many retained keys per surviving type.
+`Lexicon.sample(n_tokens=None, random_seed=0, insufficient='drop')` returns
+an independent copy retaining every type and retained key by default.
+An explicit quota such as `sample(n_tokens=100)` returns another lexicon
+with exactly that many retained keys per surviving type.
 Types with too few retained keys are dropped; use `insufficient='raise'`
 to raise `InsufficientSampleError` instead. The draw uses retained keys,
 even if the full eligible count is larger. Keys are sampled without
@@ -813,8 +815,9 @@ and selected token counts. `token_keys` returns a fresh flattened key list;
 Builders print recording-loading time and scan progress at recording
 boundaries, roughly every five seconds. Use `verbose=False` to suppress it.
 
-`Entry.sample()` draws without replacement from retained keys only, without
-store access or changing the entry. It accepts `n_tokens`, `random_seed`,
+`Entry.sample()` returns a fresh list of all retained keys by default.
+An explicit `n_tokens` draws without replacement from retained keys only,
+without store access or changing the entry. It accepts `random_seed`,
 and `insufficient='raise'` or `'drop'`. Requesting more keys than retained
 raises `InsufficientSampleError` even when `total_count` is higher; its
 report describes the retained pool. Entries remain usable after closing
@@ -833,6 +836,22 @@ objects into a single list. A cap limits retained keys, not the source
 Store's normal object cache. Building never saves records or changes flags;
 source objects may be cached during loading. Lexicons are returned in memory;
 no persistence is performed implicitly.
+
+Save the full inventory for later inspection and sampling:
+
+```python
+from phraser import Lexicon
+
+lexicon.save('word_lexicon.pkl')
+lexicon = Lexicon.load('word_lexicon.pkl')
+```
+
+The pickle preserves the segment class, eligible counts, retained keys,
+eligibility report, and sampling report. Saving creates missing parent
+directories and atomically replaces an existing file; a failed save leaves
+the previous file intact. Loading does not open a Store or reapply filters.
+Load only trusted pickle files. Actual token objects remain in their source
+Store and can be loaded separately with `lexicon.load_tokens(store)`.
 
 CGN selection checks the `comp-X/nl/filename` or `comp-X/vl/filename` path
 layout and rejects unrecognized paths. Variant `nl`/`vl` is distinct from

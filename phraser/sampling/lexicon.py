@@ -4,7 +4,10 @@ from collections import Counter
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
+from pathlib import Path
+import pickle
 import random
+import tempfile
 from time import monotonic
 
 from .. import overlap
@@ -36,16 +39,18 @@ class Entry:
     def retained_count(self):
         return len(self.keys)
 
-    def sample(self, n_tokens=100, random_seed=0, insufficient='raise'):
-        '''Return retained keys sampled without replacement; leave entry alone.
-        n_tokens:      requested keys; availability uses retained_count
+    def sample(self, n_tokens=None, random_seed=0, insufficient='raise'):
+        '''Return retained keys, optionally sampled without replacement.
+        n_tokens:      requested keys; None returns all retained keys
         random_seed:   local seed; None gives an unseeded draw
         insufficient:  raise InsufficientSampleError, or drop (return [])
 
         No store access or eligibility reassessment occurs. An error report
         describes the retained pool, which can be smaller than total_count.
         '''
-        selection.validate_draw(n_tokens, random_seed, insufficient)
+        count = self.retained_count if n_tokens is None else n_tokens
+        selection.validate_draw(count, random_seed, insufficient)
+        if n_tokens is None: return list(self.keys)
         if n_tokens > self.retained_count:
             if insufficient == 'drop': return []
             report = SelectionReport('retained keys', self.retained_count,
@@ -105,9 +110,37 @@ class Lexicon(Mapping):
         '''Load retained tokens in token_keys order from an open Store.'''
         return store.load_many(self.token_keys)
 
-    def sample(self, n_tokens=100, random_seed=0, insufficient='drop'):
-        '''Return a new lexicon with exactly n_tokens retained keys per type.
-        n_tokens:      draw size per type, using retained keys only
+    def save(self, path):
+        '''Atomically save this inventory and its reports as a pickle.
+        path: destination file; missing parent directories are created
+        '''
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=path.parent,
+                prefix=f'.{path.name}.', delete=False) as handle:
+                temporary = Path(handle.name)
+                pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            temporary.replace(path)
+        finally:
+            if temporary is not None: temporary.unlink(missing_ok=True)
+        return path
+
+    @classmethod
+    def load(cls, path):
+        '''Load an inventory without opening its source Store.
+        path: trusted pickle file created by Lexicon.save
+        '''
+        with Path(path).open('rb') as handle:
+            lexicon = pickle.load(handle)
+        if not isinstance(lexicon, cls):
+            raise ValueError('file does not contain a Lexicon')
+        return lexicon
+
+    def sample(self, n_tokens=None, random_seed=0, insufficient='drop'):
+        '''Return an independent lexicon, optionally drawing a quota per type.
+        n_tokens:      draw size per type; None copies all retained keys
         random_seed:   local seed; None gives an unseeded draw
         insufficient:  drop types below the quota, or raise
 
@@ -115,7 +148,9 @@ class Lexicon(Mapping):
         eligibility report are preserved; sampling_report describes this
         draw. The source lexicon is unchanged. No store access occurs.
         '''
-        selection.validate_draw(n_tokens, random_seed, insufficient)
+        count = 0 if n_tokens is None else n_tokens
+        selection.validate_draw(count, random_seed, insufficient)
+        if n_tokens is None: return deepcopy(self)
         rng = random.Random(random_seed)
         entries = {}
         for label, entry in self.items():
