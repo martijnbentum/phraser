@@ -128,7 +128,8 @@ class CopyMaterialsTests(unittest.TestCase):
         expected = {phrase.words[0].key for phrase in self.phrases[:2]}
         self.assertEqual({word.key for word in speaker.words}, expected)
         self.assertEqual(len(list(reopened.DB.all_links())), 2)
-        report = audit_store(reopened, checks=['speaker_audio_links'])
+        report = audit_store(reopened, checks=['speaker_audio_links'],
+            save=False)
         self.assertEqual(report.n_errors, 0)
         self.assertEqual(set(self.source.DB.all_links()), source_links)
 

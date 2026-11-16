@@ -559,7 +559,7 @@ goal.close()
 source.close()
 ```
 
-`copy_audio_materials` lives in `phraser.copy_materials`. It copies the supplied
+`copy_audio_materials` lives in `phraser.copy`. It copies the supplied
 Audio records, all their phrases, words, syllables, and phones, and linked
 speakers. Keys, identifiers, persisted metadata, and audio filenames are
 preserved. Shared speakers and repeated Audio keys are copied once. Markers
@@ -578,6 +578,49 @@ and cached objects remain unchanged. Recording selection, such as corpus
 component or language filtering, belongs to the caller. Copying is performed
 one recording at a time; an interrupted or failed copy can leave a partial
 destination, which is not automatically overwritten on the next call.
+
+## Copy and compact whole stores
+
+```python
+from phraser import compact, copy_store
+
+goal = copy_store(source, '/path/to/new/store', compact=True)
+goal.close()
+result = compact(source)
+print(result['before'], result['after'], result['elapsed_seconds'])
+```
+
+These operations also live in `phraser.copy`. Whole-store copying preserves
+all records, markers, speaker links, and label indexes using LMDB's native
+copy operation. It verifies keys and values in every named database before
+returning an open destination Store. The destination must not exist and must
+be outside the source directory. Set `compact=False` to retain unused pages.
+The source remains open. The destination is private while copying; after
+verification, its directory and data-file permission bits match the source.
+A failed or keyboard-interrupted copy removes its new destination before
+re-raising the error or interruption.
+
+`compact(source)` prints a warning: prevent writes and close every other
+handle to this store, including handles in other processes. This is a
+caller-managed maintenance operation; it does not acquire an exclusive lock.
+Transaction checks detect intervening writes, but cannot prevent a write
+after the final check.
+
+Compaction creates a temporary sibling directory, verifies all database keys
+and values, and replaces only `data.mdb`, preserving other files in the store
+directory and preserving the original file's permission bits. It reopens the
+supplied Store and refreshes its query roots before deleting the original.
+If replacement or reopening fails, it attempts to
+restore and reopen the original, including after a keyboard interruption.
+Recovery files are retained if restoration fails. A process crash during
+replacement can require manual recovery from
+the sibling backup directory. Temporary disk space for the copy is required.
+
+The returned dictionary contains `before` and `after` dictionaries with
+`file_bytes` and `allocated_bytes`, plus `elapsed_seconds` and `backup_path`.
+Use `keep_backup=True` to retain the original in a sibling directory;
+otherwise `backup_path` is `None` after success. Existing model objects and
+query objects held by callers should be fetched again after compaction.
 
 ## Sampling
 

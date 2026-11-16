@@ -1,5 +1,5 @@
 from .audit import audit_store, load_audit_data, load_report
-from .copy_materials import copy_audio_materials
+from .copy import compact, copy_audio_materials, copy_store
 from .errors import ClosedStoreError, UnboundStoreError
 from .models import Audio, Marker, Phone, Phrase, Speaker, Syllable, Word
 from .models.marker import bulk_delete_markers, make_marker, make_markers
@@ -36,7 +36,9 @@ __all__ = [
     "build_syllable_lexicon",
     "build_word_lexicon",
     "bulk_delete_markers",
+    "compact",
     "copy_audio_materials",
+    "copy_store",
     "load_audit_data",
     "load_report",
     "make_marker",
