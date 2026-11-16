@@ -17,6 +17,7 @@ def copy_audio_materials(audio_keys, goal_store_root, source_store):
 
     Preserve persisted keys, metadata, and audio filenames. Include linked
     speakers and all phrases, words, syllables, and phones; exclude markers.
+    Copy existing speaker-audio links for the selected recordings only.
     Audio files are not copied. The caller closes the returned store.
     '''
     source_store._ensure_open()
@@ -74,6 +75,17 @@ def _copy_audio(audio_key, source, goal, copied_speakers):
     missing = sorted(speaker_keys - copied_speakers)
     _copy_rows(missing, source, goal)
     copied_speakers.update(missing)
+    _copy_speaker_audio_links(objects[0], speaker_keys, source, goal)
+
+
+def _copy_speaker_audio_links(audio, speaker_keys, source, goal):
+    '''Copy existing source links for this recording.'''
+    for key in sorted(speaker_keys):
+        speaker = goal.load(key)
+        link = key_helper.speaker_audio_link(speaker, audio)
+        if source.DB.load(link, db_name='speaker_audio') is None:
+            continue
+        speaker.add_audio(audio)
 
 
 def _copy_rows(keys, source, goal):

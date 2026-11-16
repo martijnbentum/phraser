@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 from phraser import Audio, Phone, Phrase, Speaker, Store, Syllable, Word
-from phraser import copy_audio_materials, make_markers
+from phraser import audit_store, copy_audio_materials, make_markers
 from phraser.storage import key_helper
 
 
@@ -44,6 +44,7 @@ class CopyMaterialsTests(unittest.TestCase):
             syllable.add_child(Phone(label, start + offset,
                 start + offset + 100, **identity))
         self.source.save_many(phrase.items)
+        speaker.add_audio(audio)
         return phrase
 
     def copy(self, keys=None):
@@ -111,6 +112,34 @@ class CopyMaterialsTests(unittest.TestCase):
             {self.speaker.key, self.other.key})
         self.assertEqual(goal.load(phrase.key).speaker.key, self.other.key)
         self.assertEqual(len(list(goal.audios.all())), 1)
+
+    def test_source_links_preserve_reopened_speaker_navigation(self):
+        self.make_phrase(self.audios[2], self.speaker, 400)
+        source_links = set(self.source.DB.all_links())
+        goal = self.copy()
+        goal.close()
+        reopened = Store(path=self.destination)
+        self.addCleanup(reopened.close)
+        speaker = reopened.load(self.speaker.key)
+        expected = {audio.key for audio in self.audios[:2]}
+        self.assertEqual({audio.key for audio in speaker.audios}, expected)
+        expected = {phrase.key for phrase in self.phrases[:2]}
+        self.assertEqual({phrase.key for phrase in speaker.phrases}, expected)
+        expected = {phrase.words[0].key for phrase in self.phrases[:2]}
+        self.assertEqual({word.key for word in speaker.words}, expected)
+        self.assertEqual(len(list(reopened.DB.all_links())), 2)
+        report = audit_store(reopened, checks=['speaker_audio_links'])
+        self.assertEqual(report.n_errors, 0)
+        self.assertEqual(set(self.source.DB.all_links()), source_links)
+
+    def test_missing_source_link_is_not_created(self):
+        audio = self.audios[0]
+        self.source.DB.delete_speaker_audio_link(self.speaker, audio)
+        goal = self.copy()
+        expected = key_helper.speaker_audio_link(self.speaker, self.audios[1])
+        self.assertEqual(set(goal.DB.all_links()), {expected})
+        self.assertEqual(goal.load(self.phrases[0].key).speaker.key,
+            self.speaker.key)
 
     def test_duplicate_audio_keys_are_copied_once(self):
         goal = self.copy([self.audios[0].key] * 2)
