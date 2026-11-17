@@ -32,7 +32,7 @@ def verification_checks(plan):
     '''
     selected = set()
     broad = False
-    for change in plan.changes:
+    for change in plan._iter_changes():
         checks = _change_checks(change)
         if checks is None:
             broad = True
@@ -88,26 +88,42 @@ def audit_change_plan(store, plan, progress=True):
     store:       open Store, with no concurrent writer
     plan:        ChangePlan whose fields determine checks and recording scope
     progress:    True, False, or a phase-message callback
+
+    Returns None without creating an audit report when no checks apply.
     '''
     _check_database(store, plan)
     selection = verification_checks(plan)
+    if not selection['checks']: return None
     report = audit_store(store, checks=selection['checks'],
         audio_ids=selection['audio_ids'], save=False, progress=progress)
     report.info.skipped_checks.update(selection['skipped_checks'])
     return report
 
 
-def verify_change_plan(store, path, before, progress=True):
+def verify_change_plan(store, path, before=None, progress=True):
     '''Run selected domain checks and save their result beside byte status.
     store:       store just changed; no further writes before verification
     path:        applied ordinary repair record
-    before:      fresh report from audit_change_plan immediately before apply
+    before:      fresh baseline; None is sufficient for byte-only changes
     progress:    True, False, or a phase-message callback
 
-    Returns the after report. New errors never trigger automatic rollback;
+    Returns the after report, or None if no domain checks apply.
+    New errors never trigger automatic rollback;
     stop further writes and ask the user. Byte verification remains separate.
     '''
     plan = load_change_plan(path)
+    selection = verification_checks(plan)
+    if not selection['checks']:
+        _check_application(store, plan)
+        plan.domain_verification = {'status': 'not_run', 'checks': [],
+            'skipped_checks': selection['skipped_checks'],
+            'before_transaction_id': plan.applied_txn_id - bool(len(plan)),
+            'after_transaction_id': plan.applied_txn_id,
+            'reason': 'Changed fields require byte verification only',
+            'new_errors': 0, 'new_findings': 0, 'resolved_findings': 0,
+            'worsened_errors': 0, 'new_attention_errors': 0}
+        write_receipt(path, plan.to_receipt())
+        return None
     _check_baseline(store, plan, before)
     after = audit_change_plan(store, plan, progress)
     comparison = compare_reports(before, after, include_outliers=False)
@@ -127,17 +143,23 @@ def verify_change_plan(store, path, before, progress=True):
         'new_errors': new_errors, 'worsened_errors': worsened,
         'new_attention_errors': attention, 'new_findings': comparison.n_new,
         'resolved_findings': comparison.n_resolved}
-    write_receipt(path, plan.to_json())
+    write_receipt(path, plan.to_receipt())
     return after
 
 
-def _check_baseline(store, plan, before):
+def _check_application(store, plan):
     _check_database(store, plan)
     if plan.status != 'applied' or not plan.verified:
         raise ValueError('Apply and byte-verify the record first')
     if store.DB.env.info()['last_txnid'] != plan.applied_txn_id:
         raise ValueError('Store changed after application')
-    expected = plan.applied_txn_id - bool(plan.changes)
+
+
+def _check_baseline(store, plan, before):
+    _check_application(store, plan)
+    if before is None:
+        raise ValueError('Use a fresh baseline immediately before application')
+    expected = plan.applied_txn_id - bool(len(plan))
     if before.info.transaction_id != expected:
         raise ValueError('Use a fresh baseline immediately before application')
     if before.info.store_identity != store_identity(store.path):

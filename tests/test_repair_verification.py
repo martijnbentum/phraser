@@ -1,5 +1,6 @@
 '''Field-based verification and explicit duration-assessment planning.'''
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -33,11 +34,19 @@ class TestRepairVerification(AuditCase):
     def test_assessment_flags_need_bytes_without_domain_scan(self):
         plan = self.plan(flags=2)
         self.assertEqual(verification_checks(plan)['checks'], [])
-        with patch.object(self.store.DB, 'rank_to_keys_dict') as scan:
+        with patch('phraser.repair.verification.audit_store') as scan:
             before = audit_change_plan(self.store, plan, progress=False)
         scan.assert_not_called()
+        self.assertIsNone(before)
         path = self.apply(plan)
-        verify_change_plan(self.store, path, before, progress=False)
+        receipt = json.loads(path.read_text())
+        payload = path.parent / receipt['payload']['file']
+        timestamp = payload.stat().st_mtime_ns
+        with patch('phraser.repair.verification.audit_store') as scan:
+            self.assertIsNone(verify_change_plan(self.store, path,
+                progress=False))
+        scan.assert_not_called()
+        self.assertEqual(payload.stat().st_mtime_ns, timestamp)
         record = load_change_plan(path)
         self.assertTrue(record.verified)
         self.assertEqual(record.domain_verification['status'], 'not_run')
@@ -89,7 +98,7 @@ class TestRepairVerification(AuditCase):
         self.assertIn('outliers_phone', selected['checks'])
 
     def test_stale_baseline_is_refused(self):
-        plan = self.plan(flags=1)
+        plan = self.plan(end=49)
         before = audit_change_plan(self.store, plan, progress=False)
         raw = self.store.DB.load(self.phones[1].key)
         self.store.DB.write(self.phones[1].key, raw, overwrite=True)
@@ -97,7 +106,7 @@ class TestRepairVerification(AuditCase):
         with self.assertRaisesRegex(ValueError, 'fresh baseline'):
             verify_change_plan(self.store, path, before, progress=False)
 
-    def test_plan_additions_are_atomic_and_records_stay_compatible(self):
+    def test_plan_additions_are_atomic_and_records_round_trip(self):
         with self.store.DB.env.begin() as txn:
             plan = create_change_plan(self.store, txn, 'two edits')
             plan_update(plan, self.store, txn, self.phones[0].key, end=49)
@@ -199,7 +208,7 @@ class TestRepairVerification(AuditCase):
         self.store.DB.delete(phone.key)
         path = Path(self.directory.name) / 'assessment.json'
         save_change_plan(plan, path=path)
-        with self.assertRaisesRegex(ValueError, 'fresh assessment plan'):
+        with self.assertRaisesRegex(ValueError, 'fresh plan'):
             apply_change_plan(self.store, path)
         self.assertEqual(load_change_plan(path).status, 'planned')
         word = self.store.load(self.word.key)
@@ -321,16 +330,21 @@ class TestRepairVerification(AuditCase):
         with self.assertRaisesRegex(ValueError, 'Only planned'):
             merge_change_plan(plan, other)
 
-    def test_duration_assessment_plans_cannot_lose_policy_through_merging(self):
+    def test_merging_preserves_explicit_freshness_precondition(self):
         from phraser.repair import merge_change_plan
 
         assessment = plan_duration_assessments(self.store, 'assess',
             min_count=1, progress=False)
         with self.store.DB.env.begin() as txn:
             plan = create_change_plan(self.store, txn, 'combined')
-        with self.assertRaisesRegex(ValueError, 'applied separately'):
-            merge_change_plan(plan, assessment)
-        self.assertEqual(plan.changes, [])
+        merge_change_plan(plan, assessment)
+        self.assertEqual(plan.expected_transaction_id,
+            assessment.expected_transaction_id)
+        self.assertEqual(plan.changes, assessment.changes)
+        raw = self.store.DB.load(self.phones[0].key)
+        self.store.DB.write(self.phones[0].key, raw, overwrite=True)
+        with self.assertRaisesRegex(ValueError, 'fresh plan'):
+            self.apply(plan)
 
     def test_more_negative_duration_counts_as_worsening(self):
         phone = self.phones[1]

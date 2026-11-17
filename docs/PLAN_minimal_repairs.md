@@ -1,5 +1,11 @@
 # Minimal repair package
 
+Historical implemented plan. For the user's current design direction and
+review of remaining overhead, see
+[the repair design review](NOTE_repair_design_review_2026-11-16.md).
+In particular, old-format compatibility and mandatory reconstruction data
+are not requirements carried forward from this plan.
+
 Status: implemented; ordinary repairs, records, segment helpers and audit
 integration have targeted regression coverage. Bulk execution remains an
 operation-specific script responsibility.

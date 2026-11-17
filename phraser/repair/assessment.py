@@ -40,7 +40,8 @@ def plan_duration_assessments(store, reason, levels=None, k=3, min_count=30,
     with store.DB.env.begin() as txn:
         if txn.id() != data.transaction_id:
             raise ValueError('Store changed during duration assessment')
-        plan = create_change_plan(store, txn, reason, metadata)
+        plan = create_change_plan(store, txn, reason, metadata,
+            expected_transaction_id=data.transaction_id)
         for result in report.results:
             level = result.name.removeprefix('outliers_')
             segments = getattr(data, f'{level}s')
