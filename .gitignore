@@ -45,3 +45,6 @@ OLD/
 
 # repo-root runtime data only (lmdb, textgrids, audio); not phraser/data/ package data
 /data/
+
+# local repair session notes and trial evidence
+/repair_docs/

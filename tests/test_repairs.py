@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 from phraser import Audio, Phone, Phrase, Speaker, Store, Syllable, Word
 from phraser.audit import audit_store, compare_reports
@@ -198,7 +198,7 @@ class TestChangePlans(RepairCase):
         plan = load_change_plan(path)
         plan.status = 'planned'
         plan.applied_txn_id = None
-        path.write_text(json.dumps(plan.to_json()))
+        path.write_text(json.dumps(plan.to_receipt()))
         with self.assertRaisesRegex(ValueError, 'conflict'):
             apply_change_plan(self.store, path)
         self.assertEqual(self.snapshot(), before)
@@ -230,7 +230,7 @@ class TestChangePlans(RepairCase):
         path = save_change_plan(plan, path=self.root / 'explicit.json')
         self.assertEqual(path.name, 'explicit.json')
         plan.database['inode'] += 1
-        path.write_text(json.dumps(plan.to_json()))
+        path.write_text(json.dumps(plan.to_receipt()))
         with self.assertRaisesRegex(ValueError, 'different database'):
             apply_change_plan(self.store, path)
         with self.assertRaisesRegex(ValueError, 'outside'):
@@ -334,7 +334,7 @@ class TestChangePlans(RepairCase):
                 path = self.index_plan()
                 plan = load_change_plan(path)
                 plan.status = 'applying'
-                changes.write_receipt(path, plan.to_json())
+                changes.write_receipt(path, plan.to_receipt())
                 self.store.DB.write(b'two', b'value',
                     db_name='label_segment', overwrite=True)
                 if state != 'mixed':
@@ -374,18 +374,19 @@ class TestChangePlans(RepairCase):
         path = self.index_plan()
         content = json.loads(path.read_text())
         variants = []
-        for field, value in (('kind', 'bulk'), ('status', 'nonsense'),
+        for field, value in (('kind', 'bulk'), ('version', 1),
+            ('status', 'nonsense'),
             ('metadata', []), ('transaction_id', 'old')):
             variants.append(dict(content, **{field: value}))
         missing = dict(content)
         del missing['database']
         variants.append(missing)
-        bad_hex = json.loads(path.read_text())
-        bad_hex['changes'][0]['key'] = 'xyz'
-        variants.append(bad_hex)
-        duplicate = json.loads(path.read_text())
-        duplicate['changes'].append(duplicate['changes'][0])
-        variants.append(duplicate)
+        for field, value in (('file', '../escape'), ('file', '..'),
+            ('sha256', 'xyz'),
+            ('count', True), ('count', 3)):
+            damaged = dict(content, payload=dict(content['payload']))
+            damaged['payload'][field] = value
+            variants.append(damaged)
         snapshot = self.snapshot()
         for variant in variants:
             with self.subTest(record=variant):
@@ -402,3 +403,64 @@ class TestChangePlans(RepairCase):
         add_change(plan, 'main', self.speaker.key,
             self.store.DB.load(self.speaker.key), None)
         self.assertEqual(plan_audio_ids(plan), [self.audio.identifier])
+
+    def test_receipt_is_small_and_payload_is_immutable(self):
+        path = self.index_plan()
+        receipt = json.loads(path.read_text())
+        self.assertNotIn('changes', receipt)
+        payload = path.parent / receipt['payload']['file']
+        evidence = payload.read_bytes()
+        timestamp = payload.stat().st_mtime_ns
+        apply_change_plan(self.store, path)
+        rollback_changes(self.store, path)
+        self.assertEqual(payload.read_bytes(), evidence)
+        self.assertEqual(payload.stat().st_mtime_ns, timestamp)
+        self.assertEqual(json.loads(path.read_text())['payload'],
+            receipt['payload'])
+
+    def test_corrupt_payload_refuses_application_without_mutation(self):
+        path = self.index_plan()
+        receipt = json.loads(path.read_text())
+        payload = path.parent / receipt['payload']['file']
+        payload.write_bytes(payload.read_bytes()[:-3])
+        snapshot = self.snapshot()
+        record = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'checksum'):
+            apply_change_plan(self.store, path)
+        self.assertEqual(self.snapshot(), snapshot)
+        self.assertEqual(path.read_bytes(), record)
+
+    def test_duplicate_payload_rows_refuse_application(self):
+        from phraser.repair.records import write_change_payload
+
+        path = self.index_plan()
+        plan = load_change_plan(path)
+        change = next(plan._iter_changes())
+        payload = write_change_payload(path.with_suffix('.duplicate.gz'),
+            [change, change])
+        content = plan.to_receipt()
+        content['payload'] = payload
+        changes.write_receipt(path, content)
+        snapshot = self.snapshot()
+        with self.assertRaisesRegex(ValueError, 'already changes'):
+            apply_change_plan(self.store, path)
+        self.assertEqual(self.snapshot(), snapshot)
+
+    def test_internal_execution_does_not_request_inspection_snapshots(self):
+        plan = self.plan()
+        add_change(plan, 'label_segment', b'one', None, b'value')
+        with patch.object(changes.ChangePlan, 'changes',
+            new_callable=PropertyMock, side_effect=AssertionError):
+            with redirect_stdout(io.StringIO()): plan.summary(limit=1)
+            path = self.save(plan)
+            apply_change_plan(self.store, path)
+            self.assertEqual(check_change_state(self.store, path)['state'],
+                'proposed')
+
+    def test_metadata_is_not_an_execution_policy(self):
+        plan = self.plan(metadata={'duration_assessment': 'a user note'})
+        add_change(plan, 'label_segment', b'one', None, b'value')
+        path = self.save(plan)
+        self.store.DB.write(b'unrelated', b'x', db_name='label_segment')
+        apply_change_plan(self.store, path)
+        self.assertEqual(self.store.DB.load(b'one', 'label_segment'), b'value')

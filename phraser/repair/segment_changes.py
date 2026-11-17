@@ -4,7 +4,8 @@ from copy import copy
 
 from ..models import Phone, Phrase, Syllable, Word
 from ..storage import key_helper, struct_value
-from ..storage.store import value_key_to_instance
+from ..storage.store import stamp_persisted_identity
+from . import changes
 from .changes import add_change
 
 SEGMENT_MODELS = {cls.__name__: cls for cls in (Phrase, Word, Syllable, Phone)}
@@ -31,7 +32,7 @@ def plan_delete(plan, store, txn, keys):
     deleted = _planned_deletions(plan)
     changed = _planned_keys(plan)
     existing = {}
-    for change in plan.changes:
+    for change in plan._iter_changes():
         existing[(change['database'], change['key'])] = change
     selected = {}
     for audio_id, group in groups.items():
@@ -64,10 +65,11 @@ def plan_update(plan, store, txn, key, **fields):
         raise ValueError(f'Plan already changes {key.hex()}')
     row = _load_segment(store, txn, key)
     _check_fields(row, fields)
-    segment = value_key_to_instance(store, row['raw'], key)
+    segment = _segment_from_row(row)
     for name, value in fields.items(): setattr(segment, name, value)
-    add_change(staged, 'main', key, row['raw'],
-        struct_value.pack_instance(segment))
+    after = struct_value.pack_instance(segment)
+    context = _update_context(row, segment)
+    changes._add_change(staged, 'main', key, row['raw'], after, context)
     if segment.label != row['label']:
         _move_label_entry(staged, store, txn, row, segment.label)
     _commit_staged(plan, staged)
@@ -82,26 +84,26 @@ def _staged_plan(plan):
 
 
 def _commit_staged(plan, staged):
-    plan._extend(staged.changes)
+    plan._extend(staged._iter_changes())
 
 
 def _planned_keys(plan):
     keys = set()
-    for change in plan.changes:
+    for change in plan._iter_changes():
         if change['database'] == 'main': keys.add(bytes.fromhex(change['key']))
     return keys
 
 
 def _planned_deletions(plan):
     keys = set()
-    for change in plan.changes:
+    for change in plan._iter_changes():
         if change['database'] == 'main' and change['after'] is None:
             keys.add(bytes.fromhex(change['key']))
     return keys
 
 
 def _check_fields(row, fields):
-    stored = set(struct_value.unpack_instance(row['object_type'], row['raw']))
+    stored = row['_stored_fields']
     protected = {'version', 'start', 'identifier', 'audio_id', 'speaker_id',
         'parent_id', 'parent_start', 'phrase_id', 'phrase_start'}
     unsupported = sorted(set(fields) - (stored - protected))
@@ -125,9 +127,31 @@ def _load_segment(store, txn, key):
 def _decode_row(key, raw):
     info = key_helper.unpack_key(key)
     row = struct_value.unpack_instance(info['object_type'], raw)
+    row['_stored_fields'] = set(row)
     row.update(info)
     row.update(key=key, raw=raw)
     return row
+
+
+def _segment_from_row(row):
+    '''Reuse the decoded value rather than unpacking it into a model again.'''
+    cls = SEGMENT_MODELS[row['object_type']]
+    segment = cls.__new__(cls)
+    values = dict(row)
+    for field in ('raw', 'key', '_stored_fields'): values.pop(field)
+    segment.__dict__.update(values)
+    stamp_persisted_identity(segment, row['key'])
+    return segment
+
+
+def _update_context(row, segment):
+    '''Capture only changed fields for verification without decoding bytes.'''
+    original, proposed = {}, {}
+    for field in row['_stored_fields']:
+        original[field] = row[field]
+        proposed[field] = getattr(segment, field)
+    context = changes._json_values(key_helper.unpack_key(row['key']))
+    return changes._value_context(context, original, proposed)
 
 
 def _audio_rows(store, txn, audio_id):

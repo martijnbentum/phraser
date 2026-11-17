@@ -1,9 +1,9 @@
-'''Reviewed store edits with durable reconstruction records beside an audit.
+'''General repair helpers with compact byte evidence and small receipts.
 
-Create a proposal, inspect its summary and changes, save it, then apply and
-re-audit. Immediate undo is a convenience for an unchanged Store. Saved
+Create a bounded proposal, inspect its summary, save it, then apply and
+choose relevant domain checks. Immediate undo is optional. Saved
 bytes support reviewed reconstruction, not a guarantee of safe restoration.
-Bulk scripts can use save_record and write_receipt for a single progress log.
+The agent chooses repair policy and grouping; no session manager is needed.
 '''
 
 from .assessment import plan_duration_assessments

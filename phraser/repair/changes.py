@@ -6,19 +6,22 @@ are inspected with check_change_state; they are never retried implicitly.
 
 from copy import deepcopy
 from datetime import datetime, timezone
+from itertools import islice
 import json
 from pathlib import Path
 import struct
 from uuid import uuid4
 
 from ..storage import key_helper, struct_value
-from .records import save_record, write_receipt
+from .records import DATABASES, _record_path, _record_payload
+from .records import read_change_payload, save_record, write_change_payload
+from .records import write_receipt
 
-DATABASES = ('main', 'label_segment', 'speaker_audio')
 STATUSES = ('planned', 'applying', 'applied', 'rolling_back', 'rolled_back')
 EXECUTION_DEFAULTS = {'applied_txn_id': None, 'verified': False,
     'rollback_transaction_id': None, 'rollback_verified': False, 'error': None,
-    'domain_verification': None}
+    'domain_verification': None, 'expected_transaction_id': None,
+    'payload': None}
 
 
 class _ChangeList(list):
@@ -35,7 +38,7 @@ class _ChangeList(list):
 
 
 class ChangePlan:
-    '''Original/proposed bytes and captured context for a reviewed repair.'''
+    '''One bounded atomic repair with exact bytes and minimal context.'''
 
     def __init__(self, content):
         vars(self).update(EXECUTION_DEFAULTS)
@@ -46,7 +49,14 @@ class ChangePlan:
     @property
     def changes(self):
         '''Return ordered changes for inspection; extend through helpers.'''
-        return _ChangeList(dict(c) for c in self._changes.values())
+        return _ChangeList(_inspection_change(c) for c in self._iter_changes())
+
+    def __len__(self):
+        return len(self._changes)
+
+    def _iter_changes(self):
+        '''Traverse existing entries internally without inspection copies.'''
+        return iter(self._changes.values())
 
     def _extend(self, changes):
         '''Validate a complete addition before extending the plan.'''
@@ -87,19 +97,32 @@ class ChangePlan:
         print(f'bytes verified: {self.verified}')
         domain = self.domain_verification or {'status': 'not_run'}
         print(f'domain verification: {domain["status"]}')
-        print(f'changes: {len(self.changes):,}  {self.count_changes()}')
+        print(f'changes: {len(self):,}  {self.count_changes()}')
         print(f'operations: {self.count_changes("operation")}')
         print(f'row types: {self.count_changes("object_type")}')
-        for change in self.changes[:limit]:
-            print('  ' + _preview(change))
-        if len(self.changes) > limit:
+        for change in islice(self._iter_changes(), limit):
+            print('  ' + _preview(_inspection_change(change)))
+        if len(self) > limit:
             print('  Inspect plan.changes for the complete affected-row list.')
         if self.error: print(f'error: {self.error}')
 
     def to_json(self):
-        content = {k: v for k, v in vars(self).items() if k != '_changes'}
-        content['changes'] = list(self.changes)
+        '''Return an explicit full inspection snapshot, not a receipt.'''
+        content = self.to_receipt()
+        content['changes'] = self.changes
         return content
+
+    def to_receipt(self):
+        '''Return small metadata; immutable row evidence stays in payload.'''
+        return {k: v for k, v in vars(self).items() if k != '_changes'}
+
+
+def _inspection_change(change):
+    result = dict(change)
+    key = bytes.fromhex(change['key'])
+    result['context'] = _row_context(change['database'], key,
+        _value(change, 'before'), _value(change, 'after'), full=True)
+    return result
 
 
 def _preview(change):
@@ -126,12 +149,14 @@ def _short_value(value):
     return text if len(text) <= 60 else text[:57] + '...'
 
 
-def create_change_plan(store, txn, reason, metadata=None):
+def create_change_plan(store, txn, reason, metadata=None, *,
+    expected_transaction_id=None):
     '''Create a proposal using one read transaction for original bytes.
-    store:       Store being repaired
-    txn:         transaction used by the caller to read the original rows
-    reason:      explanation of the proposed repair
-    metadata:    optional plain JSON dictionary, such as an audit reference
+    store:                      open Store
+    txn:                        read snapshot for original rows
+    reason:                     explanation saved in the receipt
+    metadata:                   optional plain JSON provenance
+    expected_transaction_id:    require this transaction at application
     '''
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError('A change plan needs a reason')
@@ -139,11 +164,17 @@ def create_change_plan(store, txn, reason, metadata=None):
     if not isinstance(metadata, dict):
         raise ValueError('metadata must be a JSON dictionary')
     metadata = json.loads(json.dumps(metadata, allow_nan=False))
+    if expected_transaction_id is not None:
+        if type(expected_transaction_id) is not int:
+            raise ValueError('Expected transaction ID must be an integer')
+        if expected_transaction_id != txn.id():
+            raise ValueError('Store changed before planning')
     store._ensure_open()
-    return ChangePlan({'version': 1, 'kind': 'byte_changes', 'id': uuid4().hex,
+    return ChangePlan({'version': 2, 'kind': 'byte_changes', 'id': uuid4().hex,
         'reason': reason, 'created_utc': datetime.now(timezone.utc).isoformat(),
         'database': _database_identity(store), 'transaction_id': txn.id(),
-        'metadata': metadata, 'status': 'planned', 'changes': []})
+        'metadata': metadata, 'status': 'planned', 'changes': [],
+        'expected_transaction_id': expected_transaction_id})
 
 
 def add_change(plan, database, key, before, after):
@@ -154,6 +185,11 @@ def add_change(plan, database, key, before, after):
     before:      original bytes, or None if absent
     after:       proposed bytes, or None to delete
     '''
+    _add_change(plan, database, key, before, after, None)
+
+
+def _add_change(plan, database, key, before, after, context):
+    '''Stage already-decoded context from a helper, or low-level bytes.'''
     if plan.status != 'planned':
         raise ValueError('Only planned changes can be extended')
     if database not in DATABASES: raise ValueError('Unsupported database')
@@ -163,13 +199,13 @@ def add_change(plan, database, key, before, after):
         if value is not None and not isinstance(value, bytes):
             raise ValueError('Row values must be bytes or None')
     if before == after: return
+    if context is None: context = _row_context(database, key, before, after)
     operation = 'update'
     if before is None: operation = 'insert'
     elif after is None: operation = 'delete'
     plan._extend([{'database': database, 'key': key.hex(),
         'before': _hex_value(before), 'after': _hex_value(after),
-        'operation': operation, 'context': _row_context(database, key,
-            before, after)}])
+        'operation': operation, 'context': context}])
 
 
 def merge_change_plan(plan, other):
@@ -177,8 +213,8 @@ def merge_change_plan(plan, other):
     plan:     destination; its reason and metadata remain in effect
     other:    source plan, left unchanged; duplicate keys are refused
 
-    The whole addition is validated before mutation. Duration assessment
-    plans must be applied separately to preserve their assessment policy.
+    The whole addition is validated before mutation. Explicit freshness
+    preconditions are preserved when either plan requires them.
     '''
     if plan.status != 'planned' or other.status != 'planned':
         raise ValueError('Only planned changes can be merged')
@@ -186,15 +222,15 @@ def merge_change_plan(plan, other):
         raise ValueError('Cannot merge plans from different stores')
     if plan.transaction_id != other.transaction_id:
         raise ValueError('Cannot merge plans from different transactions')
-    assessments = 'duration_assessment' in plan.metadata
-    assessments = assessments or 'duration_assessment' in other.metadata
-    if assessments:
-        raise ValueError('Duration assessment plans must be applied separately')
-    _validate_plan(other.to_json())
-    plan._extend(deepcopy(list(other.changes)))
+    _validate_header(other.to_receipt())
+    _validate_changes(other._iter_changes())
+    pending = deepcopy(list(other._iter_changes()))
+    plan._extend(pending)
+    if other.expected_transaction_id is not None:
+        plan.expected_transaction_id = other.expected_transaction_id
 
 
-def _row_context(database, key, before, after):
+def _row_context(database, key, before, after, full=False):
     '''Decode saved bytes where possible; raw byte repairs are also allowed.'''
     target = key
     if database == 'label_segment':
@@ -206,13 +242,23 @@ def _row_context(database, key, before, after):
     kind = context.get('object_type')
     original = _decoded_value(kind, before)
     proposed = _decoded_value(kind, after)
-    context['before'] = original
-    context['after'] = proposed
+    return _value_context(context, original, proposed, full)
+
+
+def _value_context(context, original, proposed, full=False):
+    '''Retain changed fields only; full decoded rows are inspection-only.'''
+    fields = []
     if original is not None and proposed is not None:
-        fields = []
         for field in original.keys() | proposed.keys():
             if original.get(field) != proposed.get(field): fields.append(field)
         context['changed_fields'] = sorted(fields)
+    for name, row in (('before', original), ('after', proposed)):
+        if row is None or full:
+            context[name] = row
+        else:
+            values = {}
+            for field in fields: values[field] = row.get(field)
+            context[name] = _json_values(values)
     return context
 
 
@@ -232,7 +278,7 @@ def _json_values(values):
 def plan_audio_ids(plan):
     '''Recording IDs from changed keys; speaker-only edits need a full audit.'''
     audio_ids = set()
-    for change in plan.changes:
+    for change in plan._iter_changes():
         key = bytes.fromhex(change['key'])
         if change['database'] == 'label_segment':
             key = key_helper.label_index_key_to_instance_key(key)
@@ -250,27 +296,50 @@ def save_change_plan(plan, directory=None, name='repair', *, path=None):
     name:         short filename label, used with directory
     path:         explicit destination instead of directory; never overwritten
     '''
-    _validate_plan(plan.to_json())
+    content = plan.to_receipt()
+    _validate_header(content)
+    _validate_changes(plan._iter_changes())
     if plan.status != 'planned':
         raise ValueError('Only planned changes can be saved as new records')
-    return save_record(plan.to_json(), directory, name, path=path)
+    path = _record_path(directory, name, path)
+    _record_payload(content, path)
+    if path.exists(): raise FileExistsError(path)
+    payload = write_change_payload(path.with_suffix('.rows.gz'),
+        plan._iter_changes())
+    content['payload'] = payload
+    result = save_record(content, path=path)
+    plan.payload = payload
+    return result
 
 
 def load_change_plan(path):
     '''Read and validate an ordinary byte plan; bulk receipts are refused.'''
     with open(path, encoding='utf-8') as stream:
         content = json.load(stream)
-    _validate_plan(content)
-    return ChangePlan(content)
+    _validate_header(content)
+    if 'changes' in content:
+        raise ValueError('Row evidence belongs in the compressed payload')
+    payload = content.get('payload')
+    if not isinstance(payload, dict):
+        raise ValueError('Missing change payload descriptor')
+    _validate_payload(payload)
+    plan = ChangePlan(dict(content, changes=[]))
+    for change in read_change_payload(Path(path).parent, payload):
+        _validate_changes([dict(change, context={})])
+        key = bytes.fromhex(change['key'])
+        change['context'] = _row_context(change['database'], key,
+            _value(change, 'before'), _value(change, 'after'))
+        plan._extend([change])
+    return plan
 
 
-def _validate_plan(content):
+def _validate_header(content):
     '''Reject malformed executable records before touching the database.'''
     try:
-        if type(content['version']) is not int or content['version'] != 1:
-            raise ValueError('Expected version 1 byte_changes record')
+        if type(content['version']) is not int or content['version'] != 2:
+            raise ValueError('Expected version 2 byte_changes record')
         if content['kind'] != 'byte_changes':
-            raise ValueError('Expected version 1 byte_changes record')
+            raise ValueError('Expected version 2 byte_changes record')
         if content['status'] not in STATUSES:
             raise ValueError('Unknown change status')
         reason = content['reason']
@@ -285,14 +354,32 @@ def _validate_plan(content):
             if type(database[field]) is not int:
                 raise ValueError(f'database.{field} must be an integer')
         _validate_transaction_fields(content)
-        _validate_changes(content['changes'])
         json.dumps(content, allow_nan=False)
     except (KeyError, TypeError, AttributeError) as error:
         raise ValueError(f'Malformed change record: {error}') from error
 
 
+def _validate_payload(payload):
+    try:
+        name, checksum, count = (payload['file'], payload['sha256'],
+            payload['count'])
+        if not isinstance(name, str) or name in ('', '.', '..'):
+            raise ValueError('Invalid payload filename')
+        if Path(name).name != name:
+            raise ValueError('Invalid payload filename')
+        if not isinstance(checksum, str) or len(checksum) != 64:
+            raise ValueError('Invalid payload checksum')
+        if len(bytes.fromhex(checksum)) != 32:
+            raise ValueError('Invalid payload checksum')
+        if type(count) is not int or count < 0:
+            raise ValueError('Invalid payload count')
+    except (KeyError, TypeError) as error:
+        raise ValueError('Malformed payload descriptor') from error
+
+
 def _validate_transaction_fields(content):
-    fields = ('transaction_id', 'applied_txn_id', 'rollback_transaction_id')
+    fields = ('transaction_id', 'applied_txn_id', 'rollback_transaction_id',
+        'expected_transaction_id')
     for field in fields:
         value = content.get(field)
         if value is None and field != 'transaction_id': continue
@@ -300,10 +387,13 @@ def _validate_transaction_fields(content):
             raise ValueError(f'{field} must be a non-negative integer')
     if content['status'] == 'applied' and content.get('applied_txn_id') is None:
         raise ValueError('Applied record is missing applied_txn_id')
+    expected = content.get('expected_transaction_id')
+    if expected is not None and expected != content['transaction_id']:
+        message = 'Freshness precondition differs from planning snapshot'
+        raise ValueError(message)
 
 
 def _validate_changes(changes):
-    if not isinstance(changes, list): raise ValueError('changes must be a list')
     seen = set()
     for change in changes:
         name = change['database']
@@ -314,8 +404,8 @@ def _validate_changes(changes):
         identity = (name, key)
         if identity in seen: raise ValueError('Duplicate key in change plan')
         seen.add(identity)
-        _value(change, 'before')
-        _value(change, 'after')
+        before, after = _value(change, 'before'), _value(change, 'after')
+        if before == after: raise ValueError('No-op row in change payload')
         if not isinstance(change['context'], dict):
             raise ValueError('Change context must be a dictionary')
         if change['operation'] not in ('insert', 'update', 'delete'):
@@ -358,18 +448,20 @@ def rollback_changes(store, path):
 def _run_change(store, path, plan, reverse):
     previous = plan.status
     plan.status = 'rolling_back' if reverse else 'applying'
-    if not reverse: plan.domain_verification = None
+    if not reverse:
+        plan.domain_verification = {'status': 'not_run',
+            'reason': 'Application verifies bytes; domain checks are optional'}
     field = 'rollback_transaction_id' if reverse else 'applied_txn_id'
-    write_receipt(path, plan.to_json())
+    write_receipt(path, plan.to_receipt())
     try: _execute(store, plan, reverse)
     except Exception as error:
         if getattr(plan, field) is None: plan.status = previous
         plan.error = str(error)
-        write_receipt(path, plan.to_json())
+        write_receipt(path, plan.to_receipt())
         raise
     plan.status = 'rolled_back' if reverse else 'applied'
     plan.error = None
-    write_receipt(path, plan.to_json())
+    write_receipt(path, plan.to_receipt())
     return plan
 
 
@@ -383,16 +475,16 @@ def _execute(store, plan, reverse):
             reuse_keys = _can_reuse_query_keys(store, plan, txn.id() - 1)
             if reverse and txn.id() - 1 != plan.applied_txn_id:
                 raise ValueError('Database changed; immediate undo is stale')
-            if not reverse and 'duration_assessment' in plan.metadata:
-                if txn.id() - 1 != plan.transaction_id:
-                    message = 'Store changed since duration assessment; '
-                    message += 'prepare a fresh assessment plan'
+            if not reverse and plan.expected_transaction_id is not None:
+                if txn.id() - 1 != plan.expected_transaction_id:
+                    message = 'Store changed since planning; '
+                    message += 'prepare a fresh plan'
                     raise ValueError(message)
             _check_values(store, txn, plan, before)
-            for change in plan.changes:
+            for change in plan._iter_changes():
                 _write_change(store, txn, change, after)
             _check_values(store, txn, plan, after)
-            committed_id = txn.id() if plan.changes else txn.id() - 1
+            committed_id = txn.id() if len(plan) else txn.id() - 1
         committed = True
         setattr(plan, field, committed_id)
         with store.DB.env.begin() as txn:
@@ -415,7 +507,7 @@ def check_change_state(store, path):
     _check_database(store, plan)
     counts = dict(original=0, proposed=0, both=0, conflicting=0)
     with store.DB.env.begin() as txn:
-        for change in plan.changes:
+        for change in plan._iter_changes():
             key = bytes.fromhex(change['key'])
             current = txn.get(key, db=store.DB.db[change['database']])
             original = current == _value(change, 'before')
@@ -457,7 +549,7 @@ def _check_database(store, plan):
 
 
 def _check_values(store, txn, plan, field):
-    for change in plan.changes:
+    for change in plan._iter_changes():
         key = bytes.fromhex(change['key'])
         current = txn.get(key, db=store.DB.db[change['database']])
         if current != _value(change, field):
@@ -474,7 +566,7 @@ def _write_change(store, txn, change, field):
 
 def _can_reuse_query_keys(store, plan, transaction_id):
     '''Reuse current membership only for repairs that keep every main key.'''
-    for change in plan.changes:
+    for change in plan._iter_changes():
         if change['database'] != 'main': continue
         if change['before'] is None or change['after'] is None: return False
     if not hasattr(store, '_rank_to_keys_dict'):

@@ -842,15 +842,19 @@ recordings; compose it with sampling or `copy_audio_materials` as needed.
 ## Repair records
 
 `phraser.repair` supports reviewed byte changes and segment edits, with
-numbered JSON records saved alongside an audit. Proposals retain original
-bytes and readable examples before application. Related row/index changes
-are applied atomically; stale original bytes cause refusal.
+small numbered JSON receipts and immutable compressed row evidence saved
+alongside an audit. Proposals retain exact original/proposed bytes; readable
+examples are decoded on request. Related row/index changes are applied
+atomically; stale original bytes cause refusal.
 
 Use `plan_delete` for combined tree deletions and `plan_update` for routine
-field edits. Re-audit afterward. Immediate undo is available only before
+field edits. Application verifies bytes; run relevant domain checks when
+selected, skipping empty audits for byte-only edits. Report counts/status
+from the returned application result without reloading its payload.
+Immediate undo is available only before
 later writes; interrupted operations have a read-only state check, not an
-automatic retry. Bulk scripts can maintain one progress receipt without
-using the ordinary execution machinery.
+automatic retry. The caller chooses bounded atomic groups for large jobs
+and uses the same repair helpers for each group.
 
 See [Repair records beside an audit](docs/NOTE_repairs.md) for the workflow,
 examples and reconstruction limits.
