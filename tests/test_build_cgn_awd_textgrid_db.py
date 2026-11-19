@@ -10,7 +10,7 @@ from unittest import mock
 from textgrid import IntervalTier, TextGrid
 
 from phraser import Store, models
-from scripts import build_cgn_awd_textgrid_db as builder
+from phraser.corpora.cgn import build_cgn_awd_textgrid_db as builder
 
 
 def make_tier(name, intervals, maximum=2.0):
@@ -301,8 +301,8 @@ class TestDatabaseBuild(unittest.TestCase):
                 builder.collect_cgn_audio_and_transcription_files(
                     audio_dir, ort_dir, awd_dir)
 
-    def test_refuses_legacy_and_nonempty_targets(self):
-        with self.assertRaisesRegex(ValueError, 'legacy CGN DB'):
+    def test_refuses_webmaus_and_nonempty_targets(self):
+        with self.assertRaisesRegex(ValueError, 'WebMAUS CGN DB'):
             builder.validate_target_path(builder.locations.cgn_lmdb)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)

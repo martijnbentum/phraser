@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from phraser import Audio, Phone, Phrase, Speaker, Store, Syllable, Word
 from phraser import overlap
-from scripts import load_cgn_webmaus_textgrids_to_db as webmaus
+from phraser.corpora.cgn import load_cgn_webmaus_textgrids_to_db as webmaus
 
 
 class TestOverlap(unittest.TestCase):

@@ -475,7 +475,7 @@ def textgrids_to_phrase_trees(ort_textgrid, awd_textgrid, audio, speakers,
 
 
 def load_speaker_metadata(filename, report=None):
-    '''Load CGN speaker metadata independently of the WebMAUS scripts.'''
+    '''Load CGN speaker metadata independently of the WebMAUS modules.'''
     report = report or ImportReport()
     path = Path(filename)
     if not path.exists():
@@ -529,13 +529,13 @@ def _audio_from_path(filename, store):
 
 
 def validate_target_path(db_path, resume=False):
-    '''Protect the legacy database and fresh-build semantics.'''
+    '''Protect the WebMAUS CGN database and fresh-build semantics.'''
     target = Path(db_path).expanduser()
     target = target.resolve()
-    legacy = Path(locations.cgn_lmdb).expanduser()
-    legacy = legacy.resolve()
-    if target == legacy:
-        raise ValueError('refusing to write to the configured legacy CGN DB')
+    webmaus = Path(locations.cgn_lmdb).expanduser()
+    webmaus = webmaus.resolve()
+    if target == webmaus:
+        raise ValueError('refusing to write to the configured WebMAUS CGN DB')
     if target.exists() and not target.is_dir():
         raise ValueError(f'database target is not a directory: {target}')
     nonempty = target.exists() and any(target.iterdir())

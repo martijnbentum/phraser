@@ -3,8 +3,7 @@
 `phraser` is a small Python package for working with time-aligned speech
 annotations backed by LMDB. It models hierarchical speech data such as
 `Audio`, `Phrase`, `Word`, `Syllable`, `Phone`, and `Speaker`, and provides
-helpers for serialization, key generation, querying, and corpus-loading
-scripts.
+helpers for serialization, key generation, querying, and corpus imports.
 
 The package is aimed at workflows where you want to:
 
@@ -199,15 +198,14 @@ existing `Audio` object.
 
 ### Build a CGN database from original AWD alignments
 
-CGN has two separate import paths:
+CGN has two import paths in `phraser.corpora.cgn`, one per alignment:
 
-- `scripts/build_cgn_awd_textgrid_db.py` builds a fresh database directly from
-  the original paired `.ort` phrase annotations and `.awd` word/phone
-  alignments. It has no dependency on the WebMAUS CGN scripts or
+- `build_cgn_awd_textgrid_db` builds a fresh database directly from the
+  original paired `.ort` phrase annotations and `.awd` word/phone
+  alignments. It has no dependency on the WebMAUS CGN modules or
   `phraser.textgrids`.
-- `scripts/prepare_cgn_webmaus_import.py` and
-  `scripts/load_cgn_webmaus_textgrids_to_db.py` are the legacy path for
-  WebMAUS-generated TextGrids.
+- `prepare_cgn_webmaus_import` and `load_cgn_webmaus_textgrids_to_db` import
+  WebMAUS-generated TextGrids, a different alignment of the same recordings.
 
 The AWD builder takes phrase boundaries from the speaker tiers in `.ort`,
 word and phone timing from the matching speaker, `_FON`, and `_SEG` tiers in
@@ -232,15 +230,15 @@ Relative paths are resolved from the IPython process's current working
 directory. With all defaults, the import can be started as follows:
 
 ```python
-from scripts.build_cgn_awd_textgrid_db import build_cgn_awd_database
+from phraser.corpora.cgn.build_cgn_awd_textgrid_db import build_cgn_awd_database
 
 report = build_cgn_awd_database(show_progress=True)
 
 report.to_dict()
 ```
 
-The default target is separate from the legacy CGN database. The builder
-refuses the configured legacy CGN database and refuses any non-empty target
+The default target is separate from the WebMAUS CGN database. The builder
+refuses the configured WebMAUS CGN database and refuses any non-empty target
 unless `resume=True` is supplied. Resume mode loads the database Audio records
 once and fast-skips earlier recordings by normalized audio filename. It fully
 audits the final three stored recordings, skipping each only when its staged
@@ -880,6 +878,7 @@ and uses the same repair helpers for each group.
 ```text
 phraser/
 ├── phraser/
+│   └── corpora/cgn/
 ├── scripts/
 ├── tests/
 ├── pyproject.toml
@@ -890,5 +889,6 @@ phraser/
 
 - Importing `phraser` currently initializes the model cache through the package
   model layer.
-- The corpus-loading scripts live in [`scripts/`](./scripts).
+- CGN import code lives in `phraser.corpora.cgn`. Repo-only maintenance
+  scripts, not installed with the package, live in [`scripts/`](./scripts).
 - A minimal packaging smoke test lives in [`tests/tester.py`](./tests/tester.py).

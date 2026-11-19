@@ -43,9 +43,9 @@ write transaction.
 
 ## CGN Import Note
 
-`scripts/load_cgn_webmaus_textgrids_to_db.py` still uses phrase `filename`
-values to skip existing CGN TextGrid imports. That is documented as a legacy
-importer shortcut for now; it is not the TextGrid replacement identity. Move
+`phraser/corpora/cgn/load_cgn_webmaus_textgrids_to_db.py` still uses phrase
+`filename` values to skip existing CGN TextGrid imports. That is an importer
+shortcut for now; it is not the TextGrid replacement identity. Move
 CGN import to
 `save_textgrid_items(..., existing='add_missing')` or another explicit policy
 before relying on replacement/upsert behavior there.
