@@ -6,13 +6,14 @@ soundfile
 soxr
 numba
 lmdb
-msgpack
 requests
 python-decouple
 progressbar2
 textgrid
 matplotlib
-ssh-audio-play @ git+ssh://git@github.com/martijnbentum/ssh-audio-play.git
-webmaus @ git+ssh://git@github.com/martijnbentum/webmaus.git
-frame @ git+ssh://git@github.com/martijnbentum/frame.git
-to-vector @ git+ssh://git@github.com/martijnbentum/to_vector.git
+dutch-text-clean @ git+https://github.com/martijnbentum/dutch-text-clean.git
+ssh-audio-play @ git+https://github.com/martijnbentum/ssh-audio-play.git
+webmaus @ git+https://github.com/martijnbentum/webmaus.git
+frame @ git+https://github.com/martijnbentum/frame.git
+dutch-syllabifier @ git+https://github.com/martijnbentum/dutch-syllabifier.git
+phone-mapper @ git+https://github.com/martijnbentum/phone_mapper.git
