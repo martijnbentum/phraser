@@ -875,9 +875,6 @@ later writes; interrupted operations have a read-only state check, not an
 automatic retry. The caller chooses bounded atomic groups for large jobs
 and uses the same repair helpers for each group.
 
-See [Repair records beside an audit](docs/NOTE_repairs.md) for the workflow,
-examples and reconstruction limits.
-
 ## Repository layout
 
 ```text
