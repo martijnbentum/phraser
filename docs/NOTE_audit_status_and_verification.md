@@ -53,8 +53,7 @@ Each check has:
   inputs, nonpositive durations and excluded labels are not positive judgments.
 
 Flags remain unchanged by the audit. Use `plan_duration_assessments` from
-`phraser.repair` to prepare reviewed updates from fresh measurements. See
-[repair operations](NOTE_repairs.md).
+`phraser.repair` to prepare reviewed updates from fresh measurements.
 
 ## Shared-phone containment
 
@@ -81,5 +80,4 @@ findings remain available, including the original excess in milliseconds.
 
 Store loading and repair refresh are now implemented separately: the default
 remains `eager_query_roots=True`, with an explicit `False` opt-out. In-place
-repairs reuse valid main-key collections while clearing model caches. See
-[Store loading and repair refresh](NOTE_repairs.md#store-loading-and-repair-refresh).
+repairs reuse valid main-key collections while clearing model caches.
