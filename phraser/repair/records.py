@@ -22,14 +22,14 @@ def save_record(content, directory=None, name='repair', *, path=None):
     name:         short filename component containing letters, digits, _ or -
     path:         explicit output filename, instead of directory
     '''
-    path = _record_path(directory, name, path)
-    payload = _record_payload(content, path)
+    path = record_path(directory, name, path)
+    payload = record_json(content, path)
     path.parent.mkdir(parents=True, exist_ok=True)
     _write_json(path, payload, replace=False)
     return path
 
 
-def _record_path(directory, name, path):
+def record_path(directory, name, path):
     if (directory is None) == (path is None):
         raise ValueError('Supply either directory or path')
     if path is None: path = _numbered_path(directory, name)
@@ -42,7 +42,7 @@ def write_receipt(path, content):
     content:    full replacement record, including execution progress
     '''
     path = Path(path).absolute()
-    payload = _record_payload(content, path)
+    payload = record_json(content, path)
     if not path.is_file(): raise FileNotFoundError(path)
     _write_json(path, payload, replace=True)
 
@@ -58,7 +58,7 @@ def _numbered_path(directory, name):
     return directory / f'change_{number + 1:03d}_{name}.json'
 
 
-def _record_payload(content, path):
+def record_json(content, path):
     '''Validate the shared envelope and location before writing anything.'''
     if not isinstance(content, dict):
         raise ValueError('Record must be a dictionary')

@@ -13,7 +13,7 @@ import struct
 from uuid import uuid4
 
 from ..storage import key_helper, struct_value
-from .records import DATABASES, _record_path, _record_payload
+from .records import DATABASES, record_json, record_path
 from .records import read_change_payload, save_record, write_change_payload
 from .records import write_receipt
 
@@ -185,10 +185,10 @@ def add_change(plan, database, key, before, after):
     before:      original bytes, or None if absent
     after:       proposed bytes, or None to delete
     '''
-    _add_change(plan, database, key, before, after, None)
+    add_change_with_context(plan, database, key, before, after, None)
 
 
-def _add_change(plan, database, key, before, after, context):
+def add_change_with_context(plan, database, key, before, after, context):
     '''Stage already-decoded context from a helper, or low-level bytes.'''
     if plan.status != 'planned':
         raise ValueError('Only planned changes can be extended')
@@ -237,15 +237,15 @@ def _row_context(database, key, before, after, full=False):
         target = key_helper.label_index_key_to_instance_key(key)
     try: context = key_helper.unpack_key(target)
     except (ValueError, KeyError, struct.error): return {'key': key.hex()}
-    context = _json_values(context)
+    context = json_values(context)
     if database != 'main': return context
     kind = context.get('object_type')
     original = _decoded_value(kind, before)
     proposed = _decoded_value(kind, after)
-    return _value_context(context, original, proposed, full)
+    return value_context(context, original, proposed, full)
 
 
-def _value_context(context, original, proposed, full=False):
+def value_context(context, original, proposed, full=False):
     '''Retain changed fields only; full decoded rows are inspection-only.'''
     fields = []
     if original is not None and proposed is not None:
@@ -258,17 +258,17 @@ def _value_context(context, original, proposed, full=False):
         else:
             values = {}
             for field in fields: values[field] = row.get(field)
-            context[name] = _json_values(values)
+            context[name] = json_values(values)
     return context
 
 
 def _decoded_value(kind, value):
     if value is None: return None
-    try: return _json_values(struct_value.unpack_instance(kind, value))
+    try: return json_values(struct_value.unpack_instance(kind, value))
     except (AttributeError, ValueError, KeyError, struct.error): return None
 
 
-def _json_values(values):
+def json_values(values):
     result = {}
     for key, value in values.items():
         result[key] = value.hex() if isinstance(value, bytes) else value
@@ -301,13 +301,16 @@ def save_change_plan(plan, directory=None, name='repair', *, path=None):
     _validate_changes(plan._iter_changes())
     if plan.status != 'planned':
         raise ValueError('Only planned changes can be saved as new records')
-    path = _record_path(directory, name, path)
-    _record_payload(content, path)
+    path = record_path(directory, name, path)
+    record_json(content, path)
     if path.exists(): raise FileExistsError(path)
     payload = write_change_payload(path.with_suffix('.rows.gz'),
         plan._iter_changes())
     content['payload'] = payload
-    result = save_record(content, path=path)
+    try: result = save_record(content, path=path)
+    except BaseException:
+        path.with_name(payload['file']).unlink()
+        raise
     plan.payload = payload
     return result
 
@@ -363,9 +366,7 @@ def _validate_payload(payload):
     try:
         name, checksum, count = (payload['file'], payload['sha256'],
             payload['count'])
-        if not isinstance(name, str) or name in ('', '.', '..'):
-            raise ValueError('Invalid payload filename')
-        if Path(name).name != name:
+        if not isinstance(name, str):
             raise ValueError('Invalid payload filename')
         if not isinstance(checksum, str) or len(checksum) != 64:
             raise ValueError('Invalid payload checksum')
