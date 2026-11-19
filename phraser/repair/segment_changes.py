@@ -5,8 +5,8 @@ from copy import copy
 from ..models import Phone, Phrase, Syllable, Word
 from ..storage import key_helper, struct_value
 from ..storage.store import stamp_persisted_identity
-from . import changes
-from .changes import add_change
+from .changes import add_change, add_change_with_context, json_values
+from .changes import value_context
 
 SEGMENT_MODELS = {cls.__name__: cls for cls in (Phrase, Word, Syllable, Phone)}
 
@@ -69,7 +69,7 @@ def plan_update(plan, store, txn, key, **fields):
     for name, value in fields.items(): setattr(segment, name, value)
     after = struct_value.pack_instance(segment)
     context = _update_context(row, segment)
-    changes._add_change(staged, 'main', key, row['raw'], after, context)
+    add_change_with_context(staged, 'main', key, row['raw'], after, context)
     if segment.label != row['label']:
         _move_label_entry(staged, store, txn, row, segment.label)
     _commit_staged(plan, staged)
@@ -118,16 +118,17 @@ def _check_fields(row, fields):
 def _load_segment(store, txn, key):
     raw = txn.get(key, db=store.DB.db['main'])
     if raw is None: raise ValueError(f'No row for key {key.hex()}')
-    row = _decode_row(key, raw)
+    row = _decode_row(key, raw, stored_fields=True)
     if row['object_type'] not in SEGMENT_MODELS:
         raise ValueError(f"Not a segment: {row['object_type']}")
     return row
 
 
-def _decode_row(key, raw):
+def _decode_row(key, raw, stored_fields=False):
+    '''Decode one row; stored_fields records value fields for updates.'''
     info = key_helper.unpack_key(key)
     row = struct_value.unpack_instance(info['object_type'], raw)
-    row['_stored_fields'] = set(row)
+    if stored_fields: row['_stored_fields'] = set(row)
     row.update(info)
     row.update(key=key, raw=raw)
     return row
@@ -150,8 +151,8 @@ def _update_context(row, segment):
     for field in row['_stored_fields']:
         original[field] = row[field]
         proposed[field] = getattr(segment, field)
-    context = changes._json_values(key_helper.unpack_key(row['key']))
-    return changes._value_context(context, original, proposed)
+    context = json_values(key_helper.unpack_key(row['key']))
+    return value_context(context, original, proposed)
 
 
 def _audio_rows(store, txn, audio_id):
