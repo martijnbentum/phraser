@@ -25,27 +25,24 @@ Use `save_textgrid_items(items, existing=...)` for TextGrid-aware persistence:
 
 - `append`: no existence check; save staged items directly
 - `add_missing`: run an existence check; save only when no matching phrase exists
-- `replace`: run an existence check; require one matching phrase, delete its
-  phrase tree, then save the staged items
-- `upsert`: run an existence check; replace one match or save as new
 
 Existence checks are audio-scoped and match `Phrase` objects by
 `(audio_id, speaker_id, start)`. The high-level loaders require an existing
-`Audio` object for `add_missing`, `replace`, and `upsert`; creating a fresh
+`Audio` object for `add_missing`; creating a fresh
 `Audio` from a filename would produce a new `audio_id` and cannot match previous
 imports.
 
-Replacement is not atomic yet. `replace` and the replacement path of `upsert`
-delete the old phrase tree and then save the staged items. If the save fails
-after deletion, the old phrase tree is already gone. Fixing this properly needs
-a lower-level write path that deletes old keys and writes new values in one LMDB
-write transaction.
+The former `replace` and `upsert` policies were removed. Because start time is
+part of the match, they only worked when a new alignment kept every phrase
+start unchanged, and replacement gave the tree new identifiers, cutting links
+from markers or embeddings. Their delete-then-save was also not atomic. To
+replace stored phrase trees, use `Store.save_phrase_trees(..., overwrite=True)`
+or the repair change-plan API.
 
 ## CGN Import Note
 
 `phraser/corpora/cgn/load_cgn_webmaus_textgrids_to_db.py` still uses phrase
 `filename` values to skip existing CGN TextGrid imports. That is an importer
-shortcut for now; it is not the TextGrid replacement identity. Move
-CGN import to
-`save_textgrid_items(..., existing='add_missing')` or another explicit policy
-before relying on replacement/upsert behavior there.
+shortcut for now; it is not the TextGrid phrase identity. Move CGN import
+to `save_textgrid_items(..., existing='add_missing')` or another explicit
+policy if phrase-level skipping is needed there.

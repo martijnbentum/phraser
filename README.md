@@ -191,10 +191,11 @@ textgrids.save_textgrid_items(items, store=store, existing="append")
 store.refresh_query_roots()
 ```
 
-`save_textgrid_items()` supports `existing="append"`, `"add_missing"`,
-`"replace"`, and `"upsert"`. Policies other than `"append"` run an existence
-check using phrase identity `(audio_id, speaker_id, start)` and require an
-existing `Audio` object.
+`save_textgrid_items()` supports `existing="append"` and `"add_missing"`.
+`"add_missing"` runs an existence check using phrase identity
+`(audio_id, speaker_id, start)`, skips phrases already stored, and requires an
+existing `Audio` object. TextGrid imports do not replace stored phrases; use
+`Store.save_phrase_trees(..., overwrite=True)` or the repair change-plan API.
 
 ### Build a CGN database from original AWD alignments
 
