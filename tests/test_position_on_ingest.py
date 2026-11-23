@@ -239,7 +239,7 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                 'one.TextGrid',
                 save_to_db=True,
                 store=self.store,
-                existing='replace',
+                existing='add_missing',
             )
 
     def test_single_loader_existing_policy_requires_stored_audio(self):
@@ -251,7 +251,7 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                 'one.TextGrid',
                 save_to_db=True,
                 store=self.store,
-                existing='replace',
+                existing='add_missing',
                 audio=audio,
             )
 
@@ -269,7 +269,7 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                     'one.TextGrid',
                     save_to_db=True,
                     store=self.store,
-                    existing='replace',
+                    existing='add_missing',
                     audio=audio,
                 )
         finally:
@@ -286,7 +286,7 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                 speakers=None,
                 save_to_db=True,
                 store=self.store,
-                existing='upsert',
+                existing='add_missing',
             )
 
     def test_batch_loader_existing_policy_rejects_missing_audio_items(self):
@@ -299,7 +299,7 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                 speakers=None,
                 save_to_db=True,
                 store=self.store,
-                existing='upsert',
+                existing='add_missing',
                 audios=[audio, None],
             )
 
@@ -477,49 +477,6 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
         self.assertEqual(action, 'skipped')
         self.assertFalse(self.store.DB.key_exists(new_items[-1].key))
 
-    def test_save_textgrid_items_replace_swaps_matching_phrase_tree(self):
-        old_items = make_textgrid_items(self.store)
-        new_items = make_textgrid_items(self.store, label='new phrase',
-            filename='new.TextGrid')
-        old_keys = [item.key for item in old_items]
-        old_label_index_keys = save_to_store.items_to_label_index_keys(
-            old_items)
-        save_to_store.save_textgrid_items(old_items, store=self.store)
-
-        action = save_to_store.save_textgrid_items(new_items,
-            store=self.store, existing='replace')
-
-        self.assertEqual(action, 'replaced')
-        for key in old_keys:
-            self.assertFalse(self.store.DB.key_exists(key))
-        for key in old_label_index_keys:
-            self.assertFalse(self.store.DB.key_exists(key,
-                db_name='label_segment'))
-        for item in new_items:
-            self.assertTrue(self.store.DB.key_exists(item.key))
-
-    def test_save_textgrid_items_replace_requires_existing_match(self):
-        items = make_textgrid_items(self.store)
-
-        with self.assertRaisesRegex(ValueError, 'replace requires'):
-            save_to_store.save_textgrid_items(items, store=self.store,
-                existing='replace')
-
-    def test_save_textgrid_items_upsert_adds_or_replaces(self):
-        add_items = make_textgrid_items(self.store, start=100)
-        replace_items = make_textgrid_items(self.store, start=100,
-            label='replacement', filename='replacement.TextGrid')
-
-        add_action = save_to_store.save_textgrid_items(add_items,
-            store=self.store, existing='upsert')
-        replace_action = save_to_store.save_textgrid_items(replace_items,
-            store=self.store, existing='upsert')
-
-        self.assertEqual(add_action, 'added')
-        self.assertEqual(replace_action, 'replaced')
-        self.assertFalse(self.store.DB.key_exists(add_items[-1].key))
-        self.assertTrue(self.store.DB.key_exists(replace_items[-1].key))
-
     def test_save_textgrid_items_existence_check_requires_audio(self):
         items = make_textgrid_items(self.store)
         for item in items:
@@ -543,7 +500,15 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, 'multiple matching phrases'):
             save_to_store.save_textgrid_items(incoming, store=self.store,
-                existing='replace')
+                existing='add_missing')
+
+    def test_save_textgrid_items_rejects_removed_policies(self):
+        items = make_textgrid_items(self.store)
+
+        for existing in ('replace', 'upsert'):
+            with self.assertRaisesRegex(ValueError, 'existing must be one of'):
+                save_to_store.save_textgrid_items(items, store=self.store,
+                    existing=existing)
 
     def test_save_textgrid_items_rejects_unknown_policy(self):
         items = make_textgrid_items(self.store)
