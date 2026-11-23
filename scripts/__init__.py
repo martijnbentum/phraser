@@ -1,1 +1,1 @@
-"""Repository scripts for data loading and processing."""
+'''Repo-only maintenance scripts; not installed with the package.'''

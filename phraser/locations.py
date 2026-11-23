@@ -34,12 +34,15 @@ data = _path_config("PHRASER_DATA_DIR", ROOT / "data")
 data.mkdir(parents=True, exist_ok=True)
 default_lmdb = _path_config("PHRASER_DEFAULT_LMDB", data / "cgn_lmdb")
 cgn_lmdb = _path_config("PHRASER_CGN_LMDB", data / "cgn_lmdb")
+cgn_awd_lmdb = _path_config('PHRASER_CGN_AWD_LMDB', data / 'cgn_awd_lmdb')
 
 audio_filenames = data / 'audio_filenames.txt'
 
 textgrids = data / 'textgrids'
 cgn_ort_directory = data / 'ort'
+cgn_awd_directory = data / 'awd'
+cgn_awd_report_file = data / 'cgn_awd_import_report.json'
 
-cgn_base = Path('/vol/bigdata/corpora2/CGN2/')
+cgn_base = _path_config('PHRASER_CGN_BASE', '/vol/bigdata/corpora2/CGN2/')
 cgn_audio = cgn_base / 'data/audio/wav/'
 cgn_speaker_file = cgn_base / 'data/meta/text/speakers.txt'

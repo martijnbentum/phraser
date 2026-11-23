@@ -27,13 +27,12 @@ SKIPPED_SEGMENT_MARKS = {'[]', '#'}
 FON_BOUNDARY_MARKS = {'!', '#', '[]', '=', '-', '_', ' '}
 MAPPING_KEYS = sorted(cgn_to_ipa, key=len, reverse=True)
 RESUME_AUDIT_COUNT = 3
-cgn_corpus_dir = Path('/vol/bigdata/corpora2/CGN2')
-cgn_audio_dir = cgn_corpus_dir / 'data/audio/wav'
-cgn_ort_dir = Path('../data/ort/')
-cgn_awd_dir = Path('../data/awd/')
-cgn_db_path = Path('../data/cgn_awd_lmdb')
-cgn_speaker_file = cgn_corpus_dir / 'data/meta/text/speakers.txt'
-cgn_report_file = Path('../data/cgn_awd_import_report.json')
+cgn_audio_dir = locations.cgn_audio
+cgn_ort_dir = locations.cgn_ort_directory
+cgn_awd_dir = locations.cgn_awd_directory
+cgn_db_path = locations.cgn_awd_lmdb
+cgn_speaker_file = locations.cgn_speaker_file
+cgn_report_file = locations.cgn_awd_report_file
 
 
 @dataclass(frozen=True)
