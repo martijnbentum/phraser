@@ -9,6 +9,12 @@ PHRASER_DEFAULT_LMDB=./data/default_lmdb
 # Optional dedicated LMDB path for CGN data.
 PHRASER_CGN_LMDB=./data/cgn_lmdb
 
+# Optional LMDB path for the CGN database built from AWD alignments.
+PHRASER_CGN_AWD_LMDB=./data/cgn_awd_lmdb
+
+# Optional root of the CGN corpus (audio and speaker metadata).
+PHRASER_CGN_BASE=/vol/bigdata/corpora2/CGN2/
+
 # Optional variables for ssh_audio_play.
 # phraser forwards any SSH_AUDIO_PLAY_* keys from `.env` into os.environ
 # before ssh_audio_play is imported.

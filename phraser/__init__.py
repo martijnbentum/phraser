@@ -1,5 +1,5 @@
 from .audit import audit_store, load_audit_data, load_report
-from .copy import compact, copy_audio_materials, copy_store
+from .store_copy import compact, copy_audio_materials, copy_store
 from .errors import ClosedStoreError, UnboundStoreError
 from .models import Audio, Marker, Phone, Phrase, Speaker, Syllable, Word
 from .models.marker import bulk_delete_markers, make_marker, make_markers

@@ -8,7 +8,7 @@ from unittest.mock import patch
 from phraser import Audio, ClosedStoreError, Phrase, Speaker, Store
 from phraser import compact, copy_store, make_markers
 
-copy_module = importlib.import_module('phraser.copy')
+copy_module = importlib.import_module('phraser.store_copy')
 
 
 class CopyStoreTests(unittest.TestCase):

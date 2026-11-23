@@ -216,18 +216,19 @@ The builder is a Python/IPython workflow rather than a CLI. It recursively
 collects files below `audio_dir`, `awd_dir`, and `ort_dir`, then matches them
 by bare recording stem, for example `fn000001.awd`, `fn000001.ort`, and
 `fn000001.wav`. Their relative subdirectories do not need to match. Duplicate
-stems within any one source directory are rejected. The source directories
-default to the production CGN locations:
+stems within any one source directory are rejected. The defaults come
+from `phraser.locations`, so the AWD and WebMAUS imports share them:
 
-- audio: `/vol/bigdata/corpora2/CGN2/data/audio/wav/`
-- AWD: `../data/awd/`
-- ORT: `../data/ort/`
-- database: `../data/cgn_awd_lmdb`
-- speakers: `/vol/bigdata/corpora2/CGN2/data/meta/text/speakers.txt`
-- report: `../data/cgn_awd_import_report.json`
+- audio: `PHRASER_CGN_BASE/data/audio/wav/`
+- AWD: `PHRASER_DATA_DIR/awd/`
+- ORT: `PHRASER_DATA_DIR/ort/`
+- database: `PHRASER_CGN_AWD_LMDB` (default `PHRASER_DATA_DIR/cgn_awd_lmdb`)
+- speakers: `PHRASER_CGN_BASE/data/meta/text/speakers.txt`
+- report: `PHRASER_DATA_DIR/cgn_awd_import_report.json`
 
-Relative paths are resolved from the IPython process's current working
-directory. With all defaults, the import can be started as follows:
+`PHRASER_CGN_BASE` defaults to `/vol/bigdata/corpora2/CGN2/` and
+`PHRASER_DATA_DIR` to the repository `data/` directory; set either in `.env`
+(see `example_env`). With all defaults, the import can be started as follows:
 
 ```python
 from phraser.corpora.cgn.build_cgn_awd_textgrid_db import build_cgn_awd_database
@@ -557,7 +558,7 @@ goal.close()
 source.close()
 ```
 
-`copy_audio_materials` lives in `phraser.copy`. It copies the supplied
+`copy_audio_materials` lives in `phraser.store_copy`. It copies the supplied
 Audio records, all their phrases, words, syllables, and phones, and linked
 speakers. Keys, identifiers, persisted metadata, and audio filenames are
 preserved. Shared speakers and repeated Audio keys are copied once. Markers
@@ -588,7 +589,7 @@ result = compact(source)
 print(result['before'], result['after'], result['elapsed_seconds'])
 ```
 
-These operations also live in `phraser.copy`. Whole-store copying preserves
+These operations also live in `phraser.store_copy`. Whole-store copying preserves
 all records, markers, speaker links, and label indexes using LMDB's native
 copy operation. It verifies keys and values in every named database before
 returning an open destination Store. The destination must not exist and must
