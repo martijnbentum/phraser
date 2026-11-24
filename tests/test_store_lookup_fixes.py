@@ -56,6 +56,10 @@ class TestLabelIndexOnOverwrite(RepairCase):
         self.store.save(self.word, overwrite=True)
         self.assertEqual(len(self.labels('word')), 1)
 
+    def test_save_many_empty_batch_is_noop(self):
+        self.store.save_many([], overwrite=True)
+        self.store.save_many([])
+
     def test_update_with_new_key_moves_row_and_label(self):
         word = self.store.create(Word, label='solo', start=500, end=600,
             audio_id=self.audio.identifier,
