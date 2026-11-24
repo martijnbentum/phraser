@@ -126,5 +126,34 @@ class TestLabelIndexOnDelete(RepairCase):
             1)
 
 
+class TestLoadMissingKey(RepairCase):
+    def setUp(self):
+        super().setUp()
+        self.phrase, self.word, self.syllable, self.phone = self.tree()
+        self.store.DB.delete(self.word.key)
+        self.store.DB.delete(self.phone.key)
+        self.store._cache.clear()
+
+    def test_load_names_missing_key(self):
+        with self.assertRaises(KeyError) as context:
+            self.store.load(self.word.key)
+        self.assertIn(self.word.key.hex(), str(context.exception))
+
+    def test_load_many_names_all_missing_keys(self):
+        keys = [self.phrase.key, self.word.key, self.phone.key]
+        with self.assertRaises(KeyError) as context:
+            self.store.load_many(keys)
+        message = str(context.exception)
+        self.assertIn('2 key(s)', message)
+        self.assertIn(self.word.key.hex(), message)
+        self.assertIn(self.phone.key.hex(), message)
+
+    def test_failed_load_many_caches_nothing(self):
+        keys = [self.phrase.key, self.syllable.key, self.word.key]
+        with self.assertRaises(KeyError):
+            self.store.load_many(keys)
+        self.assertEqual(self.store._cache, {})
+
+
 if __name__ == '__main__':
     unittest.main()

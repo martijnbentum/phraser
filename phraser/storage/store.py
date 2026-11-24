@@ -341,7 +341,8 @@ class Store:
         self._ensure_open()
         try: return self._bind(self._cache[key])
         except KeyError: pass
-        value = self.DB.load(key = key) 
+        value = self.DB.load(key = key)
+        if value is None: raise missing_keys_error([key])
         obj = value_key_to_instance(self, value, key)
         self._bind(obj)
         self._cache[key] = obj
@@ -391,8 +392,10 @@ class Store:
         # disable garbage collection for large loads to speed up loading
         if len(not_found_in_cache) > 100_000: gc.disable()
         try:
-            results = self.DB.load_many(keys = not_found_in_cache) 
-                
+            results = self.DB.load_many(keys = not_found_in_cache)
+            pairs = zip(not_found_in_cache, results)
+            missing = [key for key, value in pairs if value is None]
+            if missing: raise missing_keys_error(missing)
             if self.verbose: print(time.time() - start, 'lmdb data loaded')
             for key, value in zip(not_found_in_cache, results):
                 obj = value_key_to_instance(self, value, key)
@@ -544,6 +547,14 @@ def value_key_to_instance(store, value, key):
     obj.__dict__.update(data)
     stamp_persisted_identity(obj, key)
     return obj
+
+
+def missing_keys_error(keys, limit=5):
+    '''KeyError naming keys that have no stored row (first few shown).'''
+    shown = ', '.join(key.hex() for key in keys[:limit])
+    m = f'no stored row for {len(keys)} key(s): {shown}'
+    if len(keys) > limit: m += ', ...'
+    return KeyError(m)
 
 
 def stamp_persisted_identity(obj, key):
