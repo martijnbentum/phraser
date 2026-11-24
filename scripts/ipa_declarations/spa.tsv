@@ -1,0 +1,34 @@
+symbol	type	base	place	manner	voicing	height	backness	rounding	tense	length	nasality	palatalized	syllabic	rhotic	components	sample_count	note
+a	vowel	a				open	front	unrounded	lax	short	oral					58297	dutch
+b	consonant	b	bilabial	plosive	voiced					short		no	no			1637	dutch
+d	consonant	d	alveolar	plosive	voiced					short		no	no			4666	dutch
+e	vowel	e				close-mid	front	unrounded	tense	short	oral					60394	dutch
+f	consonant	f	labiodental	fricative	voiceless					short		no	no			4101	dutch
+i	vowel	i				close	front	unrounded	tense	short	oral					24069	dutch
+j	consonant	j	palatal	approximant	voiced					short		no	no			10935	dutch
+k	consonant	k	velar	plosive	voiceless					short		no	no			16181	dutch
+l	consonant	l	alveolar	lateral-approximant	voiced					short		no	no			25752	dutch
+m	consonant	m	bilabial	nasal	voiced					short		no	no			15415	dutch
+n	consonant	n	alveolar	nasal	voiced					short		no	no			25371	dutch
+o	vowel	o				close-mid	back	rounded	tense	short	oral					42931	dutch
+p	consonant	p	bilabial	plosive	voiceless					short		no	no			11807	dutch
+r	consonant	r	alveolar	trill	voiced					short		no	no			3403	dutch
+s	consonant	s	alveolar	fricative	voiceless					short		no	no			26433	dutch
+t	consonant	t	alveolar	plosive	voiceless					short		no	no			21640	dutch
+t͡ʃ	consonant	t͡ʃ	postalveolar	affricate	voiceless					short		no	no			1019	dutch
+u	vowel	u				close	back	rounded	tense	short	oral					11204	dutch
+w	consonant	w	labial-velar	approximant	voiced					short		no	no			4931	dutch
+x	consonant	x	velar	fricative	voiceless					short		no	no			3533	dutch
+z	consonant	z	alveolar	fricative	voiced					short		no	no			4786	dutch
+ð	consonant	ð	dental	approximant	voiced					short		no	no			16975	dutch; approximant: Spanish lenited b d g (reviewed 2026-11-24)
+ŋ	consonant	ŋ	velar	nasal	voiced					short		no	no			2255	dutch
+ɡ	consonant	ɡ	velar	plosive	voiced					short		no	no			761	dutch
+ɣ	consonant	ɣ	velar	approximant	voiced					short		no	no			3955	dutch; approximant: Spanish lenited b d g (reviewed 2026-11-24)
+ɱ	consonant	ɱ	labiodental	nasal	voiced					short		no	no			404	new base
+ɲ	consonant	ɲ	palatal	nasal	voiced					short		no	no			932	dutch
+ɾ	consonant	ɾ	alveolar	tap	voiced					short		no	no			27968	dutch
+ʃ	consonant	ʃ	postalveolar	fricative	voiceless					short		no	no			94	dutch
+ʎ	consonant	ʎ	palatal	lateral-approximant	voiced					short		no	no			1188	new base
+ʝ	consonant	ʝ	palatal	fricative	voiced					short		no	no			953	new base
+β	consonant	β	bilabial	approximant	voiced					short		no	no			9739	new base; approximant: Spanish lenited b d g (reviewed 2026-11-24)
+θ	consonant	θ	dental	fricative	voiceless					short		no	no			9154	dutch

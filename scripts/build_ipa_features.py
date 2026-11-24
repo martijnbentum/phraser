@@ -1,4 +1,5 @@
-'''Generate phraser/phonology/data/ipa_features.json.
+'''Generate phraser/phonology/data/ipa_features.json (Dutch) and
+ipa_features_<iso>.json per language from scripts/ipa_declarations/<iso>.tsv.
 
 The dataset maps an IPA symbol to articulatory descriptors plus a binary
 distinctive-feature matrix (full Hayes-style set). Rather than hand-typing
@@ -17,6 +18,18 @@ labial/round split on rounded vowels, central/low vowel backness and
 tenseness), not errors. The ``type`` field and articulatory descriptors
 are reliable.
 
+Per-language files: each TSV row declares one symbol that occurs in that
+language's data (descriptors only); the binary matrix is derived with the
+same rules. Consonant modifiers: length long sets ``long``, palatalized adds
+a palatal secondary articulation (dorsal, high, front), syllabic sets
+``syllabic``. Diphthongs take features from their first component.
+Non-syllabic vowels (German ɐ̯) set ``syllabic`` to '-' and keep type vowel
+so they join the nucleus. R-coloured vowels (ɝ ɚ) get the descriptor
+``rhotic``; the binary matrix
+has no rhotic feature, so their vectors equal those of ɜ / ə. The
+TSVs were drafted once by rules from MAUS label counts and are now the
+reviewed source of truth; edit them per line.
+
 The ``stress`` feature was since removed from the matrix - it is
 suprasegmental and lives on the syllable, not the label. It was a constant
 ``0`` and not part of the panphon comparison, so the figure above is
@@ -28,7 +41,9 @@ from pathlib import Path
 from phraser.phonology.phone_features import FEATURE_ORDER
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'phraser' / 'phonology' / 'data' / 'ipa_features.json'
+DATA = ROOT / 'phraser' / 'phonology' / 'data'
+OUT = DATA / 'ipa_features.json'
+DECLARATIONS = ROOT / 'scripts' / 'ipa_declarations'
 
 # (symbol, place, manner, voiced) ; manner/place names drive the rules below.
 CONSONANTS = [
@@ -128,7 +143,8 @@ def consonant_features(place, manner, voiced):
     f['long'] = '-'
     f['tense'] = '0'
 
-    glide = manner == 'approximant' and place in ('palatal', 'labial-velar')
+    glide = manner == 'approximant' and place in ('palatal', 'labial-velar',
+        'labial-palatal')
     laryngeal = place == 'glottal'
     f['consonantal'] = '-' if (glide or laryngeal) else '+'
 
@@ -149,31 +165,39 @@ def consonant_features(place, manner, voiced):
     f['spread_glottis'] = '+' if place == 'glottal' and manner == 'fricative' else '-'
     f['constricted_glottis'] = '+' if place == 'glottal' and manner == 'plosive' else '-'
 
-    labial = place in ('bilabial', 'labiodental', 'labial-velar')
+    labial = place in ('bilabial', 'labiodental', 'labial-velar',
+        'labial-palatal')
     f['labial'] = '+' if labial else '-'
-    f['round'] = '+' if place == 'labial-velar' else '-'
+    f['round'] = '+' if place in ('labial-velar', 'labial-palatal') else '-'
     f['labiodental'] = '+' if place == 'labiodental' else ('-' if labial else '0')
 
-    coronal = place in ('dental', 'alveolar', 'postalveolar', 'retroflex')
+    coronal = place in ('dental', 'alveolar', 'postalveolar', 'retroflex',
+        'alveolo-palatal')
     f['coronal'] = '+' if coronal else '-'
     if coronal:
         f['anterior'] = '+' if place in ('dental', 'alveolar') else '-'
-        f['distributed'] = '+' if place in ('dental', 'postalveolar') else '-'
+        distributed = ('dental', 'postalveolar', 'alveolo-palatal')
+        f['distributed'] = '+' if place in distributed else '-'
     else:
         f['anterior'] = '0'
         f['distributed'] = '0'
 
-    strident_place = place in ('labiodental', 'alveolar', 'postalveolar')
+    strident_place = place in ('labiodental', 'alveolar', 'postalveolar',
+        'alveolo-palatal')
     f['strident'] = '+' if (manner in ('fricative', 'affricate')
                             and strident_place) else '-'
     f['lateral'] = '+' if manner == 'lateral-approximant' else '-'
 
-    dorsal = place in ('velar', 'uvular', 'palatal', 'labial-velar')
+    dorsal = place in ('velar', 'uvular', 'palatal', 'labial-velar',
+        'labial-palatal', 'alveolo-palatal')
     f['dorsal'] = '+' if dorsal else '-'
     if dorsal:
-        f['high'] = '+' if place in ('velar', 'palatal', 'labial-velar') else '-'
+        high = ('velar', 'palatal', 'labial-velar', 'labial-palatal',
+            'alveolo-palatal')
+        f['high'] = '+' if place in high else '-'
         f['low'] = '-'
-        f['front'] = '+' if place == 'palatal' else '-'
+        front = ('palatal', 'labial-palatal', 'alveolo-palatal')
+        f['front'] = '+' if place in front else '-'
         f['back'] = '+' if place in ('velar', 'uvular', 'labial-velar') else '-'
     else:
         f['high'] = '0'
@@ -254,13 +278,84 @@ def build():
     return data
 
 
-def main():
-    data = build()
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    with OUT.open('w', encoding='utf-8') as f:
+def read_declarations(path):
+    '''Return one dict per TSV row of a language declaration file.'''
+    lines = path.read_text(encoding='utf-8').splitlines()
+    header = lines[0].split('\t')
+    rows = []
+    for line in lines[1:]:
+        values = line.split('\t')
+        pairs = zip(header, values)
+        rows.append(dict(pairs))
+    return rows
+
+
+def declared_consonant(row):
+    '''Return the info dict for a consonant row, applying modifiers.'''
+    voiced = row['voicing'] == 'voiced'
+    f = consonant_features(row['place'], row['manner'], voiced)
+    info = {'type': 'consonant', 'place': row['place'],
+        'manner': row['manner'], 'voicing': row['voicing']}
+    if row['length'] == 'long':
+        f['long'] = '+'
+        info['length'] = 'long'
+    if row['palatalized'] == 'yes':
+        f.update(dorsal='+', high='+', low='-', front='+', back='-')
+        info['secondary'] = 'palatalized'
+    if row['syllabic'] == 'yes':
+        f['syllabic'] = '+'
+        info['syllabic'] = True
+    info['features'] = f
+    return info
+
+
+def declared_vowel(row):
+    '''Return the info dict for a vowel or diphthong row.'''
+    rounded = row['rounding'] == 'rounded'
+    is_long = row['length'] == 'long'
+    tense = row['tense'] == 'tense'
+    nasal = row['nasality'] == 'nasal'
+    info = {'type': 'vowel', 'height': row['height'],
+        'backness': row['backness'], 'rounding': row['rounding'],
+        'length': row['length'], 'nasality': row['nasality']}
+    info['features'] = vowel_features(row['height'], row['backness'],
+        rounded, is_long, tense, nasal)
+    if row['components']:
+        info['diphthong'] = True
+        info['components'] = row['components'].split(' ')
+    if row['rhotic'] == 'yes': info['rhotic'] = True
+    if row['syllabic'] == 'no':
+        info['features']['syllabic'] = '-'
+        info['syllabic'] = False
+    return info
+
+
+def build_language(path):
+    '''Return {symbol: info} for one language declaration file.'''
+    data = {}
+    for row in read_declarations(path):
+        symbol = row['symbol']
+        if row['type'] == 'consonant': info = declared_consonant(row)
+        elif row['type'] == 'vowel': info = declared_vowel(row)
+        else: raise ValueError(f'{path.name}: no type for {symbol}')
+        data[symbol] = info
+    return data
+
+
+def write_json(data, path):
+    '''Write sorted, indented JSON and report the symbol count.'''
+    with path.open('w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
         f.write('\n')
-    print(f'wrote {len(data)} symbols to {OUT}')
+    print(f'wrote {len(data)} symbols to {path}')
+
+
+def main():
+    DATA.mkdir(parents=True, exist_ok=True)
+    write_json(build(), OUT)
+    for path in sorted(DECLARATIONS.glob('*.tsv')):
+        out = DATA / f'ipa_features_{path.stem}.json'
+        write_json(build_language(path), out)
 
 
 if __name__ == '__main__':

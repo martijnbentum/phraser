@@ -1,0 +1,54 @@
+symbol	type	base	place	manner	voicing	height	backness	rounding	tense	length	nasality	palatalized	syllabic	rhotic	components	sample_count	note
+a	vowel	a				open	front	unrounded	lax	short	oral					16560	dutch
+aɪ	vowel	a				open	front	unrounded	lax	short	oral				a ɪ	8006	diphthong; features from first component
+aʊ	vowel	a				open	front	unrounded	lax	short	oral				a ʊ	4139	diphthong; features from first component
+aː	vowel	a				open	front	unrounded	tense	long	oral					5864	dutch
+b	consonant	b	bilabial	plosive	voiced					short		no	no			6643	dutch
+d	consonant	d	alveolar	plosive	voiced					short		no	no			14187	dutch
+d͡ʒ	consonant	d͡ʒ	postalveolar	affricate	voiced					short		no	no			29	dutch
+e	vowel	e				close-mid	front	unrounded	tense	short	oral					1027	dutch
+eː	vowel	e				close-mid	front	unrounded	tense	long	oral					7410	dutch
+f	consonant	f	labiodental	fricative	voiceless					short		no	no			9899	dutch
+h	consonant	h	glottal	fricative	voiceless					short		no	no			4660	dutch
+i	vowel	i				close	front	unrounded	tense	short	oral					1448	dutch
+iː	vowel	i				close	front	unrounded	tense	long	oral					9115	dutch
+j	consonant	j	palatal	approximant	voiced					short		no	no			1951	dutch
+k	consonant	k	velar	plosive	voiceless					short		no	no			8663	dutch
+l	consonant	l	alveolar	lateral-approximant	voiced					short		no	no			13397	dutch
+m	consonant	m	bilabial	nasal	voiced					short		no	no			13573	dutch
+n	consonant	n	alveolar	nasal	voiced					short		no	no			32149	dutch
+o	vowel	o				close-mid	back	rounded	tense	short	oral					1658	dutch
+oː	vowel	o				close-mid	back	rounded	tense	long	oral					3307	dutch
+p	consonant	p	bilabial	plosive	voiceless					short		no	no			4851	dutch
+s	consonant	s	alveolar	fricative	voiceless					short		no	no			14775	dutch
+t	consonant	t	alveolar	plosive	voiceless					short		no	no			23814	dutch
+t͡s	consonant	t͡s	alveolar	affricate	voiceless					short		no	no			4138	new base
+t͡ʃ	consonant	t͡ʃ	postalveolar	affricate	voiceless					short		no	no			17	dutch
+u	vowel	u				close	back	rounded	tense	short	oral					1385	dutch
+uː	vowel	u				close	back	rounded	tense	long	oral					2621	dutch
+v	consonant	v	labiodental	fricative	voiced					short		no	no			7702	dutch
+x	consonant	x	velar	fricative	voiceless					short		no	no			2806	dutch
+y	vowel	y				close	front	rounded	tense	short	oral					53	dutch
+yː	vowel	y				close	front	rounded	tense	long	oral					1430	dutch
+z	consonant	z	alveolar	fricative	voiced					short		no	no			7825	dutch
+ã	vowel	a				open	front	unrounded	lax	short	nasal					4	derived from a
+ç	consonant	ç	palatal	fricative	voiceless					short		no	no			6453	dutch
+øː	vowel	ø				close-mid	front	rounded	tense	long	oral					673	dutch
+ŋ	consonant	ŋ	velar	nasal	voiced					short		no	no			3174	dutch
+œ	vowel	œ				open-mid	front	rounded	lax	short	oral					560	dutch
+ɐ	vowel	ɐ				near-open	central	unrounded	lax	short	oral					16600	dutch
+ɔ	vowel	ɔ				open-mid	back	rounded	lax	short	oral					5478	dutch
+ɔʏ	vowel	ɔ				open-mid	back	rounded	lax	short	oral				ɔ ʏ	1157	diphthong; features from first component
+ə	vowel	ə				mid	central	unrounded	lax	short	oral					20536	dutch
+ɛ	vowel	ɛ				open-mid	front	unrounded	lax	short	oral					9222	dutch
+ɛː	vowel	ɛ				open-mid	front	unrounded	lax	long	oral					606	dutch
+ɡ	consonant	ɡ	velar	plosive	voiced					short		no	no			7138	dutch
+ɪ	vowel	ɪ				near-close	front	unrounded	lax	short	oral					15281	dutch
+ʁ	consonant	ʁ	uvular	fricative	voiced					short		no	no			11227	new base
+ʃ	consonant	ʃ	postalveolar	fricative	voiceless					short		no	no			6503	dutch
+ʊ	vowel	ʊ				near-close	back	rounded	lax	short	oral					5899	dutch
+ʏ	vowel	ʏ				near-close	front	rounded	lax	short	oral					1203	dutch
+ʒ	consonant	ʒ	postalveolar	fricative	voiced					short		no	no			47	dutch
+ʔ	consonant	ʔ	glottal	plosive	voiceless					short		no	no			7866	dutch
+θ	consonant	θ	dental	fricative	voiceless					short		no	no			2	dutch
+ɐ̯	vowel	ɐ				near-open	central	unrounded	lax	short	oral		no				added for the CV German r fix (6_^): non-syllabic vocalised r after a vowel (der, wir); vowel so it joins the nucleus, syllabic - in features; sample_count not measured

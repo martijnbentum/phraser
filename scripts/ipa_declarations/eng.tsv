@@ -1,0 +1,71 @@
+symbol	type	base	place	manner	voicing	height	backness	rounding	tense	length	nasality	palatalized	syllabic	rhotic	components	sample_count	note
+a	vowel	a				open	front	unrounded	lax	short	oral					15	dutch
+aɪ	vowel	a				open	front	unrounded	lax	short	oral				a ɪ	6381	diphthong; features from first component
+aʊ	vowel	a				open	front	unrounded	lax	short	oral				a ʊ	2126	diphthong; features from first component
+b	consonant	b	bilabial	plosive	voiced					short		no	no			5905	dutch
+d	consonant	d	alveolar	plosive	voiced					short		no	no			10917	dutch
+d͡ʒ	consonant	d͡ʒ	postalveolar	affricate	voiced					short		no	no			1488	dutch
+e	vowel	e				close-mid	front	unrounded	tense	short	oral					1208	dutch
+eə	vowel	e				close-mid	front	unrounded	tense	short	oral				e ə	90	diphthong; features from first component
+eɪ	vowel	e				close-mid	front	unrounded	tense	short	oral				e ɪ	4717	diphthong; features from first component
+eː	vowel	e				close-mid	front	unrounded	tense	long	oral					36	dutch
+f	consonant	f	labiodental	fricative	voiceless					short		no	no			4965	dutch
+h	consonant	h	glottal	fricative	voiceless					short		no	no			3924	dutch
+i	vowel	i				close	front	unrounded	tense	short	oral					26	dutch
+iː	vowel	i				close	front	unrounded	tense	long	oral					10151	dutch
+j	consonant	j	palatal	approximant	voiced					short		no	no			3174	dutch
+k	consonant	k	velar	plosive	voiceless					short		no	no			8438	dutch
+l	consonant	l	alveolar	lateral-approximant	voiced					short		no	no			11631	dutch
+l̩	consonant	l	alveolar	lateral-approximant	voiced					short		no	yes			65	derived from l
+m	consonant	m	bilabial	nasal	voiced					short		no	no			9173	dutch
+m̩	consonant	m	bilabial	nasal	voiced					short		no	yes			29	derived from m
+n	consonant	n	alveolar	nasal	voiced					short		no	no			19834	dutch
+n̩	consonant	n	alveolar	nasal	voiced					short		no	yes			42	derived from n
+o	vowel	o				close-mid	back	rounded	tense	short	oral					15	dutch
+oɪ	vowel	o				close-mid	back	rounded	tense	short	oral				o ɪ	24	diphthong; features from first component
+oː	vowel	o				close-mid	back	rounded	tense	long	oral					88	dutch
+p	consonant	p	bilabial	plosive	voiceless					short		no	no			5347	dutch
+s	consonant	s	alveolar	fricative	voiceless					short		no	no			13364	dutch
+t	consonant	t	alveolar	plosive	voiceless					short		no	no			17627	dutch
+t͡ʃ	consonant	t͡ʃ	postalveolar	affricate	voiceless					short		no	no			1373	dutch
+u	vowel	u				close	back	rounded	tense	short	oral					1633	dutch
+uː	vowel	u				close	back	rounded	tense	long	oral					3854	dutch
+v	consonant	v	labiodental	fricative	voiced					short		no	no			5132	dutch
+w	consonant	w	labial-velar	approximant	voiced					short		no	no			7416	dutch
+z	consonant	z	alveolar	fricative	voiced					short		no	no			8375	dutch
+æ	vowel	æ				near-open	front	unrounded	lax	short	oral					6194	dutch
+æɔ	vowel	æ				near-open	front	unrounded	lax	short	oral				æ ɔ	70	diphthong; features from first component
+æɪ	vowel	æ				near-open	front	unrounded	lax	short	oral				æ ɪ	173	diphthong; features from first component
+ð	consonant	ð	dental	fricative	voiced					short		no	no			9876	dutch
+ŋ	consonant	ŋ	velar	nasal	voiced					short		no	no			3800	dutch
+ɐ	vowel	ɐ				near-open	central	unrounded	lax	short	oral					1027	dutch
+ɐː	vowel	ɐ				near-open	central	unrounded	tense	long	oral					65	derived from ɐ; tense: English long vowel class (reviewed 2026-11-24)
+ɑe	vowel	ɑ				open	back	unrounded	lax	short	oral				ɑ e	191	diphthong; features from first component
+ɑː	vowel	ɑ				open	back	unrounded	tense	long	oral					316	derived from ɑ; tense: English long vowel class (reviewed 2026-11-24)
+ɒ	vowel	ɒ				open	back	rounded	lax	short	oral					5477	dutch
+ɔ	vowel	ɔ				open-mid	back	rounded	lax	short	oral					186	dutch
+ɔɪ	vowel	ɔ				open-mid	back	rounded	lax	short	oral				ɔ ɪ	718	diphthong; features from first component
+ɔː	vowel	ɔ				open-mid	back	rounded	tense	long	oral					3895	dutch; tense: English long vowel class (reviewed 2026-11-24)
+ə	vowel	ə				mid	central	unrounded	lax	short	oral					5347	dutch
+əʉ	vowel	ə				mid	central	unrounded	lax	short	oral				ə ʉ	140	diphthong; features from first component
+əʊ	vowel	ə				mid	central	unrounded	lax	short	oral				ə ʊ	4393	diphthong; features from first component
+ə̃	vowel	ə				mid	central	unrounded	lax	short	nasal					20	derived from ə
+ɛ	vowel	ɛ				open-mid	front	unrounded	lax	short	oral					7237	dutch
+ɛ̃	vowel	ɛ				open-mid	front	unrounded	lax	short	nasal					3	derived from ɛ
+ɜː	vowel	ɜ				open-mid	central	unrounded	tense	long	oral					292	derived from ɜ; tense: English long vowel class (reviewed 2026-11-24)
+ɝ	vowel	ɝ				open-mid	central	unrounded	lax	short	oral			yes		5363	new base; rhotic as descriptor, not in binary features
+ɡ	consonant	ɡ	velar	plosive	voiced					short		no	no			2905	dutch
+ɦ	consonant	ɦ	glottal	fricative	voiced					short		no	no			1035	new base
+ɪ	vowel	ɪ				near-close	front	unrounded	lax	short	oral					20278	dutch
+ɪə	vowel	ɪ				near-close	front	unrounded	lax	short	oral				ɪ ə	152	diphthong; features from first component
+ɹ	consonant	ɹ	alveolar	approximant	voiced					short		no	no			10928	dutch
+ɾ	consonant	ɾ	alveolar	tap	voiced					short		no	no			1601	dutch
+ʃ	consonant	ʃ	postalveolar	fricative	voiceless					short		no	no			1936	dutch
+ʉː	vowel	ʉ				close	central	rounded	tense	long	oral					144	derived from ʉ; tense: English long vowel class (reviewed 2026-11-24)
+ʊ	vowel	ʊ				near-close	back	rounded	lax	short	oral					1682	dutch
+ʊə	vowel	ʊ				near-close	back	rounded	lax	short	oral				ʊ ə	21	diphthong; features from first component
+ʌ	vowel	ʌ				open-mid	back	unrounded	lax	short	oral					24009	dutch
+ʒ	consonant	ʒ	postalveolar	fricative	voiced					short		no	no			169	dutch
+ʔ	consonant	ʔ	glottal	plosive	voiceless					short		no	no			3613	dutch
+θ	consonant	θ	dental	fricative	voiceless					short		no	no			1765	dutch
+ɚ	vowel	ə				mid	central	unrounded	lax	short	oral			yes			added for the CV English stress fix (unstressed 3`); like ə plus rhotic descriptor, not in binary features; sample_count not measured

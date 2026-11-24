@@ -1,0 +1,55 @@
+symbol	type	base	place	manner	voicing	height	backness	rounding	tense	length	nasality	palatalized	syllabic	rhotic	components	sample_count	note
+a	vowel	a				open	front	unrounded	lax	short	oral					55728	dutch
+b	consonant	b	bilabial	plosive	voiced					short		no	no			5554	dutch
+bː	consonant	b	bilabial	plosive	voiced					long		no	no			542	derived from b
+d	consonant	d	alveolar	plosive	voiced					short		no	no			18277	dutch
+dː	consonant	d	alveolar	plosive	voiced					long		no	no			100	derived from d
+d͡z	consonant	d͡z	alveolar	affricate	voiced					short		no	no			102	new base
+d͡zː	consonant	d͡z	alveolar	affricate	voiced					long		no	no			478	derived from d͡z
+d͡ʒ	consonant	d͡ʒ	postalveolar	affricate	voiced					short		no	no			2287	dutch
+d͡ʒː	consonant	d͡ʒ	postalveolar	affricate	voiced					long		no	no			773	derived from d͡ʒ
+e	vowel	e				close-mid	front	unrounded	tense	short	oral					42187	dutch
+f	consonant	f	labiodental	fricative	voiceless					short		no	no			5107	dutch
+fː	consonant	f	labiodental	fricative	voiceless					long		no	no			494	derived from f
+i	vowel	i				close	front	unrounded	tense	short	oral					45750	dutch
+j	consonant	j	palatal	approximant	voiced					short		no	no			6993	dutch
+k	consonant	k	velar	plosive	voiceless					short		no	no			15867	dutch
+kː	consonant	k	velar	plosive	voiceless					long		no	no			1095	derived from k
+l	consonant	l	alveolar	lateral-approximant	voiced					short		no	no			22111	dutch
+lː	consonant	l	alveolar	lateral-approximant	voiced					long		no	no			4028	derived from l
+m	consonant	m	bilabial	nasal	voiced					short		no	no			13392	dutch
+mː	consonant	m	bilabial	nasal	voiced					long		no	no			505	derived from m
+n	consonant	n	alveolar	nasal	voiced					short		no	no			31786	dutch
+nː	consonant	n	alveolar	nasal	voiced					long		no	no			1110	derived from n
+o	vowel	o				close-mid	back	rounded	tense	short	oral					36401	dutch
+p	consonant	p	bilabial	plosive	voiceless					short		no	no			10996	dutch
+pː	consonant	p	bilabial	plosive	voiceless					long		no	no			758	derived from p
+r	consonant	r	alveolar	trill	voiced					short		no	no			31268	dutch
+rː	consonant	r	alveolar	trill	voiced					long		no	no			716	derived from r
+s	consonant	s	alveolar	fricative	voiceless					short		no	no			17711	dutch
+sː	consonant	s	alveolar	fricative	voiceless					long		no	no			3378	derived from s
+t	consonant	t	alveolar	plosive	voiceless					short		no	no			26501	dutch
+tː	consonant	t	alveolar	plosive	voiceless					long		no	no			3799	derived from t
+t͡s	consonant	t͡s	alveolar	affricate	voiceless					short		no	no			1334	new base
+t͡sː	consonant	t͡s	alveolar	affricate	voiceless					long		no	no			2244	derived from t͡s
+t͡ʃ	consonant	t͡ʃ	postalveolar	affricate	voiceless					short		no	no			3317	dutch
+t͡ʃː	consonant	t͡ʃ	postalveolar	affricate	voiceless					long		no	no			595	derived from t͡ʃ
+u	vowel	u				close	back	rounded	tense	short	oral					13126	dutch
+v	consonant	v	labiodental	fricative	voiced					short		no	no			8197	dutch
+vː	consonant	v	labiodental	fricative	voiced					long		no	no			178	derived from v
+w	consonant	w	labial-velar	approximant	voiced					short		no	no			3660	dutch
+z	consonant	z	alveolar	fricative	voiced					short		no	no			2647	dutch
+ŋ	consonant	ŋ	velar	nasal	voiced					short		no	no			623	dutch
+ɔ	vowel	ɔ				open-mid	back	rounded	lax	short	oral					9075	dutch
+ə	vowel	ə				mid	central	unrounded	lax	short	oral					308	dutch
+ɛ	vowel	ɛ				open-mid	front	unrounded	lax	short	oral					15279	dutch
+ɡ	consonant	ɡ	velar	plosive	voiced					short		no	no			4078	dutch
+ɡː	consonant	ɡ	velar	plosive	voiced					long		no	no			18	derived from ɡ
+ɲ	consonant	ɲ	palatal	nasal	voiced					short		no	no			4	dutch
+ɲː	consonant	ɲ	palatal	nasal	voiced					long		no	no			689	derived from ɲ
+ʃ	consonant	ʃ	postalveolar	fricative	voiceless					short		no	no			533	dutch
+ʃː	consonant	ʃ	postalveolar	fricative	voiceless					long		no	no			681	derived from ʃ
+ʎ	consonant	ʎ	palatal	lateral-approximant	voiced					short		no	no			387	new base
+ʎː	consonant	ʎ	palatal	lateral-approximant	voiced					long		no	no			942	derived from ʎ
+ʒ	consonant	ʒ	postalveolar	fricative	voiced					short		no	no			37	dutch
+ʔ	consonant	ʔ	glottal	plosive	voiceless					short		no	no			3580	dutch

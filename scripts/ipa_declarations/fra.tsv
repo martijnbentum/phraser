@@ -1,0 +1,39 @@
+symbol	type	base	place	manner	voicing	height	backness	rounding	tense	length	nasality	palatalized	syllabic	rhotic	components	sample_count	note
+a	vowel	a				open	front	unrounded	lax	short	oral					23544	dutch
+b	consonant	b	bilabial	plosive	voiced					short		no	no			3482	dutch
+d	consonant	d	alveolar	plosive	voiced					short		no	no			12562	dutch
+e	vowel	e				close-mid	front	unrounded	tense	short	oral					13885	dutch
+f	consonant	f	labiodental	fricative	voiceless					short		no	no			3582	dutch
+i	vowel	i				close	front	unrounded	tense	short	oral					14972	dutch
+j	consonant	j	palatal	approximant	voiced					short		no	no			4318	dutch
+k	consonant	k	velar	plosive	voiceless					short		no	no			10227	dutch
+l	consonant	l	alveolar	lateral-approximant	voiced					short		no	no			15862	dutch
+m	consonant	m	bilabial	nasal	voiced					short		no	no			10356	dutch
+n	consonant	n	alveolar	nasal	voiced					short		no	no			7898	dutch
+o	vowel	o				close-mid	back	rounded	tense	short	oral					7004	dutch
+p	consonant	p	bilabial	plosive	voiceless					short		no	no			8551	dutch
+s	consonant	s	alveolar	fricative	voiceless					short		no	no			17772	dutch
+t	consonant	t	alveolar	plosive	voiceless					short		no	no			16886	dutch
+u	vowel	u				close	back	rounded	tense	short	oral					5695	dutch
+v	consonant	v	labiodental	fricative	voiced					short		no	no			6884	dutch
+w	consonant	w	labial-velar	approximant	voiced					short		no	no			2972	dutch
+y	vowel	y				close	front	rounded	tense	short	oral					6876	dutch
+z	consonant	z	alveolar	fricative	voiced					short		no	no			4560	dutch
+ø	vowel	ø				close-mid	front	rounded	tense	short	oral					2413	dutch
+ŋ	consonant	ŋ	velar	nasal	voiced					short		no	no			18	dutch
+œ	vowel	œ				open-mid	front	rounded	lax	short	oral					910	dutch
+œ̃	vowel	œ				open-mid	front	rounded	lax	short	nasal					1679	dutch
+ɑ	vowel	ɑ				open	back	unrounded	lax	short	oral					63	dutch
+ɑ̃	vowel	ɑ				open	back	unrounded	lax	short	nasal					10287	derived from ɑ
+ɔ	vowel	ɔ				open-mid	back	rounded	lax	short	oral					3172	dutch
+ɔ̃	vowel	ɔ				open-mid	back	rounded	lax	short	nasal					4941	derived from ɔ
+ə	vowel	ə				mid	central	unrounded	lax	short	oral					11004	dutch
+ɛ	vowel	ɛ				open-mid	front	unrounded	lax	short	oral					12149	dutch
+ɛ̃	vowel	ɛ				open-mid	front	unrounded	lax	short	nasal					3401	derived from ɛ
+ɡ	consonant	ɡ	velar	plosive	voiced					short		no	no			1617	dutch
+ɥ	consonant	ɥ	labial-palatal	approximant	voiced					short		no	no			1111	new base
+ɲ	consonant	ɲ	palatal	nasal	voiced					short		no	no			332	dutch
+ʁ	consonant	ʁ	uvular	fricative	voiced					short		no	no			22807	new base
+ʃ	consonant	ʃ	postalveolar	fricative	voiceless					short		no	no			1817	dutch
+ʒ	consonant	ʒ	postalveolar	fricative	voiced					short		no	no			3645	dutch
+ʔ	consonant	ʔ	glottal	plosive	voiceless					short		no	no			605	dutch
