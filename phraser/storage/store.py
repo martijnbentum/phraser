@@ -181,8 +181,9 @@ class Store:
         value = struct_value.pack_instance(obj)
         fail_message = f"Object with key {key} already exists. "
         fail_message += "Skipping save."
-        try: self.DB.write(key = key, value = value, overwrite = overwrite)
-            
+        try:
+            if overwrite: self._overwrite_rows([obj], [key], [value])
+            else: self.DB.write(key = key, value = value)
         except KeyError as e:
             if fail_gracefully:
                 print(fail_message)
@@ -194,16 +195,16 @@ class Store:
         if key not in self.save_key_counter:
             self.save_key_counter[key] = 1
         else: self.save_key_counter[key] += 1
-        self._handle_label_links([obj])
+        if not overwrite: self._handle_label_links([obj])
 
     def save_many(self, objs, overwrite = False, fail_gracefully = False):
         self._ensure_open()
         start = time.time()
         objs = list(objs)
         keys, values = self._prepare_batch(objs)
-        try: self.DB.write_many(keys, values,
-            overwrite = overwrite)
-
+        try:
+            if overwrite: self._overwrite_rows(objs, keys, values)
+            else: self.DB.write_many(keys, values)
         except KeyError as e:
 
             print('failed', time.time() - start)
@@ -213,7 +214,38 @@ class Store:
             else: raise e
 
         self._finalize_batch(objs, keys)
-        self._handle_label_links(objs)
+        if not overwrite: self._handle_label_links(objs)
+
+    def _overwrite_rows(self, objs, keys, values, delete_keys=()):
+        '''Write rows over whatever is stored under their keys, in one
+        transaction with their label-index entries; the entries of the
+        replaced rows (and of delete_keys) go too, so a changed label
+        leaves no stale entry pointing at this row.'''
+        delete_keys = list(delete_keys)
+        label_keys = items_to_label_index_keys(objs)
+        old_objs = objs + [objs[0]] * len(delete_keys)
+        old = self._stored_label_index_keys(old_objs, keys + delete_keys)
+        keep = set(label_keys)
+        stale = [label_key for label_key in old if label_key not in keep]
+        self.DB.replace_many(delete_keys, stale, keys, values, label_keys)
+
+    def _stored_label_index_keys(self, objs, keys):
+        '''Label-index keys of the rows stored under keys, read from
+        disk (not the cache) for objects that have a label index; keys
+        without a stored row are skipped.'''
+        indexed_keys, object_types = [], []
+        for obj, key in zip(objs, keys):
+            if not hasattr(obj, 'label_index_key'): continue
+            indexed_keys.append(key)
+            object_types.append(obj.object_type)
+        rows = self.DB.load_many(indexed_keys)
+        label_keys = []
+        for key, object_type, raw in zip(indexed_keys, object_types, rows):
+            if raw is None: continue
+            fields = struct_value.unpack_instance(object_type, raw)
+            label_keys.append(key_helper.label_to_label_index_key(
+                fields['label'], object_type, key))
+        return label_keys
 
     def _prepare_batch(self, objs):
         '''Validate, bind and pack a batch; nothing is written.'''
@@ -335,25 +367,28 @@ class Store:
         # preparation phase to return objects in same order as keys
         start = time.time()
         objs = [ [] for _ in range(len(keys)) ]
-        key_to_index = {key: i for i, key in enumerate(keys)}
+        # a key may be requested more than once; fill every position
+        key_to_indices = {}
+        for index, key in enumerate(keys):
+            key_to_indices.setdefault(key, []).append(index)
         if self.verbose: print(time.time() - start, 'objs initialized')
 
         # cache phase to load all objects that are already in cache
-        found_in_cache = []
         not_found_in_cache = []
-        for index, key in enumerate(keys):
-            if key in self._cache:
-                found_in_cache.append(key)
-                objs[index] = self._bind(self._cache[key])
-            else:
+        for key, indices in key_to_indices.items():
+            if key not in self._cache:
                 not_found_in_cache.append(key)
+                continue
+            obj = self._bind(self._cache[key])
+            for index in indices: objs[index] = obj
         if self.verbose: print(time.time() - start, 'cache checked')
 
         # if all found in cache or only one not found, return early
         if len(not_found_in_cache) == 0: return objs
-        if len(not_found_in_cache) == 1: 
-            index = key_to_index[not_found_in_cache[0]]
-            objs[index] = self.load(not_found_in_cache[0])
+        if len(not_found_in_cache) == 1:
+            key = not_found_in_cache[0]
+            obj = self.load(key)
+            for index in key_to_indices[key]: objs[index] = obj
             return objs
 
         # lmdb loading phase to bulk load all objects not found in cache
@@ -364,11 +399,10 @@ class Store:
                 
             if self.verbose: print(time.time() - start, 'lmdb data loaded')
             for key, value in zip(not_found_in_cache, results):
-                index = key_to_index[key]
                 obj = value_key_to_instance(self, value, key)
                 self._bind(obj)
                 self._cache[key] = obj
-                objs[index] = obj
+                for index in key_to_indices[key]: objs[index] = obj
                 self.load_counter[obj.object_type] += 1
             # print(time.time() - start, 'objs created')
         finally:
@@ -403,11 +437,18 @@ class Store:
             if key in self._cache: del self._cache[key]
 
     def update(self, old_key, obj):
-        '''delete old_key and save obj with new key'''
+        '''Replace the row at old_key with obj, which may have a new key,
+        in one transaction; the old row's label-index entry goes too.'''
+        self._ensure_open()
         self._validate_for_save(obj)
-        self.delete(old_key)
-        self.save(obj, overwrite=True)
-        if old_key in self._cache: del self._cache[old_key]
+        self._bind(obj)
+        key = key_helper.instance_to_key(obj)
+        value = struct_value.pack_instance(obj)
+        delete_keys = [old_key] if old_key != key else []
+        self._overwrite_rows([obj], [key], [value], delete_keys)
+        self._cache.pop(old_key, None)
+        self._finalize_batch([obj], [key])
+        self.save_counter[obj.object_type] += 1
             
     def rank_to_keys_dict(self, update = False):
         '''return a dict mapping object_type (class name) to list of keys'''
