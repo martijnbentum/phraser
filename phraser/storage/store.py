@@ -189,12 +189,7 @@ class Store:
                 print(fail_message)
                 return
             else: raise e
-        stamp_persisted_identity(obj, key)
-        self._cache[key] = obj
-        self.save_counter[obj.object_type] += 1
-        if key not in self.save_key_counter:
-            self.save_key_counter[key] = 1
-        else: self.save_key_counter[key] += 1
+        self._finalize_batch([obj], [key])
         if not overwrite: self._handle_label_links([obj])
 
     def save_many(self, objs, overwrite = False, fail_gracefully = False):
@@ -260,7 +255,8 @@ class Store:
         for obj, key in zip(objs, keys):
             stamp_persisted_identity(obj, key)
         self._cache.update(zip(keys, objs))
-        for key in keys:
+        for obj, key in zip(objs, keys):
+            self.save_counter[obj.object_type] += 1
             if key not in self.save_key_counter:
                 self.save_key_counter[key] = 1
             else: self.save_key_counter[key] += 1
@@ -450,7 +446,6 @@ class Store:
         self._overwrite_rows([obj], [key], [value], delete_keys)
         self._cache.pop(old_key, None)
         self._finalize_batch([obj], [key])
-        self.save_counter[obj.object_type] += 1
             
     def rank_to_keys_dict(self, update = False):
         '''return a dict mapping object_type (class name) to list of keys'''

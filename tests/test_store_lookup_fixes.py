@@ -155,5 +155,19 @@ class TestLoadMissingKey(RepairCase):
         self.assertEqual(self.store._cache, {})
 
 
+class TestSaveCounter(RepairCase):
+    def test_phrase_tree_saves_are_counted(self):
+        self.tree()
+        counts = self.store.save_counter
+        expected = {'Audio': 1, 'Speaker': 1, 'Phrase': 1, 'Word': 1,
+            'Syllable': 2, 'Phone': 2, 'Marker': 0}
+        self.assertEqual(counts, expected)
+
+    def test_update_counts_once(self):
+        _, word, _, _ = self.tree()
+        self.store.update(word.key, word)
+        self.assertEqual(self.store.save_counter['Word'], 2)
+
+
 if __name__ == '__main__':
     unittest.main()
