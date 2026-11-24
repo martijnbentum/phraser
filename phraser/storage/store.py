@@ -224,25 +224,20 @@ class Store:
         leaves no stale entry pointing at this row.'''
         delete_keys = list(delete_keys)
         label_keys = items_to_label_index_keys(objs)
-        old_objs = objs + [objs[0]] * len(delete_keys)
-        old = self._stored_label_index_keys(old_objs, keys + delete_keys)
+        old = self._stored_label_index_keys(keys + delete_keys)
         keep = set(label_keys)
         stale = [label_key for label_key in old if label_key not in keep]
         self.DB.replace_many(delete_keys, stale, keys, values, label_keys)
 
-    def _stored_label_index_keys(self, objs, keys):
-        '''Label-index keys of the rows stored under keys, read from
-        disk (not the cache) for objects that have a label index; keys
+    def _stored_label_index_keys(self, keys):
+        '''Label-index keys of the segment rows stored under keys, read
+        from disk (not the cache); Audio and Speaker keys and keys
         without a stored row are skipped.'''
-        indexed_keys, object_types = [], []
-        for obj, key in zip(objs, keys):
-            if not hasattr(obj, 'label_index_key'): continue
-            indexed_keys.append(key)
-            object_types.append(obj.object_type)
-        rows = self.DB.load_many(indexed_keys)
+        indexed = [k for k in keys if len(k) == key_helper.SEGMENT_LEN]
         label_keys = []
-        for key, object_type, raw in zip(indexed_keys, object_types, rows):
+        for key, raw in zip(indexed, self.DB.load_many(indexed)):
             if raw is None: continue
+            object_type = key_helper.key_to_object_type(key)
             fields = struct_value.unpack_instance(object_type, raw)
             label_keys.append(key_helper.label_to_label_index_key(
                 fields['label'], object_type, key))
@@ -425,17 +420,20 @@ class Store:
         return instances
 
     def delete(self, key):
-        '''delete an object from LMDB by key'''
-        self._ensure_open()
-        self.DB.delete(key = key)
-        if key in self._cache: del self._cache[key]
+        '''Delete one object and its label-index entry.'''
+        self.delete_many([key])
 
     def delete_many(self, keys):
-        '''delete many objects from LMDB by keys'''
+        '''Delete objects and their label-index entries.
+        Label entries are deleted before the rows. If interrupted
+        between the two steps, rows meant for deletion remain in the
+        database but label_to_instances cannot find them.'''
         self._ensure_open()
-        self.DB.delete_many(keys = keys)
-        for key in keys:
-            if key in self._cache: del self._cache[key]
+        keys = list(keys)
+        label_keys = self._stored_label_index_keys(keys)
+        self.DB.delete_many_label_index_links(label_keys)
+        self.DB.delete_many(keys)
+        for key in keys: self._cache.pop(key, None)
 
     def update(self, old_key, obj):
         '''Replace the row at old_key with obj, which may have a new key,

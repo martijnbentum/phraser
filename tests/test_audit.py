@@ -186,7 +186,7 @@ class TestStructureChecks(AuditCase):
         result = check_label_index(self.data())
         self.assertEqual(result.count_by('kind'), {'missing_entry': 1})
         self.store.DB.write_label_index_link(phrase.label_index_key)
-        self.store.delete(phrase.key)
+        self.store.DB.delete(phrase.key)
         result = check_label_index(self.data())
         self.assertEqual(result.count_by('kind'), {'stale_entry': 1})
 
