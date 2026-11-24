@@ -201,6 +201,7 @@ class Store:
         self._ensure_open()
         start = time.time()
         objs = list(objs)
+        if not objs: return
         keys, values = self._prepare_batch(objs)
         try:
             if overwrite: self._overwrite_rows(objs, keys, values)
