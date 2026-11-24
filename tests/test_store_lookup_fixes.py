@@ -102,5 +102,29 @@ class TestLookupOperatorsAfterRelation(RepairCase):
         self.assertEqual(self.count(label='phrase'), 1)
 
 
+class TestLabelIndexOnDelete(RepairCase):
+    def setUp(self):
+        super().setUp()
+        self.phrase, self.word, self.syllable, self.phone = self.tree()
+
+    def test_delete_drops_label_entry(self):
+        self.store.delete(self.word.key)
+        self.assertEqual(self.store.label_to_instances('word', 'Word'), [])
+
+    def test_phrase_delete_drops_tree_entries(self):
+        self.phrase.delete()
+        pairs = [('phrase', 'Phrase'), ('word', 'Word'), ('a', 'Syllable'),
+            ('a', 'Phone')]
+        for label, object_type in pairs:
+            found = self.store.label_to_instances(label, object_type)
+            self.assertEqual(found, [], object_type)
+
+    def test_delete_skips_audio_and_speaker_keys(self):
+        self.store.delete_many([self.audio.key, self.speaker.key])
+        self.assertIsNone(self.store.DB.load(self.audio.key))
+        self.assertEqual(len(self.store.label_to_instances('word', 'Word')),
+            1)
+
+
 if __name__ == '__main__':
     unittest.main()
