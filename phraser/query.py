@@ -189,53 +189,24 @@ def get_attr(obj, path):
     return current, None
 
 def matches(obj, key, value):
-    """
-    Fully recursive descendant lookup resolver. 
-    Any attribute that returns a list is interpreted as a relation.
+    '''Walk the lookup path and compare its final value with the
+    lookup operator (equality when the key has no operator suffix).
+    Any list-valued attribute is a relation: the lookup matches when
+    any related object matches the rest of the path.
         this assumption holds for now but is a weak spot
-    """
+    '''
+    parts = key.split('__')
+    op = OPS['eq']
+    if parts[-1] in OPS: op = OPS[parts.pop()]
+    return _matches_path(obj, parts, op, value)
 
-    parts = key.split("__")
-
-    # 1. If last part is a lookup operator (gt, lt, in, etc.)
-    if parts[-1] in OPS:
-        lookup = parts[-1]
-        op = OPS[lookup]
-        attr_path = "__".join(parts[:-1])
-        attr_val, _ = get_attr(obj, attr_path)
-        return op(attr_val, value)
-
-    # 2. Resolve first hop of the chain
-    attr = parts[0]
-    rest = "__".join(parts[1:]) if len(parts) > 1 else None
-
-    # Try to read the attribute
-    attr_val = getattr(obj, attr)
-
-    # ---------------------------------
-    # CASE A: relation (list-valued)
-    # ---------------------------------
+def _matches_path(obj, parts, op, value):
+    attr_val = getattr(obj, parts[0])
+    rest = parts[1:]
+    if not rest: return op(attr_val, value)
     if isinstance(attr_val, list):
-
-        # No deeper path → compare list directly
-        if rest is None:
-            return attr_val == value
-
-        # Recurse into each related object
-        for child in attr_val:
-            if matches(child, rest, value):
-                return True
-        return False
-
-    # ---------------------------------
-    # CASE B: scalar attribute
-    # ---------------------------------
-    if rest is None:
-        # Last hop: direct value compare
-        return attr_val == value
-
-    # Deeper hops → recurse
-    return matches(attr_val, rest, value)
+        return any(_matches_path(child, rest, op, value) for child in attr_val)
+    return _matches_path(attr_val, rest, op, value)
 
 
 def object_matches(obj, **params):
