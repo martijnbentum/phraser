@@ -5,7 +5,7 @@ import unittest
 
 from test_repairs import RepairCase
 
-from phraser.models import Word
+from phraser.models import Speaker, Word
 from phraser.query import queryset_from_items
 
 
@@ -167,6 +167,31 @@ class TestSaveCounter(RepairCase):
         _, word, _, _ = self.tree()
         self.store.update(word.key, word)
         self.assertEqual(self.store.save_counter['Word'], 2)
+
+
+class TestSegmentIdentityIncludesSpeaker(RepairCase):
+    def setUp(self):
+        super().setUp()
+        self.phrase, self.word, self.syllable, self.phone = self.tree()
+        self.other = self.store.create(Speaker, name='other', save=True)
+
+    def copy_word(self, speaker):
+        return Word(self.word.label, self.word.start, self.word.end,
+            audio_id=self.audio.identifier, speaker_id=speaker.identifier,
+            store=self.store)
+
+    def test_other_speaker_word_is_not_equal(self):
+        other_word = self.copy_word(self.other)
+        self.assertNotEqual(self.word, other_word)
+        self.assertEqual(len({self.word, other_word}), 2)
+
+    def test_same_speaker_word_is_still_equal(self):
+        self.assertEqual(self.word, self.copy_word(self.speaker))
+
+    def test_exists_in_db_ignores_other_speaker(self):
+        self.store.refresh_query_roots()
+        self.assertTrue(self.copy_word(self.speaker).exists_in_db)
+        self.assertFalse(self.copy_word(self.other).exists_in_db)
 
 
 if __name__ == '__main__':

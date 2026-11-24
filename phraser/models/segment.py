@@ -16,7 +16,7 @@ class Segment:
     property (add_parent, add_children, replace_children, ...) works
     in memory. Tree persistence goes through store.save_phrase_trees.
     '''
-    IDENTITY_FIELDS = {'label', 'start', 'end', 'audio_key'}
+    IDENTITY_FIELDS = {'label', 'start', 'end', 'audio_key', 'speaker_id'}
     DB_FIELDS = {'identifier', 'label', 'start', 'end', 'parent_id',
         'parent_start', 'audio_id', 'speaker_id'}
     METADATA_FIELDS = {'overlap_code'}# stored fields beyond DB_FIELDS
