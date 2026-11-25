@@ -9,6 +9,7 @@ from textgrid import TextGrid
 from phraser import models
 from phraser import utils
 from phraser.phonology import syllable_structure
+from phraser.phonology.phone_types import get_phone_types
 from phraser.storage.key_helper import EMPTY_ID
 
 
@@ -92,8 +93,10 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset=0,
     # their syllable at add_parent time
     for word in words:
         find_and_add_syllables_to_word(word, syllables, save_to_db=False)
+    phone_types = get_phone_types(audio.language)
     for syllable in syllables:
-        find_and_add_phones_to_syllable(syllable, phones, save_to_db=False)
+        find_and_add_phones_to_syllable(syllable, phones, save_to_db=False,
+            phone_types=phone_types)
     for item in syllables + phones:
         # orphans (e.g. pause phones outside every syllable) still belong
         # to the phrase timeline; give them the refs linking would inherit
@@ -193,13 +196,16 @@ def find_and_add_syllables_to_word(word, syllables, save_to_db=False):
         syl.add_parent(word)
 
 def find_and_add_phones_to_syllable(syllable, phones, save_to_db=False,
-    assign_positions=True):
+    assign_positions=True, phone_types=None):
+    '''Link the phones inside the syllable's span to it and, by default,
+    assign onset/nucleus/coda with phone_types (Dutch when None).'''
     phones = select_objects_in_range(phones, syllable.start, syllable.end)
     for phone in phones:
         phone.add_parent(syllable)
     if assign_positions:
         try:
             # in-memory; position_code is persisted by the later db save
-            syllable_structure.assign_syllable_positions_to_phones(phones)
+            syllable_structure.assign_syllable_positions_to_phones(phones,
+                phone_types=phone_types)
         except ValueError:
             pass  # odd transcription -> leave phones at default ('unknown')

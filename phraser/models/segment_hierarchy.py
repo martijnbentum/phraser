@@ -164,6 +164,14 @@ class Phone(Segment):
         self.position_code = utils.position_dict.get(value, 9)
 
     @property
+    def language(self):
+        '''ISO code of the IPA feature table for this phone: its audio's
+        language, Dutch when the audio has none.'''
+        audio = self.audio
+        return phone_features.resolve_language(audio.language if audio
+            else None)
+
+    @property
     def linguistic_features(self):
         '''Static IPA reference info for this phone's label (articulatory
         descriptors + binary distinctive-feature matrix), or None if the
@@ -174,13 +182,13 @@ class Phone(Segment):
         (laryngeals, central/low vowels) reflect convention choices - see
         phone_features. The 'type' field and articulatory descriptors are
         reliable.'''
-        return phone_features.get_phone_features(self.label)
+        return phone_features.get_phone_features(self.label, self.language)
 
     @property
     def type(self):
         '''Phone type ('vowel' or 'consonant') for this phone's label, or
         None if the label is not a known IPA symbol.'''
-        info = phone_features.get_phone_features(self.label)
+        info = phone_features.get_phone_features(self.label, self.language)
         return info['type'] if info else None
 
     @property
@@ -190,7 +198,7 @@ class Phone(Segment):
         numeric tuple (+1/-1/0, 0 = not applicable) in
         linguistic_features_names order, or None for an unknown label.
         Distinct from neural embeddings (see ``embedding``).'''
-        return phone_features.get_feature_vector(self.label)
+        return phone_features.get_feature_vector(self.label, self.language)
 
     @property
     def linguistic_features_names(self):

@@ -1,4 +1,4 @@
-from .phone_types import PHONE_TYPES
+from .phone_types import PHONE_TYPES, get_phone_types
 
 
 def syllable_label(phones):
@@ -15,7 +15,8 @@ def assign_phone_positions(target, phone_types=None, update_database=True):
             always assigned one syllable at a time, since the rule "onset*
             nucleus+ coda*" only holds within a single syllable.
     phone_types  optional {label: 'vowel'|'consonant'|'other'} mapping used to
-            locate the nucleus; defaults to the module-level PHONE_TYPES.
+            locate the nucleus; defaults to the table for each syllable's
+            Audio.language (Dutch when empty).
     update_database  if True (default), persist every touched phone in one
             batched write; if False, mutate phones in memory only.
 
@@ -26,11 +27,18 @@ def assign_phone_positions(target, phone_types=None, update_database=True):
     for syllable in _object_to_syllables(target):
         phones = syllable.phones
         if not phones: continue
-        assign_syllable_positions_to_phones(phones, phone_types=phone_types)
+        pt = phone_types or _syllable_phone_types(syllable)
+        assign_syllable_positions_to_phones(phones, phone_types=pt)
         phones_to_save.extend(phones)
     if update_database and phones_to_save:
         phones_to_save[0].store.save_many(phones_to_save, overwrite=True)
     return target
+
+
+def _syllable_phone_types(syllable):
+    '''Phone types for the language of the syllable's audio.'''
+    audio = syllable.audio
+    return get_phone_types(audio.language if audio else None)
 
 
 def _object_to_syllables(target):
@@ -61,7 +69,8 @@ def assign_syllable_positions_to_phones(phones, phone_types=None):
 def phones_to_vowel_indices(phones, phone_types=None):
     '''Return the indices of vowel phones in the list.
     Raises ValueError if a label is missing from phone_types or vowels are not
-    consecutive.'''
+    consecutive. phone_types defaults to the Dutch PHONE_TYPES; pass the
+    language's table (phone_types.get_phone_types) for other languages.'''
     pt = phone_types or PHONE_TYPES
     vowel_indices = []
     for i, p in enumerate(phones):

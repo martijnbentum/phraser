@@ -152,6 +152,33 @@ class TestTextGridStoreBoundStaging(unittest.TestCase):
                 self.assertEqual(item.phrase_start, phrase.start)
         self.assertEqual(orphan.parent_id, EMPTY_ID)
 
+    def test_ingest_uses_audio_language_for_positions(self):
+        """ɚ is a vowel in the English table only: an English audio gets a
+        nucleus, a Dutch one leaves the syllable unassigned."""
+        tg = MiniTextGrid(
+            names=['ORT-MAU', 'KAN-MAU', 'MAS', 'MAU'],
+            tiers=[
+                Tier([interval('her', 0, .5)]),
+                Tier([interval('h ɚ', 0, .5)]),
+                Tier([interval('h ɚ', 0, .5)]),
+                Tier([interval('h', 0, .25), interval('ɚ', .25, .5)]),
+            ])
+        loader = textgrid_to_segments.textgrid_filename_to_database_objects
+        positions = {}
+        for language in ('eng', 'nld'):
+            audio = make_audio(self.store, filename=f'{language}.wav',
+                save=False)
+            audio.language = language
+            speaker = make_speaker(self.store)
+            with patch.object(textgrid_to_segments, 'load_textgrid',
+                    return_value=tg), redirect_stdout(io.StringIO()):
+                items = loader('fake.TextGrid', audio=audio, speaker=speaker,
+                    store=self.store)
+            phones = [i for i in items if i.object_type == 'Phone']
+            positions[language] = [p.position for p in phones]
+        self.assertEqual(positions['eng'], ['onset', 'nucleus'])
+        self.assertEqual(positions['nld'], ['unknown', 'unknown'])
+
     def test_orphan_syllable_phones_inherit_phrase_refs(self):
         '''Phones inside a syllable that falls outside every word get
         phrase refs through the orphan fallback's push-down.'''

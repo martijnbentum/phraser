@@ -11,7 +11,7 @@ structural checks still see pauses and placeholder labels.
 from pathlib import Path
 
 from ..overlap import SILENCE_LABELS
-from ..phonology.phone_types import PHONE_TYPES
+from ..phonology.phone_types import OTHER_PHONE_LABELS, get_phone_types
 from ..storage import key_helper
 from ..storage.key_helper import EMPTY_ID
 from ..storage.store import value_key_to_instance
@@ -55,6 +55,12 @@ class AuditData:
         return {'audios': len(self.audios), 'speakers': len(self.speakers),
             'phrases': len(self.phrases), 'words': len(self.words),
             'syllables': len(self.syllables), 'phones': len(self.phones)}
+
+    def phone_types_for(self, segment):
+        '''Phone types for the language of the segment's audio (Dutch when
+        the audio is missing or has no language).'''
+        audio = self.audio_by_id.get(segment.audio_id)
+        return get_phone_types(audio.language if audio else None)
 
     def parent_of(self, segment):
         '''Return the persisted parent row, or None when absent or unset.'''
@@ -177,9 +183,10 @@ def _children_by_parent(segments):
 
 
 def _is_speech(segment):
-    '''Exclude pause labels and the non-speech placeholder labels.'''
+    '''Exclude pause labels and the non-speech placeholder labels (the same
+    in every language).'''
     if segment.label.strip() in SILENCE_LABELS: return False
-    return PHONE_TYPES.get(segment.label) != 'other'
+    return segment.label not in OTHER_PHONE_LABELS
 
 
 def _speech_phones(data):

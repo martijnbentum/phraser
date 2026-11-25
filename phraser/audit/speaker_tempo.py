@@ -7,7 +7,6 @@ share of their segments the fences flag, with and without that tempo.
 
 import numpy as np
 
-from ..phonology.phone_types import PHONE_TYPES
 from .findings import SpeakerTempo
 from .outliers import DEFAULT_K, DEFAULT_MIN_COUNT
 from .outliers import _duration_pairs_by_label, _exp, _fences
@@ -30,8 +29,9 @@ def _speaker_measures(data, k, min_count):
     '''Return (measure, segments, baselines) for each tempo measure.'''
     phones = _speech_phones(data)
     phone_baselines = _label_baselines(phones, k, min_count)
-    vowels = [p for p in phones if PHONE_TYPES.get(p.label) == 'vowel']
-    consonants = [p for p in phones if PHONE_TYPES.get(p.label) == 'consonant']
+    types = [data.phone_types_for(p).get(p.label) for p in phones]
+    vowels = [p for p, t in zip(phones, types) if t == 'vowel']
+    consonants = [p for p, t in zip(phones, types) if t == 'consonant']
     syllable_baselines = _label_baselines(data.syllables, k, min_count)
     words = _speech_words(data)
     word_baselines = _label_baselines(words, k, min_count)

@@ -4,7 +4,6 @@ Phone labels must be known phones with a syllable position, each syllable
 needs a nucleus, and a syllable label must equal its joined phone labels.
 '''
 
-from ..phonology.phone_types import PHONE_TYPES
 from .findings import WARNING, CheckResult, _finding
 from .store_snapshot import _speech_phones
 
@@ -17,7 +16,8 @@ def check_unknown_phone_labels(data):
     phones = _speech_phones(data)
     findings = []
     for phone in phones:
-        if phone.label not in PHONE_TYPES: findings.append(_finding(phone))
+        if phone.label in data.phone_types_for(phone): continue
+        findings.append(_finding(phone))
     return CheckResult('unknown_phone_labels', WARNING, len(phones), findings)
 
 

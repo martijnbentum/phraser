@@ -5,7 +5,8 @@ from phone_mapper.cgn import cgn_to_ipa
 
 from phraser.models import Phone
 from phraser.phonology import phone_features
-from phraser.phonology.phone_types import PHONE_TYPES
+from phraser.phonology.phone_types import (OTHER_PHONE_LABELS, PHONE_TYPES,
+    get_phone_types)
 
 
 class TestLoadIpaFeatures(unittest.TestCase):
@@ -135,32 +136,86 @@ class TestPhoneProperty(unittest.TestCase):
         self.assertNotIn('linguistic_features', Phone.METADATA_FIELDS)
 
     def test_property_resolves_by_label(self):
-        phone = types.SimpleNamespace(label='aː')
+        phone = types.SimpleNamespace(label='aː', language='nld')
         info = Phone.linguistic_features.fget(phone)
         self.assertEqual(info['type'], 'vowel')
         self.assertEqual(info['length'], 'long')
 
     def test_property_none_for_unknown_label(self):
-        phone = types.SimpleNamespace(label='')
+        phone = types.SimpleNamespace(label='', language='nld')
         self.assertIsNone(Phone.linguistic_features.fget(phone))
 
     def test_type_property(self):
-        consonant = types.SimpleNamespace(label='p')
-        vowel = types.SimpleNamespace(label='aː')
-        unknown = types.SimpleNamespace(label='')
+        consonant = types.SimpleNamespace(label='p', language='nld')
+        vowel = types.SimpleNamespace(label='aː', language='nld')
+        unknown = types.SimpleNamespace(label='', language='nld')
         self.assertEqual(Phone.type.fget(consonant), 'consonant')
         self.assertEqual(Phone.type.fget(vowel), 'vowel')
         self.assertIsNone(Phone.type.fget(unknown))
 
     def test_linguistic_features_vector_property(self):
-        phone = types.SimpleNamespace(label='p')
+        phone = types.SimpleNamespace(label='p', language='nld')
         self.assertEqual(Phone.linguistic_features_vector.fget(phone),
                          phone_features.get_feature_vector('p'))
 
     def test_linguistic_features_names_property(self):
-        phone = types.SimpleNamespace(label='p')
+        phone = types.SimpleNamespace(label='p', language='nld')
         self.assertEqual(Phone.linguistic_features_names.fget(phone),
                          phone_features.FEATURE_ORDER)
+
+    def test_language_selects_table(self):
+        '''ɕ is Polish only; the same Phone property finds it there.'''
+        dutch = types.SimpleNamespace(label='ɕ', language='nld')
+        polish = types.SimpleNamespace(label='ɕ', language='pol')
+        self.assertIsNone(Phone.type.fget(dutch))
+        self.assertEqual(Phone.type.fget(polish), 'consonant')
+
+    def test_language_from_audio(self):
+        audio = types.SimpleNamespace(language='pol')
+        phone = types.SimpleNamespace(audio=audio)
+        self.assertEqual(Phone.language.fget(phone), 'pol')
+
+    def test_language_defaults_to_dutch(self):
+        no_language = types.SimpleNamespace(audio=types.SimpleNamespace(
+            language=''))
+        no_audio = types.SimpleNamespace(audio=None)
+        self.assertEqual(Phone.language.fget(no_language), 'nld')
+        self.assertEqual(Phone.language.fget(no_audio), 'nld')
+
+
+class TestLanguageTables(unittest.TestCase):
+    def test_default_is_dutch_file(self):
+        self.assertIs(phone_features.load_ipa_features(),
+            phone_features.load_ipa_features('nld'))
+        self.assertIs(phone_features.load_ipa_features(''),
+            phone_features.load_ipa_features('nld'))
+        self.assertEqual(phone_features.data_file('nld'), 'ipa_features.json')
+
+    def test_every_language_loads(self):
+        for language in phone_features.LANGUAGES:
+            data = phone_features.load_ipa_features(language)
+            self.assertGreater(len(data), 0, language)
+
+    def test_unknown_language_raises(self):
+        with self.assertRaises(ValueError):
+            phone_features.load_ipa_features('tur')
+
+    def test_phone_types_per_language(self):
+        for language in phone_features.LANGUAGES:
+            types_ = get_phone_types(language)
+            data = phone_features.load_ipa_features(language)
+            for label, info in data.items():
+                self.assertEqual(types_[label], info['type'], label)
+            for label in OTHER_PHONE_LABELS:
+                self.assertEqual(types_[label], 'other')
+
+    def test_dutch_phone_types_unchanged(self):
+        self.assertIs(PHONE_TYPES, get_phone_types('nld'))
+        self.assertIs(PHONE_TYPES, get_phone_types(None))
+
+    def test_feature_vector_per_language(self):
+        self.assertIsNone(phone_features.get_feature_vector('ɕ', 'nld'))
+        self.assertIsNotNone(phone_features.get_feature_vector('ɕ', 'pol'))
 
 
 if __name__ == '__main__':

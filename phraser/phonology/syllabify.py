@@ -10,8 +10,9 @@ second syllable); its time is wherever the phones put it.
 The grouping comes from a language syllabifier. Only Dutch
 (dutch_syllabifier) is implemented; other languages raise
 NotImplementedError. apply_new_syllable_boundaries takes a grouping from any
-source. Onset/nucleus/coda positions use phone_types.PHONE_TYPES, which
-agrees with the syllabifier on every phone it accepts.
+source. Onset/nucleus/coda positions use the Dutch phone_types.PHONE_TYPES,
+which agrees with the syllabifier on every phone it accepts; with a second
+syllabifier, pass that language's phone types too.
 
 repair_*   change the donor store's syllables in place: phones move between
            the existing syllables (same count, same objects and ids, metadata

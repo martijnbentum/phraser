@@ -6,8 +6,12 @@ store per language, following the CGN WebMAUS import
 
 ## Source data
 
-Location: `/vol/tensusers/mbentum/INDEEP/LD/COMMON_VOICE_<LANGUAGE>/` on
-fancypants.
+Originals: `/vol/tensusers/mbentum/INDEEP/LD/COMMON_VOICE_<LANGUAGE>/` on
+fancypants (not modified).
+
+Working copy, read by the import: `/vol/mlusers/mbentum/common_voice/<iso>/`
+with 16 kHz mono FLAC clips (only clips with a TextGrid; 1,399,898 clips,
+zero conversion failures), label-fixed TextGrids (see 1), TSVs and MAUS maps.
 
 Per language: `clips/*.mp3`, split TSVs (`validated.tsv`, `other.tsv`,
 `invalidated.tsv`, ...), `textgrids/<stem>.TextGrid`, `transcriptions/`,
@@ -182,15 +186,15 @@ and BAS `maus_<language>_phoneme_map.txt` files.
 
 ### 6. Audio
 
-- Keep the mp3 files for now; sox with mp3 support is available.
-- Store header duration (`clip_durations.tsv` where present, else
-  `sox --i`). It is consistently ~35 ms (one mp3 frame) longer than the
-  decoded audio; fixed when the 16 kHz copy is made.
+- Decided 2026-11-25: the loader reads the 16 kHz mono FLAC copy
+  (`<iso>/clips/<stem>.flac` in the working copy), not the mp3 originals.
+  Duration comes from the FLAC header (frame count / sample rate), which is
+  exact; the mp3 header duration (~35 ms, one frame, too long) is not used.
+  The former postponed step (store mp3, update Audio in place later) is
+  dropped.
+- A `validated.tsv` row without a FLAC or TextGrid is reported and skipped.
 - Keep absolute paths in `Audio.filename` and `Phrase.filename` (relative
   paths considered and dropped: savings ~60 B/path, portability not needed).
-- Postponed: consolidated copy at 16 kHz mono FLAC (~110 GB vs ~201 GB WAV
-  for 1,741 h, plus ~17 GB TextGrids). Then update `filename`, `sample_rate`
-  and `duration` on each Audio in place; identifiers and links are kept.
 
 ### 7. Scale and selection
 
@@ -222,23 +226,28 @@ and BAS `maus_<language>_phoneme_map.txt` files.
   2. `save_audio_to_db`
   3. `clips_to_db`: `textgrid_filename_to_database_objects(tg, offset=0,
      audio=..., speaker=..., multiple_speakers=False, store=...)`, relabel to
-     IPA, chunked save. Skip a clip when its audio already has a phrase
+     IPA, chunked save. The builder assigns onset/nucleus/coda while it
+     builds, from the labels it reads, so the IPA relabel must happen
+     before that (relabel the TextGrid tiers in memory, or reassign
+     positions after relabelling); otherwise every SAMPA label is unknown
+     and all positions stay unassigned. Skip a clip when its audio already has a phrase
      (exact for one phrase per clip; avoids the CGN filename shortcut). No
      `update_audio_overlap` call needed.
 - `estimate_store_size(...)` pilot estimator.
 
 ## Build order
 
-1. `phone_mapper.maus` module + tests.
-2. Phone coverage report per language (relabelled MAU labels vs
-   `ipa_features.json`).
-3. Language-aware phone tables in phraser (`Audio.language`, default `nld`);
-   per-language feature files for covered symbols.
+1. Done: `phone_mapper.maus` module + tests (0.1.19).
+2. Done: phone coverage report per language.
+3. Done: phraser picks the feature table and phone types by
+   `Audio.language` (`''` -> `nld`, unknown language raises): Phone
+   properties, syllable positions (TextGrid import, assign_phone_positions)
+   and the audit checks. syllabify stays Dutch-only.
 4. `gender_dict` `other` code; age band helper.
-5. CV prepare module + reports (missing TextGrids, metadata conflicts).
+5. CV prepare module + reports (missing TextGrids/FLACs, metadata
+   conflicts).
 6. CV loader with chunked saves; pilot on Dutch, then size estimator.
 7. Remaining languages.
-8. (Postponed) 16 kHz FLAC consolidation and in-place Audio update.
 
 ## Open points
 

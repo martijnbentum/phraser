@@ -76,6 +76,15 @@ class TestPhonesToVowelIndices(unittest.TestCase):
         with self.assertRaises(ValueError):
             m.phones_to_vowel_indices(phones)
 
+    def test_language_phone_types(self):
+        '''ɚ is a vowel only in the English table.'''
+        phones = [make_phone(label) for label in ('p', 'ɚ')]
+        with self.assertRaises(ValueError):
+            m.phones_to_vowel_indices(phones)
+        eng = m.get_phone_types('eng')
+        self.assertEqual(m.phones_to_vowel_indices(phones, phone_types=eng),
+            [1])
+
     def test_custom_phone_types(self):
         phone_types = {'a': 'vowel', 'b': 'consonant'}
         phones = [make_phone('b'), make_phone('a'), make_phone('b')]
