@@ -46,3 +46,14 @@ cgn_awd_report_file = data / 'cgn_awd_import_report.json'
 cgn_base = _path_config('PHRASER_CGN_BASE', '/vol/bigdata/corpora2/CGN2/')
 cgn_audio = cgn_base / 'data/audio/wav/'
 cgn_speaker_file = cgn_base / 'data/meta/text/speakers.txt'
+
+# Common Voice: 16 kHz FLAC working copy with label-fixed TextGrids, one
+# folder per ISO code (see docs/PLAN_common_voice_import.md).
+common_voice_base = _path_config('PHRASER_CV_BASE',
+    '/vol/mlusers/mbentum/common_voice')
+common_voice_lmdb_dir = _path_config('PHRASER_CV_LMDB_DIR', data)
+
+
+def common_voice_lmdb(iso):
+    '''Store path for one Common Voice language.'''
+    return common_voice_lmdb_dir / f'cv_{iso}_lmdb'

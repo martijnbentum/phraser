@@ -193,6 +193,12 @@ and BAS `maus_<language>_phoneme_map.txt` files.
   The former postponed step (store mp3, update Audio in place later) is
   dropped.
 - A `validated.tsv` row without a FLAC or TextGrid is reported and skipped.
+- Durations come from `<iso>/flac_durations.tsv` (stem, sample_rate,
+  n_channels, n_samples, duration_ms), written once by
+  `/vol/mlusers/mbentum/common_voice/flac_durations.py`, which reads only
+  the FLAC STREAMINFO header of each clip in `clip_stems.txt`. Prepare
+  reads that file instead of opening 1.4 M files on NFS (listing the clip
+  folders alone took ~30 min).
 - Keep absolute paths in `Audio.filename` and `Phrase.filename` (relative
   paths considered and dropped: savings ~60 B/path, portability not needed).
 
@@ -204,9 +210,29 @@ and BAS `maus_<language>_phoneme_map.txt` files.
   of millions of segments, too many for one `save_many`.
 - Store size estimator: load a pilot sample (e.g. 500 clips) into a temporary
   store, measure LMDB bytes per clip, extrapolate to the selection.
-- `max_clips` limit with ranking: metadata completeness (non-empty gender,
-  age, accent), then `up_votes - down_votes`, with a per-speaker clip cap
-  (single speakers contribute up to 15,754 clips in Dutch).
+- Selection (decided 2026-11-25, from the validated.tsv survey below):
+  - rank clips by non-empty gender + age (accent left out: it is empty for
+    81-96% of hun/ita/pol rows), then `up_votes - down_votes` as a
+    tiebreak (it is 2 for 70-90% of rows, so it separates little).
+  - a per-speaker clip cap does most of the work: the top 10 speakers hold
+    36% of Dutch and 31% of Polish clips (largest: 15,754 nld, 11,206 deu,
+    11,035 pol, 10,825 spa).
+  - no `max_clips`: load every clip with a FLAC and TextGrid. With
+    `max_clips`: take clips round-robin over speakers, best ranked first.
+- validated.tsv survey (2026-11-25):
+
+  | | nld | eng | fra | deu | hun | ita | pol | spa |
+  |---|---|---|---|---|---|---|---|---|
+  | gender empty % | 41 | 49 | 19 | 21 | 32 | 32 | 25 | 31 |
+  | accent empty % | 24 | 56 | 28 | 30 | 81 | 94 | 96 | 40 |
+  | median clips/speaker | 10 | 6 | 9 | 10 | 7 | 5 | 5 | 5 |
+  | top-10 speakers share % | 36 | 4 | 23 | 18 | 26 | 17 | 31 | 28 |
+
+  Speakers with two different non-empty values: age only, 1 nld, 1 hun,
+  2 pol; the larger earlier counts were empty vs filled, which "most
+  common non-empty value" already handles. `segment` is `Benchmark` on
+  618 nld and 1,144 pol rows, otherwise empty; `variant` is always empty,
+  `locale` constant; all three are ignored.
 
 ## Module layout
 
@@ -246,8 +272,10 @@ and BAS `maus_<language>_phoneme_map.txt` files.
 4. Done: `gender_dict` `other` code (3); `cv_gender` / `cv_age` in
    `corpora/common_voice/speaker_metadata.py` (values checked against all
    8 validated.tsv files; an unexpected value raises).
-5. CV prepare module + reports (missing TextGrids/FLACs, metadata
-   conflicts).
+5. Done: `prepare_common_voice_import.prepare(iso, max_clips,
+   max_per_speaker)` -> speaker/audio infos (model kwargs), clips and a
+   report (rows without FLAC/TextGrid or duration, metadata conflicts).
+   No JSON cache: with flac_durations.tsv every input reads in seconds.
 6. CV loader with chunked saves; pilot on Dutch, then size estimator.
 7. Remaining languages.
 
