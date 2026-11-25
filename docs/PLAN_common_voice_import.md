@@ -277,6 +277,13 @@ and BAS `maus_<language>_phoneme_map.txt` files.
    report (rows without FLAC/TextGrid or duration, metadata conflicts).
    No JSON cache: with flac_durations.tsv every input reads in seconds.
 6. CV loader with chunked saves; pilot on Dutch, then size estimator.
+   Written (`load_common_voice_to_db.py`, tested on synthetic TextGrids):
+   relabel_textgrid maps MAU/MAS/KAN-MAU to IPA in memory before the
+   segments are built (MAS `<p:>` and empty labels stay); per chunk new
+   audios, batched speaker-audio links, then segments; reruns skip clips
+   whose audio has a phrase and reuse an audio saved without one; clips
+   that fail are reported, their audio not saved. Still to do: pilot on
+   the real Dutch data and the size estimate.
 7. Remaining languages.
 
 ## Open points

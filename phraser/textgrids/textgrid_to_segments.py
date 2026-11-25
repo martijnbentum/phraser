@@ -57,12 +57,16 @@ def load_textgrid(filename):
 
 def textgrid_filename_to_database_objects(textgrid_filename, offset=0,
     audio=None, speaker=None, overwrite=False, multiple_speakers=None,
-    store=None):
+    store=None, textgrid=None):
     '''Build store-bound objects from a TextGrid.
 
     This is staging mode: objects are bound to `store`, individual
     constructor/link writes are suppressed, and `save_textgrid_items()` persists
     them later.
+
+    textgrid  an already loaded (e.g. relabelled) TextGrid to use instead of
+              reading textgrid_filename; the filename is still stored on the
+              phrase.
     '''
     validate_textgrid_overwrite(overwrite)
     if audio is None or speaker is None:
@@ -74,7 +78,8 @@ def textgrid_filename_to_database_objects(textgrid_filename, offset=0,
         elif speaker is not None: store = getattr(speaker, '_store', None)
     store = require_textgrid_store(store)
     no_overlap_code = utils.overlap_dict[False]
-    tg = load_textgrid(textgrid_filename)
+    tg = textgrid if textgrid is not None else load_textgrid(
+        textgrid_filename)
     identity = {'audio_id': audio.identifier, 'speaker_id': speaker.identifier}
     words = list(textgrid_to_words(tg, offset, store=store,
         kwargs=identity))

@@ -352,6 +352,11 @@ class DB:
         link= key_helper.speaker_audio_link(speaker, audio)
         self.write(link, b'', db_name = 'speaker_audio', overwrite = True)
 
+    def write_many_speaker_audio_links(self, links):
+        '''Write many speaker-audio links in one transaction.'''
+        self.write_many(links, [b''] * len(links), db_name = 'speaker_audio',
+            overwrite = True)
+
     def write_label_index_link(self, link):
         self.write(link, b'', db_name = 'label_segment', overwrite = True)
 
