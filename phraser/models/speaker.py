@@ -12,6 +12,9 @@ class Speaker:
 
     flags = 0
     gender_code = 9
+    # age in years, 0 = unknown. Common Voice gives age bands; those
+    # speakers store the band midpoint (teens -> 15), see
+    # corpora.common_voice.speaker_metadata.cv_age.
     age = 0
     dataset = ''
     dialect = ''

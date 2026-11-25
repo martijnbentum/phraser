@@ -111,7 +111,8 @@ def speaker_keys(speakers):
 def validate_speaker_filters(gender, age=None, min_age=None, max_age=None):
     '''Validate demographics independently of candidate availability.'''
     if gender is not None and gender not in gender_dict:
-        raise ValueError('gender must be female, male, unknown, or None')
+        m = f'gender must be one of {", ".join(gender_dict)}, or None'
+        raise ValueError(m)
     validate_bounds(min_age, max_age, 'age')
     validate_bounds(age, age, 'age')
 

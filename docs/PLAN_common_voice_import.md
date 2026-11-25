@@ -243,7 +243,9 @@ and BAS `maus_<language>_phoneme_map.txt` files.
    `Audio.language` (`''` -> `nld`, unknown language raises): Phone
    properties, syllable positions (TextGrid import, assign_phone_positions)
    and the audit checks. syllabify stays Dutch-only.
-4. `gender_dict` `other` code; age band helper.
+4. Done: `gender_dict` `other` code (3); `cv_gender` / `cv_age` in
+   `corpora/common_voice/speaker_metadata.py` (values checked against all
+   8 validated.tsv files; an unexpected value raises).
 5. CV prepare module + reports (missing TextGrids/FLACs, metadata
    conflicts).
 6. CV loader with chunked saves; pilot on Dutch, then size estimator.
